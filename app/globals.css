@@ -33,11 +33,16 @@ button:not(:disabled) {
 }
 
 /* A visible "pressed" state on tap/click, since hover alone doesn't fire
-   on touch devices and some buttons' hover states are too subtle to
-   register as feedback that the press was registered. */
-button:not(:disabled):active,
+   on touch devices and some buttons' hover states (e.g. an icon just
+   changing to a slightly different gray) are too subtle on their own to
+   register as feedback that the press was registered. The scale gives a
+   felt "give" on press; opacity alone wasn't enough. */
+button:not(:disabled):active {
+  transform: scale(0.94);
+  opacity: 0.7;
+}
 a:active {
-  opacity: 0.75;
+  opacity: 0.7;
 }
 
 @layer components {

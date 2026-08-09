@@ -71,7 +71,7 @@ function OptionRow({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={[
-        "flex items-start gap-1 rounded-lg",
+        "flex items-start gap-0.5 rounded-lg",
         isDragging ? "z-10 bg-white shadow-md" : "",
       ].join(" ")}
     >
@@ -80,7 +80,7 @@ function OptionRow({
         {...attributes}
         {...listeners}
         aria-label="選択肢をドラッグして並び替え"
-        className="flex shrink-0 touch-none cursor-grab items-center justify-center rounded p-2 text-stone-300 hover:text-stone-500 active:cursor-grabbing"
+        className="flex shrink-0 touch-none cursor-grab items-center justify-center rounded p-1.5 text-stone-300 hover:text-stone-500 active:cursor-grabbing"
       >
         <GripIcon />
       </button>
@@ -91,12 +91,12 @@ function OptionRow({
         onKeyDown={blockEnterKey}
         placeholder="選択肢を入力"
         rows={1}
-        className="min-w-0 flex-1 resize-none overflow-hidden rounded-lg border border-transparent bg-transparent px-3 py-2.5 text-sm text-stone-800 transition hover:border-greige hover:bg-white focus:border-sage focus:bg-white focus:outline-none"
+        className="min-w-0 flex-1 resize-none overflow-hidden rounded-lg border border-transparent bg-transparent px-1.5 py-2.5 text-sm text-stone-800 transition hover:border-greige hover:bg-white focus:border-sage focus:bg-white focus:outline-none"
       />
       <button
         type="button"
         onClick={onDelete}
-        className="ml-1 shrink-0 rounded p-2 text-stone-300 hover:text-red-500"
+        className="shrink-0 rounded p-1.5 text-stone-300 hover:text-red-500"
         aria-label="この選択肢を削除"
       >
         ✕
@@ -194,13 +194,13 @@ export default function QuestionCardEditor({
         isDragging ? "z-10 shadow-lg" : "",
       ].join(" ")}
     >
-      <div className="mb-1 flex items-start gap-1">
+      <div className="mb-1 flex items-start gap-0.5">
         <button
           type="button"
           {...attributes}
           {...listeners}
           aria-label="質問をドラッグして並び替え"
-          className="mt-1.5 flex shrink-0 touch-none cursor-grab items-center justify-center rounded p-2 text-stone-300 hover:text-stone-500 active:cursor-grabbing"
+          className="mt-1.5 flex shrink-0 touch-none cursor-grab items-center justify-center rounded p-1.5 text-stone-300 hover:text-stone-500 active:cursor-grabbing"
         >
           <GripIcon />
         </button>
@@ -211,7 +211,7 @@ export default function QuestionCardEditor({
           onKeyDown={blockEnterKey}
           placeholder="質問を入力"
           rows={1}
-          className="min-w-0 flex-1 resize-none overflow-hidden rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-base font-medium text-stone-800 transition hover:border-greige hover:bg-ivory focus:border-sage focus:bg-white focus:outline-none"
+          className="min-w-0 flex-1 resize-none overflow-hidden rounded-lg border border-transparent bg-transparent px-1.5 py-1.5 text-base font-medium text-stone-800 transition hover:border-greige hover:bg-ivory focus:border-sage focus:bg-white focus:outline-none"
         />
         <button
           type="button"
