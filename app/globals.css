@@ -35,14 +35,17 @@ button:not(:disabled) {
 /* A visible "pressed" state on tap/click, since hover alone doesn't fire
    on touch devices and some buttons' hover states (e.g. an icon just
    changing to a slightly different gray) are too subtle on their own to
-   register as feedback that the press was registered. The scale gives a
-   felt "give" on press; opacity alone wasn't enough. */
-button:not(:disabled):active {
-  transform: scale(0.94);
-  opacity: 0.7;
+   register as feedback that the press was registered. Same idea as most
+   sites' native button press state: the tapped area itself flashes gray,
+   respecting whatever border-radius the element already has. Fades back
+   out on release instead of just vanishing. */
+button:not(:disabled),
+a {
+  transition: background-color 150ms ease;
 }
+button:not(:disabled):active,
 a:active {
-  opacity: 0.7;
+  background-color: rgb(0 0 0 / 10%);
 }
 
 @layer components {
