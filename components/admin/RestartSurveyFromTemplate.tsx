@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import TemplatePicker from "@/components/admin/TemplatePicker";
 import { restartSurveyAction } from "@/app/admin/(authed)/survey/actions";
 import type { SurveyTemplateSummary } from "@/lib/supabase/queries";
@@ -10,6 +11,7 @@ export default function RestartSurveyFromTemplate({
 }: {
   templates: SurveyTemplateSummary[];
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justRestarted, setJustRestarted] = useState(false);
@@ -21,6 +23,11 @@ export default function RestartSurveyFromTemplate({
       setError(result.error);
       return;
     }
+    // QuestionEditor above seeds its draft from props only once, keyed on
+    // the survey id -- router.refresh() re-fetches that id (restarting
+    // creates a new survey row) so it actually remounts with the new
+    // template's questions instead of silently keeping the old ones.
+    router.refresh();
     setJustRestarted(true);
   }
 

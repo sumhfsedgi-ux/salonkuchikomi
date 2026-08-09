@@ -24,6 +24,22 @@ textarea {
   font-size: 16px;
 }
 
+/* Browsers show a plain arrow cursor on <button> by default (unlike <a>,
+   which gets a pointer automatically) and Tailwind's preflight doesn't
+   override that. Without this, every button in the app looks unclickable
+   on desktop even though it works. */
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+/* A visible "pressed" state on tap/click, since hover alone doesn't fire
+   on touch devices and some buttons' hover states are too subtle to
+   register as feedback that the press was registered. */
+button:not(:disabled):active,
+a:active {
+  opacity: 0.75;
+}
+
 @layer components {
   .card {
     @apply bg-white rounded-xl shadow-sm p-4;

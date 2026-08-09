@@ -14,6 +14,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import { useAutosizeTextarea, blockEnterKey } from "@/lib/useAutosizeTextarea";
 
 interface OptionData {
   id: string;
@@ -63,13 +64,14 @@ function OptionRow({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: option.id,
   });
+  const textareaRef = useAutosizeTextarea(option.option_text);
 
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={[
-        "flex items-center gap-1 rounded-lg",
+        "flex items-start gap-1 rounded-lg",
         isDragging ? "z-10 bg-white shadow-md" : "",
       ].join(" ")}
     >
@@ -82,11 +84,14 @@ function OptionRow({
       >
         <GripIcon />
       </button>
-      <input
+      <textarea
+        ref={textareaRef}
         value={option.option_text}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={blockEnterKey}
         placeholder="選択肢を入力"
-        className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-3 py-2.5 text-sm text-stone-800 transition hover:border-greige hover:bg-white focus:border-sage focus:bg-white focus:outline-none"
+        rows={1}
+        className="min-w-0 flex-1 resize-none overflow-hidden rounded-lg border border-transparent bg-transparent px-3 py-2.5 text-sm text-stone-800 transition hover:border-greige hover:bg-white focus:border-sage focus:bg-white focus:outline-none"
       />
       <button
         type="button"
@@ -156,6 +161,7 @@ export default function QuestionCardEditor({
   onReorderOptions: (activeId: string, overId: string) => void;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const questionTextareaRef = useAutosizeTextarea(question.question_text);
 
   const {
     attributes,
@@ -198,11 +204,14 @@ export default function QuestionCardEditor({
         >
           <GripIcon />
         </button>
-        <input
+        <textarea
+          ref={questionTextareaRef}
           value={question.question_text}
           onChange={(e) => onChange({ question_text: e.target.value })}
+          onKeyDown={blockEnterKey}
           placeholder="質問を入力"
-          className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-base font-medium text-stone-800 transition hover:border-greige hover:bg-ivory focus:border-sage focus:bg-white focus:outline-none"
+          rows={1}
+          className="min-w-0 flex-1 resize-none overflow-hidden rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-base font-medium text-stone-800 transition hover:border-greige hover:bg-ivory focus:border-sage focus:bg-white focus:outline-none"
         />
         <button
           type="button"
@@ -216,7 +225,7 @@ export default function QuestionCardEditor({
         </button>
       </div>
 
-      <div className="mb-3 flex flex-wrap items-center gap-2 pl-9">
+      <div className="mb-3 flex flex-wrap items-center gap-2 pl-2 sm:pl-9">
         <TypePicker
           value={question.question_type}
           onChange={(type) => onChange({ question_type: type })}
@@ -233,7 +242,7 @@ export default function QuestionCardEditor({
       </div>
 
       {question.question_type === "multiple" && detailsOpen && (
-        <div className="mb-3 ml-9 flex items-center gap-2 rounded-lg bg-ivory px-3 py-2">
+        <div className="mb-3 ml-2 flex items-center gap-2 rounded-lg bg-ivory px-3 py-2 sm:ml-9">
           <span className="text-xs text-stone-500">お客様が選べる最大数</span>
           <div className="ml-auto flex items-center gap-2">
             <button
@@ -264,7 +273,7 @@ export default function QuestionCardEditor({
       )}
 
       {question.question_type !== "text" ? (
-        <div className="mb-2 flex flex-col gap-0.5 pl-9">
+        <div className="mb-2 flex flex-col gap-0.5 pl-2 sm:pl-9">
           <DndContext
             sensors={optionSensors}
             collisionDetection={closestCenter}
@@ -293,7 +302,7 @@ export default function QuestionCardEditor({
           </button>
         </div>
       ) : (
-        <div className="mb-2 ml-9 rounded-lg border border-dashed border-greige bg-ivory/60 px-3 py-3 text-xs text-stone-400">
+        <div className="mb-2 ml-2 rounded-lg border border-dashed border-greige bg-ivory/60 px-3 py-3 text-xs text-stone-400 sm:ml-9">
           お客様が自由に文章を書ける欄がここに表示されます
         </div>
       )}
