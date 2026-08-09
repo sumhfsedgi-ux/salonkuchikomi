@@ -5,6 +5,8 @@ import TextareaQuestion from "@/components/review/TextareaQuestion";
 
 interface Props {
   question: SurveyQuestion;
+  index: number;
+  total: number;
   value: string[] | string;
   onChange: (value: string[] | string) => void;
   errorMessage?: string;
@@ -12,12 +14,17 @@ interface Props {
 
 export default function QuestionCard({
   question,
+  index,
+  total,
   value,
   onChange,
   errorMessage,
 }: Props) {
   return (
     <div className="card">
+      <p className="mb-1 text-[11px] font-medium text-stone-400">
+        質問 {index + 1} / {total}
+      </p>
       <div className="mb-3 flex items-start gap-2">
         <p className="text-balance text-sm font-medium leading-relaxed text-stone-800">
           {question.question}
@@ -29,6 +36,11 @@ export default function QuestionCard({
         ) : (
           <span className="mt-0.5 shrink-0 rounded bg-beige px-1.5 py-0.5 text-[10px] font-medium text-stone-500">
             任意
+          </span>
+        )}
+        {question.type === "multiple" && (
+          <span className="mt-0.5 shrink-0 rounded bg-beige px-1.5 py-0.5 text-[10px] font-medium text-stone-500">
+            最大{question.maxSelections}つ
           </span>
         )}
       </div>

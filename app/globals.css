@@ -15,6 +15,15 @@ body {
   color: #3f3a34;
 }
 
+/* iOS Safari auto-zooms the page when focusing a form control rendered
+   below 16px, and doesn't always zoom back out after a client-side
+   navigation. Keeping every input/select/textarea at 16px+ avoids that. */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
 @layer components {
   .card {
     @apply bg-white rounded-xl shadow-sm p-4;

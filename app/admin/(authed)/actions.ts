@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentSalon } from "@/lib/supabase/queries";
 import type { OwnerSalon } from "@/lib/types";
 
 export async function logoutAction() {
@@ -49,7 +50,9 @@ export async function createSalonAction(
   const { data: inserted, error } = await supabase
     .from("salons")
     .insert({ owner_id: profile.id, name: parsed.data.name, slug: parsed.data.slug })
-    .select("id, owner_id, name, slug, google_review_url, description, created_at, updated_at")
+    .select(
+      "id, owner_id, name, slug, google_review_url, description, onboarding_completed, created_at, updated_at",
+    )
     .single();
 
   if (error || !inserted) {
@@ -70,6 +73,7 @@ export async function createSalonAction(
       slug: inserted.slug,
       googleReviewUrl: inserted.google_review_url,
       description: inserted.description,
+      onboardingCompleted: inserted.onboarding_completed,
       createdAt: inserted.created_at,
       updatedAt: inserted.updated_at,
     },
@@ -86,10 +90,16 @@ export async function startSurveyAction(
   } = await supabase.auth.getUser();
   if (!user) return { error: "ログインが必要です。" };
 
-  // RLS (owner_insert policies on surveys/questions/question_options) is what
-  // actually stops this from creating a survey under a salon the caller
-  // doesn't own, even though salonId here comes from the client.
-  const { error } = await supabase.rpc("create_survey_from_template", {
+  // Uses restart_survey_from_template (not create_survey_from_template)
+  // because the onboarding wizard lets the owner go back to STEP2 and pick a
+  // different template after a survey already exists (STEP3 -> STEP2). That
+  // RPC deactivates any existing active survey first, so it's a safe
+  // superset of "create" that also works the very first time (nothing to
+  // deactivate yet). RLS (owner_insert/owner_update policies on
+  // surveys/questions/question_options) is what actually stops this from
+  // touching a salon the caller doesn't own, even though salonId here comes
+  // from the client.
+  const { error } = await supabase.rpc("restart_survey_from_template", {
     p_salon_id: salonId,
     p_template_id: templateId,
   });
@@ -102,4 +112,40 @@ export async function startSurveyAction(
   revalidatePath("/admin");
   revalidatePath("/admin/survey");
   return {};
+}
+
+// Marks the onboarding wizard as finished. This is the only place
+// `onboarding_completed` is ever set to true, and it's what keeps
+// AdminHomePage from jumping straight to the dashboard as soon as a survey
+// row exists (which happens as early as STEP2) -- see the plan doc for why
+// that mattered. Resolves the caller's own salon server-side rather than
+// trusting a client-supplied id, same as every other action here.
+export async function completeOnboardingAction(
+  googleReviewUrl: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const salon = await getCurrentSalon(supabase);
+  if (!salon) return { error: "店舗情報が見つかりません。" };
+
+  const trimmed = googleReviewUrl.trim();
+  if (trimmed.length > 500) {
+    return { error: "Google口コミ投稿URLは500文字以内で入力してください。" };
+  }
+
+  const { error } = await supabase
+    .from("salons")
+    .update({
+      google_review_url: trimmed || null,
+      onboarding_completed: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", salon.id);
+
+  if (error) {
+    console.error("completeOnboardingAction failed", error);
+    return { error: "保存に失敗しました。もう一度お試しください。" };
+  }
+
+  revalidatePath("/admin");
+  redirect("/admin?onboarded=1");
 }

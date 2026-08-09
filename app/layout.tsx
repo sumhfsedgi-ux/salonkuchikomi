@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
 
@@ -10,6 +10,14 @@ const geistSans = Geist({
 export const metadata: Metadata = {
   title: "salonpack | 口コミ作成支援",
   description: "アンケートの回答をもとに、Google口コミの下書きを作成します。",
+};
+
+// Explicit rather than relying on Next.js's default, so this can never be
+// silently dropped or overridden by another metadata export in the tree.
+// No maximumScale/userScalable restriction -- pinch zoom must stay available.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

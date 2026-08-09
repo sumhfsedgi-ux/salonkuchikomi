@@ -16,31 +16,31 @@ export default async function AuthedAdminLayout({
   const salon = await getCurrentSalon(supabase);
 
   return (
-    <div className="flex min-h-dvh flex-col bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-4 py-4 md:flex-row md:items-center md:justify-between">
-          <p className="text-sm font-semibold text-slate-800">
+    <div className="flex min-h-dvh min-w-0 flex-col bg-ivory">
+      <header className="min-w-0 bg-white">
+        <div className="mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-3 px-4 py-4 md:flex-row md:items-center md:justify-between">
+          <p className="min-w-0 text-sm font-semibold text-stone-800">
             {salon?.name ?? "salonpack 管理画面"}
           </p>
-          <nav className="flex flex-wrap items-center gap-4 text-sm text-slate-600">
-            <Link href="/admin" className="hover:text-slate-900">
+          <nav className="flex flex-wrap items-center gap-5 text-sm text-stone-500">
+            <Link href="/admin" className="hover:text-sage-dark">
               ホーム
             </Link>
-            <Link href="/admin/survey" className="hover:text-slate-900">
-              アンケート設定
+            <Link href="/admin/survey" className="hover:text-sage-dark">
+              お客様への質問
             </Link>
-            <Link href="/admin/settings" className="hover:text-slate-900">
+            <Link href="/admin/settings" className="hover:text-sage-dark">
               店舗設定
             </Link>
             <form action={logoutAction}>
-              <button type="submit" className="hover:text-slate-900">
+              <button type="submit" className="hover:text-sage-dark">
                 ログアウト
               </button>
             </form>
           </nav>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-8">
+      <main className="mx-auto w-full min-w-0 max-w-4xl flex-1 px-4 py-8">
         {children}
       </main>
     </div>

@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import Toast from "@/components/Toast";
+import { copyToClipboard } from "@/lib/copyToClipboard";
 
 export default function CopyUrlButton({ url }: { url: string }) {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   async function handleCopy() {
-    await navigator.clipboard.writeText(url);
-    setToastMessage("コピーしました");
+    const ok = await copyToClipboard(url);
+    setToastMessage(ok ? "コピーしました" : "コピーできませんでした");
   }
 
   return (
@@ -16,7 +17,7 @@ export default function CopyUrlButton({ url }: { url: string }) {
       <button
         type="button"
         onClick={handleCopy}
-        className="shrink-0 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+        className="shrink-0 rounded-lg bg-sage px-4 py-2 text-sm font-medium text-white transition hover:bg-sage-dark"
       >
         URLをコピー
       </button>

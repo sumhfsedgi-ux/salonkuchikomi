@@ -1,15 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import { CSS } from "@dnd-kit/utilities";
+import { useSortable } from "@dnd-kit/sortable";
 import {
-  updateQuestionAction,
-  deleteQuestionAction,
-  reorderQuestionAction,
-  addOptionAction,
-  updateOptionAction,
-  deleteOptionAction,
-  reorderOptionAction,
-} from "@/app/admin/(authed)/survey/actions";
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 
 interface OptionData {
   id: string;
@@ -26,234 +30,279 @@ interface QuestionData {
 }
 
 const TYPE_LABELS: Record<QuestionData["question_type"], string> = {
-  single: "単一選択",
-  multiple: "複数選択",
-  text: "自由記述",
+  single: "1つだけ選ぶ",
+  multiple: "複数選べる",
+  text: "自由に書く",
 };
 
-function OptionRow({ option, isFirst, isLast }: { option: OptionData; isFirst: boolean; isLast: boolean }) {
-  const [text, setText] = useState(option.option_text);
-  const [busy, setBusy] = useState(false);
+function GripIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
+      <circle cx="7" cy="4" r="1.3" />
+      <circle cx="7" cy="10" r="1.3" />
+      <circle cx="7" cy="16" r="1.3" />
+      <circle cx="13" cy="4" r="1.3" />
+      <circle cx="13" cy="10" r="1.3" />
+      <circle cx="13" cy="16" r="1.3" />
+    </svg>
+  );
+}
 
-  async function handleBlur() {
-    if (text.trim() === option.option_text || !text.trim()) return;
-    setBusy(true);
-    const formData = new FormData();
-    formData.set("option_text", text.trim());
-    await updateOptionAction(option.id, formData);
-    setBusy(false);
-  }
+// Looks like the plain pill customers see on /review — border/background
+// only appear on hover or focus, so at rest it reads as a preview of the
+// real question, not a form field.
+function OptionRow({
+  option,
+  onChange,
+  onDelete,
+}: {
+  option: OptionData;
+  onChange: (text: string) => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: option.id,
+  });
 
   return (
-    <div className="flex items-center gap-2">
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={[
+        "flex items-center gap-1 rounded-lg",
+        isDragging ? "z-10 bg-white shadow-md" : "",
+      ].join(" ")}
+    >
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        aria-label="選択肢をドラッグして並び替え"
+        className="flex shrink-0 touch-none cursor-grab items-center justify-center rounded p-2 text-stone-300 hover:text-stone-500 active:cursor-grabbing"
+      >
+        <GripIcon />
+      </button>
       <input
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={handleBlur}
-        disabled={busy}
-        className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-slate-500 focus:outline-none"
+        value={option.option_text}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="選択肢を入力"
+        className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-3 py-2.5 text-sm text-stone-800 transition hover:border-greige hover:bg-white focus:border-sage focus:bg-white focus:outline-none"
       />
       <button
         type="button"
-        disabled={isFirst || busy}
-        onClick={() => reorderOptionAction(option.id, "up")}
-        className="rounded p-1.5 text-slate-400 hover:text-slate-700 disabled:opacity-30"
-        aria-label="上へ"
+        onClick={onDelete}
+        className="ml-1 shrink-0 rounded p-2 text-stone-300 hover:text-red-500"
+        aria-label="この選択肢を削除"
       >
-        ↑
-      </button>
-      <button
-        type="button"
-        disabled={isLast || busy}
-        onClick={() => reorderOptionAction(option.id, "down")}
-        className="rounded p-1.5 text-slate-400 hover:text-slate-700 disabled:opacity-30"
-        aria-label="下へ"
-      >
-        ↓
-      </button>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => deleteOptionAction(option.id)}
-        className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
-      >
-        削除
+        ✕
       </button>
     </div>
   );
 }
 
+function TypePicker({
+  value,
+  onChange,
+}: {
+  value: QuestionData["question_type"];
+  onChange: (next: QuestionData["question_type"]) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="回答方法">
+      {(Object.keys(TYPE_LABELS) as QuestionData["question_type"][]).map((type) => {
+        const active = value === type;
+        return (
+          <button
+            key={type}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(type)}
+            className={[
+              "rounded-full px-3 py-1.5 text-xs font-medium transition",
+              active
+                ? "bg-sage/15 text-sage-dark"
+                : "bg-beige/70 text-stone-500 hover:bg-beige",
+            ].join(" ")}
+          >
+            {TYPE_LABELS[type]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Fully controlled: every interaction reports up to QuestionEditor, which
+// holds the entire survey's draft state and auto-saves it in the
+// background. Nothing here makes a network call directly. This card is
+// itself a sortable item (question-level drag) and also hosts its own
+// nested drag context for its options.
 export default function QuestionCardEditor({
   question,
-  isFirst,
-  isLast,
+  onChange,
+  onDelete,
+  onAddOption,
+  onUpdateOption,
+  onDeleteOption,
+  onReorderOptions,
 }: {
   question: QuestionData;
-  isFirst: boolean;
-  isLast: boolean;
+  onChange: (patch: Partial<QuestionData>) => void;
+  onDelete: () => void;
+  onAddOption: () => void;
+  onUpdateOption: (optionId: string, text: string) => void;
+  onDeleteOption: (optionId: string) => void;
+  onReorderOptions: (activeId: string, overId: string) => void;
 }) {
-  const [questionText, setQuestionText] = useState(question.question_text);
-  const [questionType, setQuestionType] = useState(question.question_type);
-  const [required, setRequired] = useState(question.required);
-  const [maxSelections, setMaxSelections] = useState(question.max_selections ?? 3);
-  const [newOptionText, setNewOptionText] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [savedMessage, setSavedMessage] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
-  async function handleSaveQuestion() {
-    setSaving(true);
-    setError(null);
-    setSavedMessage(false);
-    const formData = new FormData();
-    formData.set("question_text", questionText);
-    formData.set("question_type", questionType);
-    if (required) formData.set("required", "on");
-    formData.set("max_selections", questionType === "multiple" ? String(maxSelections) : "");
-    const result = await updateQuestionAction(question.id, formData);
-    setSaving(false);
-    if (result.error) {
-      setError(result.error);
-      return;
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: question.id });
+
+  const optionSensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function handleOptionDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      onReorderOptions(String(active.id), String(over.id));
     }
-    setSavedMessage(true);
-  }
-
-  async function handleAddOption() {
-    if (!newOptionText.trim()) return;
-    const formData = new FormData();
-    formData.set("option_text", newOptionText.trim());
-    const result = await addOptionAction(question.id, formData);
-    if (!result.error) setNewOptionText("");
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5">
-      <div className="mb-4 flex items-start justify-between gap-2">
-        <div className="flex flex-1 flex-col gap-1">
-          <label className="text-xs font-medium text-slate-500">質問文</label>
-          <input
-            value={questionText}
-            onChange={(e) => setQuestionText(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-slate-500 focus:outline-none"
-          />
-        </div>
-        <div className="flex shrink-0 flex-col gap-1 pt-5">
-          <button
-            type="button"
-            disabled={isFirst}
-            onClick={() => reorderQuestionAction(question.id, "up")}
-            className="rounded p-1.5 text-slate-400 hover:text-slate-700 disabled:opacity-30"
-            aria-label="質問を上へ"
-          >
-            ↑
-          </button>
-          <button
-            type="button"
-            disabled={isLast}
-            onClick={() => reorderQuestionAction(question.id, "down")}
-            className="rounded p-1.5 text-slate-400 hover:text-slate-700 disabled:opacity-30"
-            aria-label="質問を下へ"
-          >
-            ↓
-          </button>
-        </div>
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={[
+        "rounded-2xl bg-white p-5 shadow-sm transition-shadow",
+        isDragging ? "z-10 shadow-lg" : "",
+      ].join(" ")}
+    >
+      <div className="mb-1 flex items-start gap-1">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          aria-label="質問をドラッグして並び替え"
+          className="mt-1.5 flex shrink-0 touch-none cursor-grab items-center justify-center rounded p-2 text-stone-300 hover:text-stone-500 active:cursor-grabbing"
+        >
+          <GripIcon />
+        </button>
+        <input
+          value={question.question_text}
+          onChange={(e) => onChange({ question_text: e.target.value })}
+          placeholder="質問を入力"
+          className="min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-base font-medium text-stone-800 transition hover:border-greige hover:bg-ivory focus:border-sage focus:bg-white focus:outline-none"
+        />
+        <button
+          type="button"
+          onClick={() => onChange({ required: !question.required })}
+          className={[
+            "mt-2 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium transition",
+            question.required ? "bg-sage/15 text-sage-dark" : "bg-beige text-stone-500",
+          ].join(" ")}
+        >
+          {question.required ? "必須" : "任意"}
+        </button>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-end gap-4">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-slate-500">種類</label>
-          <select
-            value={questionType}
-            onChange={(e) => setQuestionType(e.target.value as QuestionData["question_type"])}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-slate-500 focus:outline-none"
+      <div className="mb-3 flex flex-wrap items-center gap-2 pl-9">
+        <TypePicker
+          value={question.question_type}
+          onChange={(type) => onChange({ question_type: type })}
+        />
+        {question.question_type === "multiple" && (
+          <button
+            type="button"
+            onClick={() => setDetailsOpen((v) => !v)}
+            className="text-xs text-stone-400 underline decoration-stone-300 underline-offset-4 hover:text-stone-600"
           >
-            {(Object.keys(TYPE_LABELS) as QuestionData["question_type"][]).map((type) => (
-              <option key={type} value={type}>
-                {TYPE_LABELS[type]}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <label className="flex items-center gap-2 pb-2 text-sm text-slate-700">
-          <input
-            type="checkbox"
-            checked={required}
-            onChange={(e) => setRequired(e.target.checked)}
-            className="h-4 w-4"
-          />
-          必須にする
-        </label>
-
-        {questionType === "multiple" && (
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-slate-500">最大選択数</label>
-            <input
-              type="number"
-              min={1}
-              max={10}
-              value={maxSelections}
-              onChange={(e) => setMaxSelections(Number(e.target.value))}
-              className="w-20 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-slate-500 focus:outline-none"
-            />
-          </div>
+            詳細設定{detailsOpen ? "を閉じる" : ""}
+          </button>
         )}
       </div>
 
-      {questionType !== "text" && (
-        <div className="mb-4 flex flex-col gap-2">
-          <label className="text-xs font-medium text-slate-500">選択肢</label>
-          {question.options.map((option, i) => (
-            <OptionRow
-              key={option.id}
-              option={option}
-              isFirst={i === 0}
-              isLast={i === question.options.length - 1}
-            />
-          ))}
-          <div className="flex items-center gap-2">
-            <input
-              value={newOptionText}
-              onChange={(e) => setNewOptionText(e.target.value)}
-              placeholder="新しい選択肢"
-              className="flex-1 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-slate-500 focus:outline-none"
-            />
+      {question.question_type === "multiple" && detailsOpen && (
+        <div className="mb-3 ml-9 flex items-center gap-2 rounded-lg bg-ivory px-3 py-2">
+          <span className="text-xs text-stone-500">お客様が選べる最大数</span>
+          <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
-              onClick={handleAddOption}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-600 hover:bg-slate-50"
+              onClick={() =>
+                onChange({ max_selections: Math.max(1, (question.max_selections ?? 3) - 1) })
+              }
+              className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-stone-500 shadow-sm hover:text-stone-800"
+              aria-label="最大数を減らす"
             >
-              ＋ 選択肢を追加
+              −
+            </button>
+            <span className="w-4 text-center text-sm font-medium text-stone-800">
+              {question.max_selections ?? 3}
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                onChange({ max_selections: Math.min(10, (question.max_selections ?? 3) + 1) })
+              }
+              className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-stone-500 shadow-sm hover:text-stone-800"
+              aria-label="最大数を増やす"
+            >
+              ＋
             </button>
           </div>
         </div>
       )}
 
-      {error && (
-        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-600">
-          {error}
+      {question.question_type !== "text" ? (
+        <div className="mb-2 flex flex-col gap-0.5 pl-9">
+          <DndContext
+            sensors={optionSensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleOptionDragEnd}
+          >
+            <SortableContext
+              items={question.options.map((o) => o.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              {question.options.map((option) => (
+                <OptionRow
+                  key={option.id}
+                  option={option}
+                  onChange={(text) => onUpdateOption(option.id, text)}
+                  onDelete={() => onDeleteOption(option.id)}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
+          <button
+            type="button"
+            onClick={onAddOption}
+            className="mt-1 self-start rounded-lg border border-dashed border-greige px-3 py-2 text-xs text-stone-500 transition hover:border-sage hover:text-sage-dark"
+          >
+            ＋ 選択肢を追加
+          </button>
         </div>
-      )}
-      {savedMessage && (
-        <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-700">
-          保存しました。
+      ) : (
+        <div className="mb-2 ml-9 rounded-lg border border-dashed border-greige bg-ivory/60 px-3 py-3 text-xs text-stone-400">
+          お客様が自由に文章を書ける欄がここに表示されます
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-end pl-9">
         <button
           type="button"
-          disabled={saving}
-          onClick={handleSaveQuestion}
-          className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-900 disabled:opacity-50"
-        >
-          {saving ? "保存しています..." : "質問を保存"}
-        </button>
-        <button
-          type="button"
-          onClick={() => deleteQuestionAction(question.id)}
-          className="text-xs text-red-500 hover:underline"
+          onClick={onDelete}
+          className="text-xs text-stone-400 hover:text-red-500 hover:underline"
         >
           この質問を削除
         </button>

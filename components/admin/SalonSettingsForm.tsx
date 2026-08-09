@@ -12,6 +12,8 @@ export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
+  const slugInvalid = slug.length > 0 && !/^[a-z0-9-]*$/.test(slug);
+  const slugChanged = slug !== salon.slug;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -37,7 +39,7 @@ export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
       <div>
-        <label htmlFor="name" className="mb-1 block text-sm font-medium text-slate-700">
+        <label htmlFor="name" className="mb-1 block text-sm font-medium text-stone-700">
           店舗名
         </label>
         <input
@@ -45,15 +47,15 @@ export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
-          className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 focus:border-slate-500 focus:outline-none"
+          className="w-full rounded-lg border border-greige px-3 py-2.5 text-sm text-stone-800 focus:border-sage focus:outline-none"
         />
       </div>
 
       <div>
-        <label htmlFor="slug" className="mb-1 block text-sm font-medium text-slate-700">
+        <label htmlFor="slug" className="mb-1 block text-sm font-medium text-stone-700">
           ページURL
         </label>
-        <p className="mb-1 text-xs text-slate-500">
+        <p className="mb-1 text-xs text-stone-500">
           お客様用URLの一部になります。半角英数字とハイフンのみ使用できます。
         </p>
         <input
@@ -61,26 +63,39 @@ export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
           value={slug}
           onChange={(e) => setSlug(e.target.value)}
           required
-          className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 focus:border-slate-500 focus:outline-none"
+          className="w-full rounded-lg border border-greige px-3 py-2.5 text-sm text-stone-800 focus:border-sage focus:outline-none"
         />
+        {slugInvalid && (
+          <p className="mt-1 text-xs text-red-600">
+            半角英数字とハイフンのみ使用できます。
+          </p>
+        )}
+        {!slugInvalid && slugChanged && (
+          <p className="mt-1 text-xs text-earth">
+            変更すると、これまでお客様に送ったURLが使えなくなります。既にURLをお送りしている場合はご注意ください。
+          </p>
+        )}
       </div>
 
       <div>
-        <label htmlFor="google_review_url" className="mb-1 block text-sm font-medium text-slate-700">
+        <label htmlFor="google_review_url" className="mb-1 block text-sm font-medium text-stone-700">
           Google口コミ投稿URL
         </label>
+        <p className="mb-1 text-xs text-stone-500">
+          Googleビジネスプロフィール（Googleマップの管理画面）の「クチコミを増やす」機能から取得できるリンクを貼り付けてください。
+        </p>
         <input
           id="google_review_url"
           type="url"
           value={googleReviewUrl}
           onChange={(e) => setGoogleReviewUrl(e.target.value)}
           placeholder="https://..."
-          className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 focus:border-slate-500 focus:outline-none"
+          className="w-full rounded-lg border border-greige px-3 py-2.5 text-sm text-stone-800 focus:border-sage focus:outline-none"
         />
       </div>
 
       <div>
-        <label htmlFor="description" className="mb-1 block text-sm font-medium text-slate-700">
+        <label htmlFor="description" className="mb-1 block text-sm font-medium text-stone-700">
           店舗説明（任意）
         </label>
         <textarea
@@ -88,7 +103,7 @@ export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={3}
-          className="w-full resize-none rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 focus:border-slate-500 focus:outline-none"
+          className="w-full resize-none rounded-lg border border-greige px-3 py-2.5 text-sm text-stone-800 focus:border-sage focus:outline-none"
         />
       </div>
 
@@ -98,7 +113,7 @@ export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
         </div>
       )}
       {success && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+        <div className="rounded-lg bg-sage/10 p-3 text-sm text-sage-dark">
           保存しました。
         </div>
       )}
@@ -106,7 +121,7 @@ export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
       <button
         type="submit"
         disabled={saving}
-        className="w-full rounded-lg bg-slate-800 py-2.5 text-sm font-medium text-white transition hover:bg-slate-900 disabled:opacity-50 sm:w-auto sm:px-6"
+        className="w-full rounded-lg bg-sage py-2.5 text-sm font-medium text-white transition hover:bg-sage-dark disabled:opacity-50 sm:w-auto sm:px-6"
       >
         {saving ? "保存しています..." : "保存する"}
       </button>

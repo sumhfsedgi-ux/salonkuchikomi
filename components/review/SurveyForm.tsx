@@ -44,10 +44,12 @@ export default function SurveyForm({
 
   return (
     <div className="flex flex-col gap-4 pb-8">
-      {questions.map((question) => (
+      {questions.map((question, index) => (
         <QuestionCard
           key={question.id}
           question={question}
+          index={index}
+          total={questions.length}
           value={answers[question.id]}
           onChange={(value) => handleChange(question.id, value)}
           errorMessage={validationErrors[question.id]}

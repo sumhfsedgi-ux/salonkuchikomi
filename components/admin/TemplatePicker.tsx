@@ -37,21 +37,25 @@ export default function TemplatePicker({ templates, onSelect, error }: Props) {
           return (
             <div
               key={card.id}
-              className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-5"
+              className="flex flex-col justify-between rounded-2xl bg-white p-5 shadow-sm"
             >
               <div>
-                <p className="font-medium text-slate-800">{card.name}</p>
+                <p className="font-medium text-stone-800">{card.name}</p>
                 {card.description && (
-                  <p className="mt-1 text-sm text-slate-500">{card.description}</p>
+                  <p className="mt-1 text-sm text-stone-500">{card.description}</p>
                 )}
               </div>
               <button
                 type="button"
                 disabled={selectingId !== null}
                 onClick={() => handleSelect(isScratch ? null : card.id)}
-                className="mt-4 w-full rounded-lg bg-slate-800 py-2 text-sm font-medium text-white transition hover:bg-slate-900 disabled:opacity-50"
+                className="mt-4 w-full rounded-lg bg-sage py-2 text-sm font-medium text-white transition hover:bg-sage-dark disabled:opacity-50"
               >
-                {isSelecting ? "作成しています..." : "このテンプレートを使う"}
+                {isSelecting
+                  ? "作成しています..."
+                  : isScratch
+                    ? "空の状態から始める"
+                    : "このテンプレートを使う"}
               </button>
             </div>
           );

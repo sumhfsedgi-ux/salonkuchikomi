@@ -1,10 +1,12 @@
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentSalon, getTemplates } from "@/lib/supabase/queries";
+import { getCurrentSalon, getTemplates, getSurveyQuestionsWithOptions } from "@/lib/supabase/queries";
 import OnboardingWizard from "@/components/admin/OnboardingWizard";
 import SalonDashboard from "@/components/admin/SalonDashboard";
 
-export default async function AdminHomePage() {
+export default async function AdminHomePage({
+  searchParams,
+}: PageProps<"/admin">) {
   const supabase = await createClient();
   const salon = await getCurrentSalon(supabase);
   const headersList = await headers();
@@ -17,7 +19,6 @@ export default async function AdminHomePage() {
         templates={templates}
         initialSalon={null}
         initialStep={1}
-        host={host}
       />
     );
   }
@@ -36,10 +37,31 @@ export default async function AdminHomePage() {
         templates={templates}
         initialSalon={salon}
         initialStep={2}
-        host={host}
       />
     );
   }
 
-  return <SalonDashboard salon={salon} customerUrl={`${host}/review/${salon.slug}`} />;
+  if (!salon.onboardingCompleted) {
+    const surveyQuestions = await getSurveyQuestionsWithOptions(supabase, survey.id);
+    return (
+      <OnboardingWizard
+        templates={[]}
+        initialSalon={salon}
+        initialStep={3}
+        surveyId={survey.id}
+        surveyQuestions={surveyQuestions}
+      />
+    );
+  }
+
+  const params = await searchParams;
+  const justOnboarded = params?.onboarded === "1";
+
+  return (
+    <SalonDashboard
+      salon={salon}
+      customerUrl={`${host}/review/${salon.slug}`}
+      justOnboarded={justOnboarded}
+    />
+  );
 }

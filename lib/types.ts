@@ -40,6 +40,7 @@ export interface PublicSalon {
 // The full salon row, only ever readable/writable by its owner via RLS.
 export interface OwnerSalon extends PublicSalon {
   ownerId: string;
+  onboardingCompleted: boolean;
   createdAt: string;
   updatedAt: string;
 }

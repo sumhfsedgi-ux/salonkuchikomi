@@ -9,6 +9,7 @@ import ReviewLoading from "@/components/review/ReviewLoading";
 import GeneratedReview from "@/components/review/GeneratedReview";
 import GoogleReviewGuide from "@/components/review/GoogleReviewGuide";
 import Toast from "@/components/Toast";
+import { copyToClipboard } from "@/lib/copyToClipboard";
 
 type Step = 1 | 2 | 3;
 
@@ -67,7 +68,11 @@ export default function ReviewFlow({ salon, questions }: Props) {
   }
 
   async function handleCopy() {
-    await navigator.clipboard.writeText(generatedReview);
+    const ok = await copyToClipboard(generatedReview);
+    if (!ok) {
+      setToastMessage("コピーできませんでした");
+      return;
+    }
     setToastMessage("コピーしました");
     setCurrentStep(3);
   }

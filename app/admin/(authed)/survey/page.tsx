@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentSalon } from "@/lib/supabase/queries";
+import { getCurrentSalon, getTemplates, getSurveyQuestionsWithOptions } from "@/lib/supabase/queries";
 import QuestionEditor from "@/components/admin/QuestionEditor";
+import RestartSurveyFromTemplate from "@/components/admin/RestartSurveyFromTemplate";
 
 export default async function AdminSurveyPage() {
   const supabase = await createClient();
@@ -16,44 +17,19 @@ export default async function AdminSurveyPage() {
     .maybeSingle();
   if (!survey) redirect("/admin");
 
-  const { data: questionRows } = await supabase
-    .from("questions")
-    .select("id, question_text, question_type, required, max_selections, sort_order")
-    .eq("survey_id", survey.id)
-    .order("sort_order");
-  const questions = questionRows ?? [];
-
-  const questionIds = questions.map((q) => q.id);
-  const { data: optionRows } =
-    questionIds.length > 0
-      ? await supabase
-          .from("question_options")
-          .select("id, question_id, option_text, sort_order")
-          .in("question_id", questionIds)
-          .order("sort_order")
-      : { data: [] };
-  const options = optionRows ?? [];
-
-  const questionsWithOptions = questions.map((q) => ({
-    id: q.id,
-    question_text: q.question_text,
-    question_type: q.question_type as "single" | "multiple" | "text",
-    required: q.required,
-    max_selections: q.max_selections,
-    options: options
-      .filter((o) => o.question_id === q.id)
-      .map((o) => ({ id: o.id, option_text: o.option_text })),
-  }));
+  const questionsWithOptions = await getSurveyQuestionsWithOptions(supabase, survey.id);
+  const templates = await getTemplates(supabase);
 
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold text-slate-800">口コミアンケート設定</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          お客様に聞く質問と選択肢を編集できます。変更はすぐにお客様用ページへ反映されます。
+        <h1 className="text-xl font-semibold text-stone-800">お客様への質問</h1>
+        <p className="mt-1 text-sm text-stone-500">
+          文字をタップして書き換えられます。変更はそのまま保存されます。
         </p>
       </div>
-      <QuestionEditor questions={questionsWithOptions} />
+      <QuestionEditor key={survey.id} questions={questionsWithOptions} />
+      <RestartSurveyFromTemplate templates={templates} />
     </div>
   );
 }
