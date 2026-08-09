@@ -6,9 +6,8 @@ export default function Hero({ salonName }: { salonName: string }) {
         かんたん30秒
       </h1>
       <p className="mt-3 text-sm leading-relaxed text-stone-500">
-        <span className="block">アンケートに答えるだけで</span>
         <span className="block text-balance">
-          AIがあなたの感想を自然な口コミ文章にまとめます
+          アンケート内容をもとに、口コミ文章の作成をお手伝いします！
         </span>
       </p>
     </div>
