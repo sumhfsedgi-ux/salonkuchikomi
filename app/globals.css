@@ -1,26 +1,31 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+@theme {
+  --color-ivory: #faf7f2;
+  --color-beige: #f0e9de;
+  --color-greige: #d9d0c3;
+  --color-sage: #8a9a7e;
+  --color-sage-dark: #6e7d64;
+  --color-earth: #a98b6e;
   --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-ivory);
+  color: #3f3a34;
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-xl shadow-sm p-4;
+  }
+  .btn-primary {
+    @apply w-full bg-sage text-white rounded-lg py-3 font-medium transition hover:bg-sage-dark disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-secondary {
+    @apply w-full bg-beige text-stone-700 border border-greige rounded-lg py-3 font-medium transition hover:bg-greige disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-text {
+    @apply text-sage-dark underline text-sm disabled:opacity-50 disabled:pointer-events-none;
+  }
 }
