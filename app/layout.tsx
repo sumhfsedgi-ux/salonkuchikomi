@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
-import { salonConfig } from "@/config/salon";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -9,14 +8,14 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: `${salonConfig.name} | 口コミ作成`,
+  title: "salonpack | 口コミ作成支援",
   description: "アンケートの回答をもとに、Google口コミの下書きを作成します。",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="ja" className={`${geistSans.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col bg-ivory">{children}</body>
+      <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );
 }

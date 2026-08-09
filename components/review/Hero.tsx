@@ -1,9 +1,7 @@
-import { salonConfig } from "@/config/salon";
-
-export default function Hero() {
+export default function Hero({ salonName }: { salonName: string }) {
   return (
     <div className="pt-8 pb-6 text-center">
-      <p className="text-sm tracking-wide text-earth">{salonConfig.name}</p>
+      <p className="text-sm tracking-wide text-earth">{salonName}</p>
       <h1 className="mt-3 text-2xl font-semibold text-stone-800">
         かんたん30秒
       </h1>

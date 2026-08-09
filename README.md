@@ -1,18 +1,32 @@
 # salonpack
 
-ハーブピーリングサロンのお客様向けに、Google口コミの下書きをAIが作成するサポートツールです。
+複数のサロンが、それぞれ専用のアンケート・専用URLでGoogle口コミの下書き作成をお客様に提供できるサービスです。
 
-お客様がアンケートに回答すると、その回答内容だけをもとにOpenAI APIが口コミ文章の下書きを生成します。生成された文章はお客様本人が内容を確認・編集し、コピーしてからGoogleの口コミ投稿ページへ移動して、ご自身で投稿します。**Googleへの自動投稿は行いません。**
+お客様は`/review/{ページURL}`を開いてアンケートに回答するだけで、その回答内容だけをもとにOpenAI APIが口コミ文章の下書きを生成します。生成された文章はお客様本人が内容を確認・編集し、コピーしてからGoogleの口コミ投稿ページへ移動して、ご自身で投稿します。**Googleへの自動投稿は行いません。**
+
+サロンオーナーは`/admin`にログインし、店舗情報・アンケート内容・Google口コミURLを自分で管理できます。
+
+## ブランチについて
+
+- `master`: 単一店舗版の安定版（このREADMEの内容は対象外）
+- `feature/multi-salon-admin`: このREADMEが対象とする複数店舗対応版
 
 ## 使い方の流れ
 
-1. お客様がURLを開く
+**一般のお客様（ログイン不要）**
+1. サロンから送られた専用URL（`/review/{ページURL}`）を開く
 2. アンケートに回答する（STEP1）
 3. 「AIで口コミを作成する」を押すと、サーバー経由でOpenAI APIが口コミ文章を生成する
 4. 生成された文章を確認・編集する（STEP2）
 5. 「口コミをコピーする」でクリップボードにコピーする
-6. 「Google口コミページを開く」でGoogleの口コミ投稿ページへ移動する（STEP3）
+6. 「Google口コミページを開く」でそのサロンのGoogle口コミ投稿ページへ移動する（STEP3）
 7. コピーした文章を貼り付けて、お客様自身が投稿する
+
+**サロンオーナー（ログイン必要）**
+1. `/admin/login` からログイン
+2. 初回は店舗情報登録→アンケートテンプレート選択→（必要なら質問編集）→Google口コミURL登録、の順に案内される
+3. 完成すると自店舗専用のお客様用URLが発行される
+4. 以後は `/admin` から店舗設定・アンケート内容をいつでも編集できる
 
 ## セットアップ
 
@@ -21,92 +35,122 @@ npm install
 cp .env.example .env.local
 ```
 
-`.env.local` に実際の値を設定してください（後述）。
+`.env.local` に実際の値を設定してください（詳細は下記「環境変数」を参照）。
 
 ```bash
 npm run dev
 ```
 
-[http://localhost:3000](http://localhost:3000) で確認できます。
+[http://localhost:3000](http://localhost:3000) で確認できます（未ログインなら自動的に `/admin/login` へ移動します）。
 
 ## 環境変数
 
 | 変数名 | 説明 |
 | --- | --- |
 | `OPENAI_API_KEY` | OpenAIのAPIキー。サーバーサイド（`app/api/generate-review/route.ts`）でのみ使用され、ブラウザには一切露出しません。 |
-| `OPENAI_MODEL` | 口コミ生成に使用するモデル名（例: `gpt-4o-mini` など）。コストや文章品質に応じて調整してください。 |
-| `NEXT_PUBLIC_GOOGLE_REVIEW_URL` | 対象店舗のGoogle口コミ投稿ページのURL。STEP3の「Google口コミページを開く」ボタンの遷移先として、クライアント側で使用するため `NEXT_PUBLIC_` が必要です。 |
+| `OPENAI_MODEL` | 口コミ生成に使用するモデル名（例: `gpt-4o-mini` など）。 |
+| `NEXT_PUBLIC_SUPABASE_URL` | SupabaseプロジェクトのURL（Project Settings → API から取得）。クライアントからも参照するため公開情報として扱われます。 |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabaseのanon（公開）キー。RLSで保護されている前提の、クライアントに露出して問題ないキーです。 |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabaseのservice_role（秘密）キー。**このアプリのコードからは一切使用していません**（すべての操作はオーナー自身の認証セッション＋RLSで行う設計のため）。将来、手動運用のスクリプト等で必要になった場合に備えて予約している変数です。**絶対にクライアントに露出させないでください。** |
 
-`.env.local` はGit管理対象外です。本番・プレビュー環境ではVercelのプロジェクト設定で同じ3つの環境変数を設定してください。
+`.env.local` はGit管理対象外です。Vercelのプレビュー環境（`feature/multi-salon-admin`ブランチ）・本番環境それぞれのプロジェクト設定で、同じ環境変数を設定してください。
+
+## Supabaseプロジェクトの作成方法
+
+1. [supabase.com](https://supabase.com) でアカウントを作成し、新規プロジェクトを作成する
+2. Project Settings → API から `Project URL`（`NEXT_PUBLIC_SUPABASE_URL`）と `anon public` キー（`NEXT_PUBLIC_SUPABASE_ANON_KEY`）を控える
+3. 同じ画面の `service_role` キーも控えておく（`SUPABASE_SERVICE_ROLE_KEY`、上記の通りアプリからは未使用）
+
+## マイグレーションの適用方法
+
+`supabase/migrations/` にテーブル定義・RLSポリシー・関数がSQLファイルとして入っています。[Supabase CLI](https://supabase.com/docs/guides/cli) を使う場合:
+
+```bash
+supabase link --project-ref <あなたのプロジェクトref>
+supabase db push
+```
+
+CLIを使わない場合は、Supabaseダッシュボードの SQL Editor で `supabase/migrations/` 内のファイルを`0001`から順番に実行してください。
+
+## Seedデータの適用方法
+
+`supabase/seed.sql` に、テンプレート一覧（ハーブピーリング／エステ・フェイシャル／整体・マッサージ／美容室／ネイルサロン／アイラッシュ・まつげ）の初期データが入っています。
+
+```bash
+supabase db reset   # ローカル開発環境の場合。migration+seedを両方適用します
+```
+
+または、Supabaseダッシュボードの SQL Editor に `supabase/seed.sql` の内容を貼り付けて実行してください（何度実行してもテンプレートデータが上書きされるだけで安全です）。
+
+## サロンオーナーアカウントの作成方法
+
+このアプリには公開のサインアップページはありません。オーナーアカウントは、サービス運営者がSupabaseダッシュボードから手動で発行します。
+
+1. Supabaseダッシュボード → Authentication → Users → **Add user** で、オーナーのメールアドレス・パスワードを設定してユーザーを作成
+2. 作成すると自動的に`profiles`テーブルに対応する行が作られます（DBトリガーによる自動処理）
+3. オーナーへログイン情報（メールアドレス・パスワード）を共有する
+4. オーナーが`/admin/login`からログインすると、初回は店舗情報登録のウィザードが表示されます
 
 ## OpenAI API設定について
 
-- OpenAI APIの呼び出しは必ずサーバーサイド（Route Handler）から行われ、APIキーがクライアントに渡ることはありません。
-- 口コミ生成時のシステムプロンプトは `app/api/generate-review/route.ts` 内の `SYSTEM_PROMPT` に定義されています。誇張表現や医療的な断定表現を避け、アンケート回答のみを根拠に文章を作成するよう指示しています。
-- `OPENAI_API_KEY` または `OPENAI_MODEL` が未設定の場合は、エラーにならずユーザーに分かりやすいメッセージ（「サーバー設定エラーが発生しました。」）を表示します。
+- OpenAI APIの呼び出しは必ずサーバーサイド（`app/api/generate-review/route.ts`）から行われ、APIキーがクライアントに渡ることはありません。
+- 口コミ生成時のシステムプロンプトは同ファイル内の`SYSTEM_PROMPT`に定義されています。業種を問わず全サロン共通で使用され、誇張表現やAIっぽい定型文を避け、アンケート回答のみを根拠に自然な文章を作成するよう指示しています。
+- `OPENAI_API_KEY`または`OPENAI_MODEL`が未設定の場合は、エラーにならずユーザーに分かりやすいメッセージを表示します。
+- お客様のアンケート回答（ユーザー入力）は常に`user`ロールのメッセージとして送信され、`system`ロールのプロンプト文字列に混ぜ込むことはありません。
 
-## Google口コミURLの設定方法
+## Vercel側で必要な設定
 
-`NEXT_PUBLIC_GOOGLE_REVIEW_URL` に、対象店舗のGoogle口コミ投稿ページのURLを設定してください。Googleビジネスプロフィールの管理画面から「クチコミ収集リンクを取得」で発行できるURLなどを利用できます。
+1. GitHubリポジトリをVercelにインポート（`feature/multi-salon-admin`ブランチをデプロイ対象にする場合はVercel側でPreview/Productionブランチの設定を調整してください）
+2. Environment Variablesに上記5つの変数（`OPENAI_API_KEY`/`OPENAI_MODEL`/`NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY`）を設定する
+3. Deployを実行する
 
-## 店舗名の変更方法
+## 既存店舗（ハーブピーリングサロン）をこのシステムへ移行する手順
 
-[`config/salon.ts`](config/salon.ts) の `salonConfig.name` を変更してください。ファーストビューに表示される店舗名がこの値になります。
+`master`ブランチで運用していた1店舗版から、このマルチテナント版へ切り替える際の手順です（`feature/multi-salon-admin`が`master`にマージされ本番昇格した後に実施してください）。
 
-```ts
-export const salonConfig: SalonConfig = {
-  name: "〇〇 Herb Peeling Salon",
-};
-```
+1. Supabaseダッシュボードでオーナーアカウントを手動発行（上記「サロンオーナーアカウントの作成方法」参照）
+2. `/admin/login`でログインし、オンボーディングウィザードで店舗名を登録
+3. テンプレート選択で「ハーブピーリング」を選ぶ（生成される質問は現行の最新版と一致する内容です）
+4. 質問編集は不要ならそのままスキップ
+5. これまで`NEXT_PUBLIC_GOOGLE_REVIEW_URL`に設定していたURLをGoogle口コミURLとして登録
+6. 発行された`/review/{ページURL}`で一通り動作確認する
+7. Vercelの環境変数から`NEXT_PUBLIC_GOOGLE_REVIEW_URL`を削除する（もう使用されません）
 
-## アンケート項目の変更方法
+なお、ルート（`/`）は今後すべてのサロン共通の管理画面入口になるため、旧来の裸のルートURLへアクセスしていたお客様向けの自動リダイレクトは用意していません。今後は`/review/{ページURL}`を新しいお客様用URLとして案内してください。
 
-[`config/survey.ts`](config/survey.ts) の `surveyQuestions` 配列を編集してください。各質問は以下の形式で定義します。
-
-- `id`: 回答を保持するキー名（`SurveyAnswers` のキーと一致させる必要があります）
-- `question`: 質問文
-- `required`: 必須かどうか
-- `type`: `"multi-select"`（複数選択）または `"textarea"`（自由記述）
-- `multi-select` の場合: `options`（選択肢一覧）、`maxSelections`（最大選択数）
-- `textarea` の場合: `placeholder`（任意）、`maxLength`（最大文字数）
-
-将来的にエステ・ネイル・マッサージ・美容室など他業態へ展開する場合は、この `surveyQuestions` 配列を業態に合わせて丸ごと差し替えるだけで、コンポーネント側のコードを変更せずに対応できます。ただし質問構成（`id`）を大きく変える場合は、`SurveyAnswers` 型とAPIルート内の文章組み立て処理も合わせて更新してください。
-
-## コンポーネント構成
+## ディレクトリ構成
 
 ```
 app/
-  page.tsx                     ステップ管理を行うメイン画面
-  api/generate-review/route.ts OpenAI APIを呼び出すサーバーサイドAPI
+  page.tsx                          ルート（ログイン状態に応じて/adminまたは/admin/loginへ）
+  review/[slug]/page.tsx            お客様用アンケート画面（サロンごとに動的生成）
+  api/generate-review/route.ts      OpenAI APIを呼び出すサーバーサイドAPI
+  admin/login/page.tsx              オーナーログイン画面
+  admin/(authed)/                   ログイン必須の管理画面（layout.tsx で認証ゲート）
+    page.tsx                        ダッシュボード／初回オンボーディング
+    settings/                       店舗設定
+    survey/                         アンケート設定（テンプレート選択・質問編集）
 components/
-  Hero.tsx                     ファーストビュー（店舗名・キャッチコピー）
-  ReviewStepper.tsx             STEP1〜3の進捗表示
-  SurveyForm.tsx                アンケート全体のフォーム
-  QuestionCard.tsx              質問1件分のカード
-  MultiSelectQuestion.tsx       複数選択形式の質問
-  TextareaQuestion.tsx          自由記述形式の質問
-  ReviewLoading.tsx             AI生成中のローディング表示
-  GeneratedReview.tsx           生成された口コミの確認・編集・コピー
-  GoogleReviewGuide.tsx         Google口コミページへの案内（STEP3）
-  Toast.tsx                     コピー成功などの通知
-config/
-  salon.ts                      店舗情報
-  survey.ts                     アンケート項目の定義
+  review/                           お客様向け画面のコンポーネント一式
+  admin/                            管理画面のコンポーネント一式
+  Toast.tsx                         共通トースト通知（review/admin両方で使用）
+lib/
+  types.ts                          共有の型定義（質問・回答・サロン情報）
+  constants.ts                      共有定数
+  supabase/                         Supabaseクライアント（ブラウザ／サーバー／proxy用）・共通クエリ
+supabase/
+  migrations/                       テーブル・RLS・関数のマイグレーション
+  seed.sql                          テンプレート初期データ
+proxy.ts                            認証セッションのリフレッシュ＋/admin配下の未ログインリダイレクト
 ```
 
-## Vercelへのデプロイ
+## セキュリティ設計の要点
 
-```bash
-git init   # 未実施の場合
-git add .
-git commit -m "Initial commit"
-```
+- OpenAI APIキー・Supabaseの`service_role`キーはいずれもクライアントへ一切露出しません。
+- 全テーブルでRow Level Securityを有効化しています。サロンオーナーは自分が所有する店舗のデータのみ閲覧・編集可能で、他店舗のデータには一切アクセスできません（詳細は`supabase/migrations/`のRLSポリシーを参照）。
+- 一般公開されるのは、店舗名・ページURL・Google口コミURL・店舗説明・有効なアンケート内容のみです。オーナーのユーザー情報や店舗の所有者情報（`owner_id`）は、専用のビュー（`salon_public`）を介してのみ公開され、非公開カラムが漏れることはありません。
+- 管理画面のすべての書き込み操作は、リクエストに含まれるIDを鵜呑みにせず、必ずログイン中のユーザー自身のセッションから「自分の店舗」を都度サーバー側で解決してから実行します。
 
-1. GitHubなどにリポジトリを作成し、push する
-2. [Vercel](https://vercel.com) で新規プロジェクトとしてインポートする
-3. プロジェクト設定の Environment Variables に `OPENAI_API_KEY` / `OPENAI_MODEL` / `NEXT_PUBLIC_GOOGLE_REVIEW_URL` を Production / Preview の両方に設定する
-4. Deploy を実行する
+## このバージョンでまだ実装していないもの
 
-## このMVPでできないこと（意図的に未実装）
-
-ログイン、会員登録、管理画面、決済、顧客管理、口コミ分析、Google Business Profile API連携、LINE/Instagram連携、データベース、複数店舗管理は、このMVPのスコープ外です。
+Stripe決済・月額プラン・口コミ件数の分析ダッシュボード・Google Business Profile API連携・LINE/Instagram連携・メール配信・AIによるアンケート自動作成・スタッフ権限管理・1アカウントでの複数店舗の高度な組織管理・店舗ごとの独自ドメイン設定・サロンオーナーの公開セルフサインアップは、いずれもこのバージョンのスコープ外です。

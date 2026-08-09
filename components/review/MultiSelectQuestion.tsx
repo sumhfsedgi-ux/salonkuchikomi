@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { MultiSelectQuestion as MultiSelectQuestionType } from "@/config/survey";
+import type { MultiSelectQuestion as MultiSelectQuestionType } from "@/lib/types";
 
 interface Props {
   question: MultiSelectQuestionType;

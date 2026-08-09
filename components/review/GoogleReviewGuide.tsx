@@ -5,9 +5,14 @@ const steps = [
   "内容を確認して投稿する",
 ];
 
-export default function GoogleReviewGuide() {
-  const googleReviewUrl = process.env.NEXT_PUBLIC_GOOGLE_REVIEW_URL ?? "";
-
+// Intentionally takes no props derived from survey answers — every visitor
+// sees this exact same screen regardless of how they answered, so the
+// Google review CTA can never be gated on sentiment.
+export default function GoogleReviewGuide({
+  googleReviewUrl,
+}: {
+  googleReviewUrl: string;
+}) {
   return (
     <div className="flex flex-col gap-4 pb-8">
       <div className="text-center">

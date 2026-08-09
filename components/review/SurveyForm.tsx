@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { surveyQuestions, type SurveyAnswers } from "@/config/survey";
-import QuestionCard from "@/components/QuestionCard";
+import type { SurveyQuestion, SurveyAnswers } from "@/lib/types";
+import QuestionCard from "@/components/review/QuestionCard";
 
 interface Props {
+  questions: SurveyQuestion[];
   answers: SurveyAnswers;
   onAnswersChange: (answers: SurveyAnswers) => void;
   onSubmit: (answers: SurveyAnswers) => void;
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export default function SurveyForm({
+  questions,
   answers,
   onAnswersChange,
   onSubmit,
@@ -22,14 +24,14 @@ export default function SurveyForm({
   >({});
 
   function handleChange(id: string, value: string[] | string) {
-    onAnswersChange({ ...answers, [id]: value } as SurveyAnswers);
+    onAnswersChange({ ...answers, [id]: value });
   }
 
   function handleSubmit() {
     const nextErrors: Record<string, string> = {};
-    for (const question of surveyQuestions) {
+    for (const question of questions) {
       if (!question.required) continue;
-      const value = answers[question.id as keyof SurveyAnswers];
+      const value = answers[question.id];
       const isEmpty = Array.isArray(value) ? value.length === 0 : !value;
       if (isEmpty) {
         nextErrors[question.id] = "この項目を選択してください";
@@ -42,11 +44,11 @@ export default function SurveyForm({
 
   return (
     <div className="flex flex-col gap-4 pb-8">
-      {surveyQuestions.map((question) => (
+      {questions.map((question) => (
         <QuestionCard
           key={question.id}
           question={question}
-          value={answers[question.id as keyof SurveyAnswers]}
+          value={answers[question.id]}
           onChange={(value) => handleChange(question.id, value)}
           errorMessage={validationErrors[question.id]}
         />

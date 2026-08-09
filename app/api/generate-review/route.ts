@@ -3,12 +3,16 @@ import { z } from "zod";
 
 export const runtime = "nodejs";
 
-const surveyAnswersSchema = z.object({
-  concerns: z.array(z.string()).min(1).max(3),
-  skinImpressions: z.array(z.string()).min(1).max(3),
-  treatmentImpressions: z.array(z.string()).min(1).max(3),
-  salonImpressions: z.array(z.string()).min(1).max(3),
-  freeText: z.string().max(300),
+const bodySchema = z.object({
+  salonId: z.string().uuid(),
+  answers: z
+    .array(
+      z.object({
+        question: z.string().max(200),
+        answer: z.union([z.string().max(100), z.array(z.string().max(100)).max(10)]),
+      }),
+    )
+    .max(20),
 });
 
 const SYSTEM_PROMPT = `あなたは口コミを代筆するライターではありません。
@@ -22,7 +26,7 @@ const SYSTEM_PROMPT = `あなたは口コミを代筆するライターではあ
 
 ・文章を綺麗に整えすぎない
 ・広告コピーのような文章にしない
-・サロン紹介文のようにしない
+・お店の紹介文のようにしない
 ・AI特有の丁寧すぎる文章を避ける
 ・回答内容を全部無理に入れない
 ・自然に重要な2〜4点程度を使用する
@@ -33,23 +37,23 @@ const SYSTEM_PROMPT = `あなたは口コミを代筆するライターではあ
 ・ユーザー本人の言葉を優先する
 ・自由記述がある場合は、その言い回しや温度感をできるだけ残す
 ・回答にない事実は絶対に追加しない
-・存在しない施術内容や接客内容を作らない
+・存在しない体験や接客内容を作らない
 ・医療的な効果を断定しない
 ・「治った」「完治」「必ず改善」などの断定表現を使用しない
 ・絵文字を使用しない
 ・星評価を文章内に入れない
-・Googleへの投稿を促す文章を生成しない
+・投稿を促す文章を生成しない
 
 【避けたいAIっぽい表現】
 以下の表現は必要な場合を除いて極力使用しない（禁止ではないが、毎回定型文のように使わない）。
-「とても満足しています」「安心して施術を受けることができました」「丁寧に対応していただきました」
-「清潔感のある店内でした」「また利用したいと思います」「おすすめしたいサロンです」
+「とても満足しています」「安心して施術・サービスを受けることができました」「丁寧に対応していただきました」
+「清潔感のある店内でした」「また利用したいと思います」「おすすめしたいお店です」
 「初めての方にもおすすめです」「終始リラックスして過ごすことができました」
 「親身になって相談に乗ってくださいました」「素敵な時間を過ごすことができました」
 
 【文章の雰囲気】
-一般のお客様が施術後にスマートフォンで書く口コミを想定する。プロのライターのように仕上げる必要はない。
-例：「毛穴と肌のざらつきが気になって行きました。ハーブピーリングは初めてでしたが、説明も分かりやすかったです。終わった後は肌がつるっとした感じがして嬉しかったです。」
+一般のお客様が利用後にスマートフォンで書く口コミを想定する。プロのライターのように仕上げる必要はない。
+例：「ずっと気になっていたことがあって伺いました。利用するのは初めてでしたが、説明も分かりやすかったです。終わった後は気分がすっきりして嬉しかったです。」
 この程度の自然さで十分。
 
 【文章量】
@@ -57,10 +61,10 @@ const SYSTEM_PROMPT = `あなたは口コミを代筆するライターではあ
 
 【口コミごとに変化をつける】
 毎回同じ構成にしない。以下のパターンをランダムに使い分ける。
-パターンA: 来店理由→施術の感想→接客
-パターンB: 施術の感想→来店理由→一言
+パターンA: 来店理由→施術・サービスの感想→接客
+パターンB: 施術・サービスの感想→来店理由→一言
 パターンC: 自由記述を中心にする
-パターンD: 施術＋スタッフだけを書く
+パターンD: 施術・サービス＋スタッフだけを書く
 パターンE: 2〜3文程度の短い口コミ
 必ずすべてのアンケート項目を文章に入れる必要はない。
 
@@ -68,17 +72,17 @@ const SYSTEM_PROMPT = `あなたは口コミを代筆するライターではあ
 「〜でした」「〜です」「〜感じました」「〜嬉しかったです」「〜よかったです」「〜気になっていました」などを自然に混ぜる。すべての文章を同じ敬語レベルに揃えすぎない。ただし砕けすぎた表現や若者言葉を勝手に追加しないこと。
 
 【NG例】
-「毛穴の開きが気になり来店しました。スタッフの方が親身になって相談に乗ってくださり、安心して施術を受けることができました。施術後は肌がなめらかになったように感じ、とても満足しています。またぜひ利用したいと思います。」
+「悩みが気になり来店しました。スタッフの方が親身になって相談に乗ってくださり、安心して施術を受けることができました。終わった後はとても満足しています。またぜひ利用したいと思います。」
 → 綺麗すぎる、定型文が多い、AI口コミっぽい。
 
 【OK例】
-「毛穴が気になって予約しました。ハーブピーリングは初めてでしたが、説明が分かりやすくてよかったです。終わった後は肌がつるっとした感じがしました。」
+「ずっと気になっていたので予約しました。利用するのは初めてでしたが、説明が分かりやすくてよかったです。終わった後はすっきりした感じがしました。」
 
 【別のOK例】
-「肌のざらつきが気になって行きました。スタッフさんも話しやすくて、いろいろ相談できました。施術後の肌の感じもよかったです。」
+「気になっていたことがあって行きました。スタッフさんも話しやすくて、いろいろ相談できました。終わった後の感じもよかったです。」
 
 【さらに短い例】
-「初めてのハーブピーリングでした。説明も丁寧で、終わった後は肌がなめらかになった感じがしました。また肌の様子を見てお願いしたいです。」
+「初めての利用でした。説明も丁寧で、終わった後は気分がすっきりしました。また様子を見てお願いしたいです。」
 
 【重要】
 アンケートの回答内容によっては、最後に「また行きたい」「おすすめです」などを付けなくて構わない。ユーザーが回答していないポジティブな感想を勝手に補完しないこと。
@@ -100,15 +104,15 @@ export async function POST(request: Request) {
     );
   }
 
-  const parsed = surveyAnswersSchema.safeParse(body);
+  const parsed = bodySchema.safeParse(body);
   if (!parsed.success) {
-    console.error("Invalid survey answers payload", parsed.error.flatten());
+    console.error("Invalid generate-review payload", parsed.error.flatten());
     return NextResponse.json(
       { error: "リクエストの形式が正しくありません。" },
       { status: 400 },
     );
   }
-  const answers = parsed.data;
+  const { salonId, answers } = parsed.data;
 
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL;
@@ -120,13 +124,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const userMessage = [
-    `お悩み: ${answers.concerns.join("、")}`,
-    `施術後の感想: ${answers.skinImpressions.join("、")}`,
-    `施術について: ${answers.treatmentImpressions.join("、")}`,
-    `スタッフ・サロンについて: ${answers.salonImpressions.join("、")}`,
-    answers.freeText ? `自由記述: ${answers.freeText}` : null,
-  ]
+  const userMessage = answers
+    .map(({ question, answer }) => {
+      const answerText = Array.isArray(answer) ? answer.join("、") : answer;
+      return answerText ? `${question}: ${answerText}` : null;
+    })
     .filter(Boolean)
     .join("\n");
 
@@ -151,20 +153,25 @@ export async function POST(request: Request) {
     );
 
     if (!openaiRes.ok) {
-      console.error("OpenAI API error", openaiRes.status, await openaiRes.text());
+      console.error(
+        "OpenAI API error",
+        salonId,
+        openaiRes.status,
+        await openaiRes.text(),
+      );
       return NextResponse.json({ error: GENERIC_ERROR }, { status: 502 });
     }
 
     const data = await openaiRes.json();
     const review = data?.choices?.[0]?.message?.content?.trim();
     if (!review) {
-      console.error("OpenAI response missing review content", data);
+      console.error("OpenAI response missing review content", salonId, data);
       return NextResponse.json({ error: GENERIC_ERROR }, { status: 502 });
     }
 
     return NextResponse.json({ review });
   } catch (err) {
-    console.error("Failed to call OpenAI API", err);
+    console.error("Failed to call OpenAI API", salonId, err);
     const status = err instanceof Error && err.name === "TimeoutError" ? 504 : 502;
     return NextResponse.json({ error: GENERIC_ERROR }, { status });
   }

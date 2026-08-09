@@ -1,6 +1,7 @@
-import type { SurveyQuestion } from "@/config/survey";
-import MultiSelectQuestion from "@/components/MultiSelectQuestion";
-import TextareaQuestion from "@/components/TextareaQuestion";
+import type { SurveyQuestion } from "@/lib/types";
+import SingleSelectQuestion from "@/components/review/SingleSelectQuestion";
+import MultiSelectQuestion from "@/components/review/MultiSelectQuestion";
+import TextareaQuestion from "@/components/review/TextareaQuestion";
 
 interface Props {
   question: SurveyQuestion;
@@ -32,13 +33,21 @@ export default function QuestionCard({
         )}
       </div>
 
-      {question.type === "multi-select" ? (
+      {question.type === "single" && (
+        <SingleSelectQuestion
+          question={question}
+          selected={value as string}
+          onChange={onChange}
+        />
+      )}
+      {question.type === "multiple" && (
         <MultiSelectQuestion
           question={question}
           selected={value as string[]}
           onChange={onChange}
         />
-      ) : (
+      )}
+      {question.type === "text" && (
         <TextareaQuestion
           question={question}
           value={value as string}
