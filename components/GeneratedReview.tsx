@@ -23,7 +23,7 @@ export default function GeneratedReview({
         <h2 className="text-lg font-semibold text-stone-800">
           口コミが完成しました
         </h2>
-        <p className="mt-2 text-sm text-stone-500">
+        <p className="mt-2 text-balance text-sm text-stone-500">
           内容を確認して、必要であれば自由に修正してください。
         </p>
       </div>

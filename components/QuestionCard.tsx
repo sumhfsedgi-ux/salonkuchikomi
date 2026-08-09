@@ -18,7 +18,7 @@ export default function QuestionCard({
   return (
     <div className="card">
       <div className="mb-3 flex items-start gap-2">
-        <p className="text-sm font-medium leading-relaxed text-stone-800">
+        <p className="text-balance text-sm font-medium leading-relaxed text-stone-800">
           {question.question}
         </p>
         {question.required ? (

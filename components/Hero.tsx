@@ -8,9 +8,10 @@ export default function Hero() {
         かんたん30秒
       </h1>
       <p className="mt-3 text-sm leading-relaxed text-stone-500">
-        アンケートに答えるだけで
-        <br />
-        AIがあなたの感想を自然な口コミ文章にまとめます
+        <span className="block">アンケートに答えるだけで</span>
+        <span className="block text-balance">
+          AIがあなたの感想を自然な口コミ文章にまとめます
+        </span>
       </p>
     </div>
   );

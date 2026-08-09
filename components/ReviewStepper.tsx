@@ -1,3 +1,5 @@
+import { Fragment } from "react";
+
 type Step = 1 | 2 | 3;
 
 const steps: { step: Step; label: string }[] = [
@@ -8,12 +10,12 @@ const steps: { step: Step; label: string }[] = [
 
 export default function ReviewStepper({ currentStep }: { currentStep: Step }) {
   return (
-    <div className="flex items-center justify-between gap-2 py-4">
+    <div className="flex items-center py-4">
       {steps.map(({ step, label }, index) => {
         const isCurrent = step === currentStep;
         const isDone = step < currentStep;
         return (
-          <div key={step} className="flex flex-1 items-center">
+          <Fragment key={step}>
             <div className="flex flex-1 flex-col items-center gap-1.5">
               <div
                 className={[
@@ -44,24 +46,23 @@ export default function ReviewStepper({ currentStep }: { currentStep: Step }) {
               </div>
               <span
                 className={[
-                  "text-[11px] leading-tight text-center",
+                  "text-center text-[11px] leading-tight",
                   isCurrent ? "font-medium text-stone-800" : "text-stone-400",
                 ].join(" ")}
               >
-                STEP{step}
-                <br />
-                {label}
+                <span className="block">STEP{step}</span>
+                <span className="block text-balance">{label}</span>
               </span>
             </div>
             {index < steps.length - 1 && (
               <div
                 className={[
-                  "mb-5 h-px flex-1",
+                  "mb-5 h-px w-3 shrink-0",
                   isDone ? "bg-sage/40" : "bg-greige",
                 ].join(" ")}
               />
             )}
-          </div>
+          </Fragment>
         );
       })}
     </div>

@@ -15,9 +15,10 @@ export default function GoogleReviewGuide() {
           口コミをコピーしました
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-stone-500">
-          最後にGoogleの口コミページで
-          <br />
-          コピーした文章を貼り付けて投稿してください。
+          <span className="block">最後にGoogleの口コミページで</span>
+          <span className="block text-balance">
+            コピーした文章を貼り付けて投稿してください。
+          </span>
         </p>
       </div>
 
