@@ -80,7 +80,7 @@ function OptionRow({
         {...attributes}
         {...listeners}
         aria-label="選択肢をドラッグして並び替え"
-        className="flex shrink-0 touch-none cursor-grab items-center justify-center rounded p-1.5 text-stone-300 hover:text-stone-500 active:cursor-grabbing"
+        className="mt-1.5 flex shrink-0 touch-none cursor-grab items-center justify-center rounded p-1.5 text-stone-300 hover:text-stone-500 active:cursor-grabbing"
       >
         <GripIcon />
       </button>
@@ -96,7 +96,7 @@ function OptionRow({
       <button
         type="button"
         onClick={onDelete}
-        className="shrink-0 rounded p-1.5 text-stone-300 hover:text-red-500"
+        className="mt-1.5 shrink-0 rounded p-1.5 text-stone-300 hover:text-red-500"
         aria-label="この選択肢を削除"
       >
         ✕
