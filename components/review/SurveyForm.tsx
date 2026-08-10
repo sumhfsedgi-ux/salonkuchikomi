@@ -8,6 +8,8 @@ interface Props {
   questions: SurveyQuestion[];
   answers: SurveyAnswers;
   onAnswersChange: (answers: SurveyAnswers) => void;
+  otherDetails: Record<string, string>;
+  onOtherDetailsChange: (details: Record<string, string>) => void;
   onSubmit: (answers: SurveyAnswers) => void;
   error: string | null;
 }
@@ -16,6 +18,8 @@ export default function SurveyForm({
   questions,
   answers,
   onAnswersChange,
+  otherDetails,
+  onOtherDetailsChange,
   onSubmit,
   error,
 }: Props) {
@@ -25,6 +29,10 @@ export default function SurveyForm({
 
   function handleChange(id: string, value: string[] | string) {
     onAnswersChange({ ...answers, [id]: value });
+  }
+
+  function handleOtherDetailChange(id: string, text: string) {
+    onOtherDetailsChange({ ...otherDetails, [id]: text });
   }
 
   function handleSubmit() {
@@ -52,6 +60,8 @@ export default function SurveyForm({
           total={questions.length}
           value={answers[question.id]}
           onChange={(value) => handleChange(question.id, value)}
+          otherDetail={otherDetails[question.id] ?? ""}
+          onOtherDetailChange={(text) => handleOtherDetailChange(question.id, text)}
           errorMessage={validationErrors[question.id]}
         />
       ))}

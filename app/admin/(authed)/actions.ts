@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentSalon } from "@/lib/supabase/queries";
+import { generateRandomSlug } from "@/lib/generateSlug";
 import type { OwnerSalon } from "@/lib/types";
 
 export async function logoutAction() {
@@ -15,13 +16,9 @@ export async function logoutAction() {
 
 const salonInfoSchema = z.object({
   name: z.string().trim().min(1, "店舗名を入力してください").max(100),
-  slug: z
-    .string()
-    .trim()
-    .min(1, "ページURLを入力してください")
-    .max(60)
-    .regex(/^[a-z0-9-]+$/, "ページURLは半角英数字とハイフンのみ使用できます"),
 });
+
+const CREATE_SALON_MAX_ATTEMPTS = 5;
 
 export async function createSalonAction(
   formData: FormData,
@@ -34,7 +31,6 @@ export async function createSalonAction(
 
   const parsed = salonInfoSchema.safeParse({
     name: formData.get("name"),
-    slug: formData.get("slug"),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "入力内容をご確認ください。" };
@@ -47,37 +43,41 @@ export async function createSalonAction(
     .maybeSingle();
   if (!profile) return { error: "アカウント情報の取得に失敗しました。" };
 
-  const { data: inserted, error } = await supabase
-    .from("salons")
-    .insert({ owner_id: profile.id, name: parsed.data.name, slug: parsed.data.slug })
-    .select(
-      "id, owner_id, name, slug, google_review_url, description, onboarding_completed, created_at, updated_at",
-    )
-    .single();
+  // The slug is a random string (salon names are Japanese and can't become
+  // a readable URL segment) -- a collision is astronomically unlikely, but
+  // retry with a fresh one on the rare unique-constraint hit rather than
+  // failing the whole signup.
+  for (let attempt = 0; attempt < CREATE_SALON_MAX_ATTEMPTS; attempt++) {
+    const { data: inserted, error } = await supabase
+      .from("salons")
+      .insert({ owner_id: profile.id, name: parsed.data.name, slug: generateRandomSlug() })
+      .select(
+        "id, owner_id, name, slug, google_review_url, description, onboarding_completed, created_at, updated_at",
+      )
+      .single();
 
-  if (error || !inserted) {
-    if (error?.code === "23505") {
-      return { error: "このページURLはすでに使用されています。別のURLをお試しください。" };
+    if (!error && inserted) {
+      revalidatePath("/admin");
+      return {
+        salon: {
+          id: inserted.id,
+          ownerId: inserted.owner_id,
+          name: inserted.name,
+          slug: inserted.slug,
+          googleReviewUrl: inserted.google_review_url,
+          description: inserted.description,
+          onboardingCompleted: inserted.onboarding_completed,
+          createdAt: inserted.created_at,
+          updatedAt: inserted.updated_at,
+        },
+      };
     }
-    console.error("createSalonAction failed", error);
-    return { error: "店舗情報の登録に失敗しました。もう一度お試しください。" };
+    if (error.code !== "23505") {
+      console.error("createSalonAction failed", error);
+      return { error: "店舗情報の登録に失敗しました。もう一度お試しください。" };
+    }
   }
-
-  revalidatePath("/admin");
-
-  return {
-    salon: {
-      id: inserted.id,
-      ownerId: inserted.owner_id,
-      name: inserted.name,
-      slug: inserted.slug,
-      googleReviewUrl: inserted.google_review_url,
-      description: inserted.description,
-      onboardingCompleted: inserted.onboarding_completed,
-      createdAt: inserted.created_at,
-      updatedAt: inserted.updated_at,
-    },
-  };
+  return { error: "店舗情報の登録に失敗しました。もう一度お試しください。" };
 }
 
 export async function startSurveyAction(

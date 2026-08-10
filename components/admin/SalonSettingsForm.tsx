@@ -6,14 +6,11 @@ import { updateSalonAction } from "@/app/admin/(authed)/settings/actions";
 
 export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
   const [name, setName] = useState(salon.name);
-  const [slug, setSlug] = useState(salon.slug);
   const [googleReviewUrl, setGoogleReviewUrl] = useState(salon.googleReviewUrl ?? "");
   const [description, setDescription] = useState(salon.description ?? "");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
-  const slugInvalid = slug.length > 0 && !/^[a-z0-9-]*$/.test(slug);
-  const slugChanged = slug !== salon.slug;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -23,7 +20,6 @@ export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
 
     const formData = new FormData();
     formData.set("name", name);
-    formData.set("slug", slug);
     formData.set("google_review_url", googleReviewUrl);
     formData.set("description", description);
 
@@ -49,32 +45,6 @@ export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
           required
           className="w-full rounded-lg border border-greige px-3 py-2.5 text-sm text-stone-800 focus:border-sage focus:outline-none"
         />
-      </div>
-
-      <div>
-        <label htmlFor="slug" className="mb-1 block text-sm font-medium text-stone-700">
-          ページURL
-        </label>
-        <p className="mb-1 text-xs text-stone-500">
-          お客様用URLの一部になります。半角英数字とハイフンのみ使用できます。
-        </p>
-        <input
-          id="slug"
-          value={slug}
-          onChange={(e) => setSlug(e.target.value)}
-          required
-          className="w-full rounded-lg border border-greige px-3 py-2.5 text-sm text-stone-800 focus:border-sage focus:outline-none"
-        />
-        {slugInvalid && (
-          <p className="mt-1 text-xs text-red-600">
-            半角英数字とハイフンのみ使用できます。
-          </p>
-        )}
-        {!slugInvalid && slugChanged && (
-          <p className="mt-1 text-xs text-earth">
-            変更すると、これまでお客様に送ったURLが使えなくなります。既にURLをお送りしている場合はご注意ください。
-          </p>
-        )}
       </div>
 
       <div>

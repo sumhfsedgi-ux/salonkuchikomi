@@ -9,6 +9,8 @@ interface Props {
   total: number;
   value: string[] | string;
   onChange: (value: string[] | string) => void;
+  otherDetail: string;
+  onOtherDetailChange: (text: string) => void;
   errorMessage?: string;
 }
 
@@ -18,6 +20,8 @@ export default function QuestionCard({
   total,
   value,
   onChange,
+  otherDetail,
+  onOtherDetailChange,
   errorMessage,
 }: Props) {
   return (
@@ -50,6 +54,8 @@ export default function QuestionCard({
           question={question}
           selected={value as string}
           onChange={onChange}
+          otherDetail={otherDetail}
+          onOtherDetailChange={onOtherDetailChange}
         />
       )}
       {question.type === "multiple" && (
@@ -57,6 +63,8 @@ export default function QuestionCard({
           question={question}
           selected={value as string[]}
           onChange={onChange}
+          otherDetail={otherDetail}
+          onOtherDetailChange={onOtherDetailChange}
         />
       )}
       {question.type === "text" && (

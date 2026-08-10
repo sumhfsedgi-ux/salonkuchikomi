@@ -89,7 +89,10 @@ export async function saveSurveyAction(
     question_text: q.question_text,
     question_type: q.question_type,
     required: q.required,
-    max_selections: q.question_type === "multiple" ? (q.max_selections ?? 3) : null,
+    // "multiple" is a fixed "choose 3" type in the UI now (no adjustable
+    // stepper) -- always normalize to 3 here rather than trusting whatever
+    // the client sent, so a stale/legacy value can never silently persist.
+    max_selections: q.question_type === "multiple" ? 3 : null,
     options: q.question_type === "text" ? [] : q.options,
   }));
 

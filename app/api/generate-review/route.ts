@@ -15,7 +15,19 @@ const bodySchema = z.object({
     .max(20),
 });
 
-const SYSTEM_PROMPT = `あなたは口コミを代筆するライターではありません。
+// Picked server-side (not left to the model) so structurally-identical
+// survey answers still produce differently-shaped reviews instead of
+// relying on the model to "randomly" vary on its own.
+const STRUCTURE_PATTERNS = [
+  "来店理由→施術・サービスの感想→接客の順で書く",
+  "施術・サービスの感想→来店理由→一言の順で書く",
+  "自由記述を中心にする",
+  "施術・サービス＋スタッフだけを書く",
+  "2〜3文程度の短い口コミにする",
+];
+
+function buildSystemPrompt(pattern: string): string {
+  return `あなたは口コミを代筆するライターではありません。
 
 ユーザー本人が回答したアンケートを、
 本人がGoogle口コミに書きやすい自然な文章へ軽く整理する編集アシスタントです。
@@ -60,12 +72,7 @@ const SYSTEM_PROMPT = `あなたは口コミを代筆するライターではあ
 基本は80〜160文字程度。情報量が少ない場合は無理に文字数を増やさない。短い自然な口コミでも問題ない。
 
 【口コミごとに変化をつける】
-毎回同じ構成にしない。以下のパターンをランダムに使い分ける。
-パターンA: 来店理由→施術・サービスの感想→接客
-パターンB: 施術・サービスの感想→来店理由→一言
-パターンC: 自由記述を中心にする
-パターンD: 施術・サービス＋スタッフだけを書く
-パターンE: 2〜3文程度の短い口コミ
+今回は次の構成で書いてください: ${pattern}
 必ずすべてのアンケート項目を文章に入れる必要はない。
 
 【語尾】
@@ -90,6 +97,7 @@ const SYSTEM_PROMPT = `あなたは口コミを代筆するライターではあ
 最終的に、「AIが考えた口コミ」ではなく「本人の回答を本人っぽく整理した口コミ」になることを最優先してください。
 
 文章だけを返してください。`;
+}
 
 const GENERIC_ERROR = "口コミの作成に失敗しました。もう一度お試しください。";
 
@@ -132,6 +140,10 @@ export async function POST(request: Request) {
     .filter(Boolean)
     .join("\n");
 
+  const pattern =
+    STRUCTURE_PATTERNS[Math.floor(Math.random() * STRUCTURE_PATTERNS.length)];
+  const systemPrompt = buildSystemPrompt(pattern);
+
   try {
     const openaiRes = await fetch(
       "https://api.openai.com/v1/chat/completions",
@@ -143,8 +155,9 @@ export async function POST(request: Request) {
         },
         body: JSON.stringify({
           model,
+          temperature: 1.15,
           messages: [
-            { role: "system", content: SYSTEM_PROMPT },
+            { role: "system", content: systemPrompt },
             { role: "user", content: userMessage },
           ],
         }),

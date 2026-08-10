@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { CSS } from "@dnd-kit/utilities";
 import { useSortable } from "@dnd-kit/sortable";
 import {
@@ -32,8 +31,8 @@ interface QuestionData {
 
 const TYPE_LABELS: Record<QuestionData["question_type"], string> = {
   single: "1つだけ選ぶ",
-  multiple: "複数選べる",
-  text: "自由に書く",
+  multiple: "3つだけ選ぶ",
+  text: "自由記入欄",
 };
 
 function GripIcon() {
@@ -160,7 +159,6 @@ export default function QuestionCardEditor({
   onDeleteOption: (optionId: string) => void;
   onReorderOptions: (activeId: string, overId: string) => void;
 }) {
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const questionTextareaRef = useAutosizeTextarea(question.question_text);
 
   const {
@@ -228,49 +226,11 @@ export default function QuestionCardEditor({
       <div className="mb-3 flex flex-wrap items-center gap-2 pl-2 sm:pl-9">
         <TypePicker
           value={question.question_type}
-          onChange={(type) => onChange({ question_type: type })}
+          onChange={(type) =>
+            onChange({ question_type: type, max_selections: type === "multiple" ? 3 : null })
+          }
         />
-        {question.question_type === "multiple" && (
-          <button
-            type="button"
-            onClick={() => setDetailsOpen((v) => !v)}
-            className="text-xs text-stone-400 underline decoration-stone-300 underline-offset-4 hover:text-stone-600"
-          >
-            詳細設定{detailsOpen ? "を閉じる" : ""}
-          </button>
-        )}
       </div>
-
-      {question.question_type === "multiple" && detailsOpen && (
-        <div className="mb-3 ml-2 flex items-center gap-2 rounded-lg bg-ivory px-3 py-2 sm:ml-9">
-          <span className="text-xs text-stone-500">お客様が選べる最大数</span>
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() =>
-                onChange({ max_selections: Math.max(1, (question.max_selections ?? 3) - 1) })
-              }
-              className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-stone-500 shadow-sm hover:text-stone-800"
-              aria-label="最大数を減らす"
-            >
-              −
-            </button>
-            <span className="w-4 text-center text-sm font-medium text-stone-800">
-              {question.max_selections ?? 3}
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                onChange({ max_selections: Math.min(10, (question.max_selections ?? 3) + 1) })
-              }
-              className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-stone-500 shadow-sm hover:text-stone-800"
-              aria-label="最大数を増やす"
-            >
-              ＋
-            </button>
-          </div>
-        </div>
-      )}
 
       {question.question_type !== "text" ? (
         <div className="mb-2 flex flex-col gap-0.5 pl-2 sm:pl-9">

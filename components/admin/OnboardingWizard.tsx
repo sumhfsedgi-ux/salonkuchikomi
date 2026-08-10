@@ -46,10 +46,8 @@ export default function OnboardingWizard({
   const [salon, setSalon] = useState<OwnerSalon | null>(initialSalon);
 
   const [name, setName] = useState(initialSalon?.name ?? "");
-  const [slug, setSlug] = useState(initialSalon?.slug ?? "");
   const [step1Error, setStep1Error] = useState<string | null>(null);
   const [step1Saving, setStep1Saving] = useState(false);
-  const slugInvalid = slug.length > 0 && !/^[a-z0-9-]*$/.test(slug);
 
   const [step2Error, setStep2Error] = useState<string | null>(null);
 
@@ -67,7 +65,6 @@ export default function OnboardingWizard({
     setStep1Error(null);
     const formData = new FormData();
     formData.set("name", name);
-    formData.set("slug", slug);
 
     // Reaching STEP1 with a salon already set means the owner came back from
     // STEP2 to fix something -- update the existing row instead of inserting
@@ -80,7 +77,7 @@ export default function OnboardingWizard({
         setStep1Error(result.error);
         return;
       }
-      setSalon({ ...salon, name, slug });
+      setSalon({ ...salon, name });
       setStep(2);
       return;
     }
@@ -175,26 +172,6 @@ export default function OnboardingWizard({
                 required
                 className="w-full rounded-lg border border-greige px-3 py-2.5 text-sm text-stone-800 focus:border-sage focus:outline-none"
               />
-            </div>
-            <div>
-              <label htmlFor="onboarding-slug" className="mb-1 block text-sm font-medium text-stone-700">
-                ページURL
-              </label>
-              <p className="mb-1 text-xs text-stone-500">
-                お客様用URLの一部になります。半角英数字とハイフンのみ使用できます（例: herb-salon-lumiere）。
-              </p>
-              <input
-                id="onboarding-slug"
-                value={slug}
-                onChange={(e) => setSlug(e.target.value)}
-                required
-                className="w-full rounded-lg border border-greige px-3 py-2.5 text-sm text-stone-800 focus:border-sage focus:outline-none"
-              />
-              {slugInvalid && (
-                <p className="mt-1 text-xs text-red-600">
-                  半角英数字とハイフンのみ使用できます。
-                </p>
-              )}
             </div>
             {step1Error && (
               <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">

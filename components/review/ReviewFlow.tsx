@@ -10,6 +10,7 @@ import GeneratedReview from "@/components/review/GeneratedReview";
 import GoogleReviewGuide from "@/components/review/GoogleReviewGuide";
 import Toast from "@/components/Toast";
 import { copyToClipboard } from "@/lib/copyToClipboard";
+import { OTHER_OPTION_TEXT } from "@/lib/constants";
 
 type Step = 1 | 2 | 3;
 
@@ -30,6 +31,11 @@ export default function ReviewFlow({ salon, questions }: Props) {
   const [answers, setAnswers] = useState<SurveyAnswers>(() =>
     buildEmptyAnswers(questions),
   );
+  // Kept separate from `answers` so the "その他" pill's selected/unselected
+  // state (which matches by literal string against question.options) never
+  // has to deal with the elaboration text mutating that string. Only merged
+  // into the outgoing payload below, right before it's sent to the API.
+  const [otherDetails, setOtherDetails] = useState<Record<string, string>>({});
   const [currentStep, setCurrentStep] = useState<Step>(1);
   const [generatedReview, setGeneratedReview] = useState("");
   const [loading, setLoading] = useState(false);
@@ -45,10 +51,16 @@ export default function ReviewFlow({ salon, questions }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           salonId: salon.id,
-          answers: questions.map((question) => ({
-            question: question.question,
-            answer: currentAnswers[question.id],
-          })),
+          answers: questions.map((question) => {
+            const raw = currentAnswers[question.id];
+            const detail = otherDetails[question.id]?.trim();
+            const withDetail = (value: string) =>
+              value === OTHER_OPTION_TEXT && detail
+                ? `${OTHER_OPTION_TEXT}（${detail}）`
+                : value;
+            const answer = Array.isArray(raw) ? raw.map(withDetail) : withDetail(raw);
+            return { question: question.question, answer };
+          }),
         }),
       });
       const data = await res.json();
@@ -95,6 +107,8 @@ export default function ReviewFlow({ salon, questions }: Props) {
               questions={questions}
               answers={answers}
               onAnswersChange={setAnswers}
+              otherDetails={otherDetails}
+              onOtherDetailsChange={setOtherDetails}
               onSubmit={handleGenerate}
               error={error}
             />
