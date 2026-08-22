@@ -125,7 +125,7 @@ function TypePicker({
             className={[
               "rounded-full px-3 py-1.5 text-xs font-medium transition",
               active
-                ? "bg-sage/15 text-sage-dark"
+                ? "bg-sage text-white shadow-sm"
                 : "bg-beige/70 text-stone-500 hover:bg-beige",
             ].join(" ")}
           >
