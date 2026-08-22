@@ -4,8 +4,16 @@ import { NextResponse, type NextRequest } from "next/server";
 /**
  * Refreshes the Supabase auth session cookie on every request, and gates
  * `/admin/**` (except `/admin/login`) behind an authenticated session.
- * Defense-in-depth is provided by `app/admin/(authed)/layout.tsx`, which
- * re-checks the session server-side.
+ *
+ * This is an *optimistic* check only: getClaims() verifies the JWT's
+ * signature and expiry locally (via a cached JWKS, so it costs a network
+ * round trip only the first time per server instance, not per request) —
+ * it does not confirm the session hasn't been revoked server-side since the
+ * token was issued. That's fine here because Proxy runs on every route
+ * (per Next.js's own guidance, it should stick to cheap local checks, not
+ * database/API round trips) and `app/admin/(authed)/layout.tsx` performs
+ * the authoritative, server-verified check (`getUser()`) before any admin
+ * data is ever read.
  */
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -31,15 +39,13 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data } = await supabase.auth.getClaims();
 
   const { pathname } = request.nextUrl;
   const isAdminRoute = pathname.startsWith("/admin");
   const isLoginRoute = pathname === "/admin/login";
 
-  if (isAdminRoute && !isLoginRoute && !user) {
+  if (isAdminRoute && !isLoginRoute && !data?.claims) {
     const loginUrl = new URL("/admin/login", request.url);
     return NextResponse.redirect(loginUrl);
   }

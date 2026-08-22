@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { TEXT_ANSWER_MAX_LENGTH } from "@/lib/constants";
@@ -20,7 +21,9 @@ interface OptionRow {
   sort_order: number;
 }
 
-async function getSalonAndQuestions(slug: string) {
+// Memoized per request: generateMetadata and the page component both need
+// this, and without cache() each one independently re-runs all 4 queries.
+const getSalonAndQuestions = cache(async (slug: string) => {
   const supabase = await createClient();
 
   const { data: salon } = await supabase
@@ -102,7 +105,7 @@ async function getSalonAndQuestions(slug: string) {
     },
     questions: surveyQuestions,
   };
-}
+});
 
 export async function generateMetadata({
   params,

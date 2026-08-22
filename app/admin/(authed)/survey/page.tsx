@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentSalon, getTemplates, getSurveyQuestionsWithOptions } from "@/lib/supabase/queries";
+import { getCurrentSalon, getTemplates, getActiveSurveyWithQuestions } from "@/lib/supabase/queries";
 import QuestionEditor from "@/components/admin/QuestionEditor";
 import RestartSurveyFromTemplate from "@/components/admin/RestartSurveyFromTemplate";
 
@@ -9,16 +9,11 @@ export default async function AdminSurveyPage() {
   const salon = await getCurrentSalon(supabase);
   if (!salon) redirect("/admin");
 
-  const { data: survey } = await supabase
-    .from("surveys")
-    .select("id")
-    .eq("salon_id", salon.id)
-    .eq("is_active", true)
-    .maybeSingle();
+  const [survey, templates] = await Promise.all([
+    getActiveSurveyWithQuestions(supabase, salon.id),
+    getTemplates(supabase),
+  ]);
   if (!survey) redirect("/admin");
-
-  const questionsWithOptions = await getSurveyQuestionsWithOptions(supabase, survey.id);
-  const templates = await getTemplates(supabase);
 
   return (
     <div className="flex flex-col gap-6">
@@ -28,7 +23,7 @@ export default async function AdminSurveyPage() {
           文字をタップして書き換えられます。変更はそのまま保存されます。
         </p>
       </div>
-      <QuestionEditor key={survey.id} questions={questionsWithOptions} />
+      <QuestionEditor key={survey.id} questions={survey.questions} />
       <RestartSurveyFromTemplate templates={templates} />
     </div>
   );

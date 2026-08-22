@@ -1,7 +1,13 @@
+import { cache } from "react";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
-export async function createClient() {
+// Memoized per request: without this, every Server Component/Action on a
+// page independently calls createClient(), each one re-reading cookies()
+// and producing its own client instance. Wrapping it in cache() means
+// getCurrentSalon(supabase) (and anything else keyed on this client) can
+// itself be memoized too, since all callers now share the same instance.
+export const createClient = cache(async () => {
   const cookieStore = await cookies();
 
   return createServerClient(
@@ -25,4 +31,4 @@ export async function createClient() {
       },
     },
   );
-}
+});

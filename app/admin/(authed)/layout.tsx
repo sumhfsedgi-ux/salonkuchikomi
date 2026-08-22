@@ -1,16 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentSalon } from "@/lib/supabase/queries";
+import { getAuthedUser, getCurrentSalon } from "@/lib/supabase/queries";
 import { logoutAction } from "./actions";
 
 export default async function AuthedAdminLayout({
   children,
 }: LayoutProps<"/admin">) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthedUser(supabase);
   if (!user) redirect("/admin/login");
 
   const salon = await getCurrentSalon(supabase);
