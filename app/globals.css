@@ -61,4 +61,18 @@ a:active {
   .btn-text {
     @apply text-sage-dark underline text-sm disabled:opacity-50 disabled:pointer-events-none;
   }
+
+  @keyframes result-fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .animate-result-in {
+    animation: result-fade-in 220ms ease-out;
+  }
 }

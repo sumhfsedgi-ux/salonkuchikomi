@@ -1,18 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SurveyQuestion, SurveyAnswers } from "@/lib/types";
 import Hero from "@/components/review/Hero";
-import ReviewStepper from "@/components/review/ReviewStepper";
 import SurveyForm from "@/components/review/SurveyForm";
-import ReviewLoading from "@/components/review/ReviewLoading";
+import ResultSkeleton from "@/components/review/ResultSkeleton";
 import GeneratedReview from "@/components/review/GeneratedReview";
-import GoogleReviewGuide from "@/components/review/GoogleReviewGuide";
 import Toast from "@/components/Toast";
 import { copyToClipboard } from "@/lib/copyToClipboard";
 import { OTHER_OPTION_TEXT } from "@/lib/constants";
-
-type Step = 1 | 2 | 3;
 
 interface Props {
   salon: { id: string; name: string; googleReviewUrl: string };
@@ -27,6 +23,10 @@ function buildEmptyAnswers(questions: SurveyQuestion[]): SurveyAnswers {
   return answers;
 }
 
+function isTextField(target: EventTarget): target is HTMLTextAreaElement | HTMLInputElement {
+  return target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement;
+}
+
 export default function ReviewFlow({ salon, questions }: Props) {
   const [answers, setAnswers] = useState<SurveyAnswers>(() =>
     buildEmptyAnswers(questions),
@@ -36,13 +36,36 @@ export default function ReviewFlow({ salon, questions }: Props) {
   // has to deal with the elaboration text mutating that string. Only merged
   // into the outgoing payload below, right before it's sent to the API.
   const [otherDetails, setOtherDetails] = useState<Record<string, string>>({});
-  const [currentStep, setCurrentStep] = useState<Step>(1);
   const [generatedReview, setGeneratedReview] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [resultVersion, setResultVersion] = useState(0);
+  // Hides the sticky bottom CTA while a text field is focused, so it doesn't
+  // sit on top of the on-screen keyboard on mobile.
+  const [isTextFieldFocused, setIsTextFieldFocused] = useState(false);
+  const resultRef = useRef<HTMLDivElement>(null);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (loading) resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [loading]);
+
+  function handleFocusCapture(e: React.FocusEvent) {
+    if (!isTextField(e.target)) return;
+    if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+    setIsTextFieldFocused(true);
+  }
+
+  function handleBlurCapture(e: React.FocusEvent) {
+    if (!isTextField(e.target)) return;
+    // Short grace period so moving focus from one textarea straight to
+    // another in the same form doesn't flash the CTA back in between.
+    blurTimeoutRef.current = setTimeout(() => setIsTextFieldFocused(false), 50);
+  }
 
   async function handleGenerate(currentAnswers: SurveyAnswers) {
+    if (loading) return;
     setLoading(true);
     setError(null);
     try {
@@ -69,7 +92,7 @@ export default function ReviewFlow({ salon, questions }: Props) {
         return;
       }
       setGeneratedReview(data.review);
-      setCurrentStep(2);
+      setResultVersion((v) => v + 1);
     } catch {
       setError(
         "通信エラーが発生しました。ネットワークをご確認のうえ、もう一度お試しください。",
@@ -86,48 +109,62 @@ export default function ReviewFlow({ salon, questions }: Props) {
       return;
     }
     setToastMessage("コピーしました");
-    setCurrentStep(3);
   }
 
-  return (
-    <div className="mx-auto flex w-full max-w-[500px] flex-1 flex-col px-4">
-      {currentStep === 1 && <Hero salonName={salon.name} />}
-      <ReviewStepper currentStep={currentStep} />
+  const showResult = loading || generatedReview !== "" || error !== null;
 
-      {/*
-        While loading is true, ReviewLoading fully replaces the step content below,
-        which un-mounts the submit/regenerate buttons and prevents double submission.
-      */}
-      {loading ? (
-        <ReviewLoading />
-      ) : (
-        <>
-          {currentStep === 1 && (
-            <SurveyForm
-              questions={questions}
-              answers={answers}
-              onAnswersChange={setAnswers}
-              otherDetails={otherDetails}
-              onOtherDetailsChange={setOtherDetails}
-              onSubmit={handleGenerate}
-              error={error}
-            />
-          )}
-          {currentStep === 2 && (
-            <GeneratedReview
-              review={generatedReview}
-              onReviewChange={setGeneratedReview}
-              onCopy={handleCopy}
-              onRegenerate={() => handleGenerate(answers)}
-              onEditSurvey={() => setCurrentStep(1)}
-              error={error}
-            />
-          )}
-          {currentStep === 3 && (
-            <GoogleReviewGuide googleReviewUrl={salon.googleReviewUrl} />
-          )}
-        </>
-      )}
+  return (
+    <div
+      className="mx-auto flex w-full max-w-[500px] flex-1 flex-col px-4"
+      style={{ paddingBottom: "calc(6rem + env(safe-area-inset-bottom))" }}
+      onFocusCapture={handleFocusCapture}
+      onBlurCapture={handleBlurCapture}
+    >
+      <Hero salonName={salon.name} />
+
+      <div className="flex flex-col gap-4">
+        <SurveyForm
+          questions={questions}
+          answers={answers}
+          onAnswersChange={setAnswers}
+          otherDetails={otherDetails}
+          onOtherDetailsChange={setOtherDetails}
+          onSubmit={handleGenerate}
+          loading={loading}
+          hasResult={generatedReview !== ""}
+          hideCta={isTextFieldFocused}
+        />
+
+        {showResult && (
+          <section ref={resultRef} className="flex flex-col gap-3 scroll-mt-4">
+            {loading && !generatedReview && <ResultSkeleton />}
+            {loading && generatedReview && (
+              <div className="flex items-center gap-2 rounded-lg bg-beige/60 px-3 py-2 text-sm text-stone-600">
+                <span
+                  className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-greige border-t-sage"
+                  aria-hidden="true"
+                />
+                新しい口コミを作成しています…
+              </div>
+            )}
+            {!loading && error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+                {error}
+              </div>
+            )}
+            {generatedReview && (
+              <GeneratedReview
+                key={resultVersion}
+                review={generatedReview}
+                onReviewChange={setGeneratedReview}
+                onCopy={handleCopy}
+                googleReviewUrl={salon.googleReviewUrl}
+                disabled={loading}
+              />
+            )}
+          </section>
+        )}
+      </div>
 
       <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />
     </div>

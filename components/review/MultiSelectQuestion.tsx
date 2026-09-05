@@ -38,7 +38,7 @@ export default function MultiSelectQuestion({
 
   return (
     <div>
-      <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-2 gap-2.5">
         {question.options.map((option) => {
           const isSelected = selected.includes(option);
           return (
@@ -48,22 +48,15 @@ export default function MultiSelectQuestion({
                 onClick={() => toggle(option)}
                 aria-pressed={isSelected}
                 className={[
-                  "flex w-full items-center justify-between gap-2 rounded-lg border px-3.5 py-3 text-left text-sm transition",
+                  "relative flex min-h-16 w-full items-center justify-center rounded-xl border px-2 py-3.5 text-center text-sm leading-snug transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage/50 focus-visible:ring-offset-1",
                   isSelected
                     ? "border-sage bg-sage/10 text-sage-dark"
                     : "border-greige bg-white text-stone-600 hover:border-sage",
                 ].join(" ")}
               >
                 <span>{option}</span>
-                <span
-                  className={[
-                    "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition",
-                    isSelected
-                      ? "border-sage bg-sage text-white"
-                      : "border-greige bg-white",
-                  ].join(" ")}
-                >
-                  {isSelected && (
+                {isSelected && (
+                  <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-sage text-white">
                     <svg
                       viewBox="0 0 20 20"
                       fill="currentColor"
@@ -76,8 +69,8 @@ export default function MultiSelectQuestion({
                         clipRule="evenodd"
                       />
                     </svg>
-                  )}
-                </span>
+                  </span>
+                )}
               </button>
               {isSelected && option === OTHER_OPTION_TEXT && (
                 <textarea
@@ -87,7 +80,7 @@ export default function MultiSelectQuestion({
                   }
                   placeholder="具体的に教えてください（任意）"
                   rows={2}
-                  className="w-full resize-none rounded-lg border border-greige bg-white p-3 text-sm text-stone-700 placeholder:text-stone-400 transition focus:border-sage focus:outline-none"
+                  className="col-span-2 w-full resize-none rounded-lg border border-greige bg-white p-3 text-sm text-stone-700 placeholder:text-stone-400 transition focus:border-sage focus:outline-none"
                 />
               )}
             </Fragment>

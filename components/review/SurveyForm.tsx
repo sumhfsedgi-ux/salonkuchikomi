@@ -11,7 +11,9 @@ interface Props {
   otherDetails: Record<string, string>;
   onOtherDetailsChange: (details: Record<string, string>) => void;
   onSubmit: (answers: SurveyAnswers) => void;
-  error: string | null;
+  loading: boolean;
+  hasResult: boolean;
+  hideCta: boolean;
 }
 
 export default function SurveyForm({
@@ -21,7 +23,9 @@ export default function SurveyForm({
   otherDetails,
   onOtherDetailsChange,
   onSubmit,
-  error,
+  loading,
+  hasResult,
+  hideCta,
 }: Props) {
   const [validationErrors, setValidationErrors] = useState<
     Record<string, string>
@@ -36,6 +40,7 @@ export default function SurveyForm({
   }
 
   function handleSubmit() {
+    if (loading) return;
     const nextErrors: Record<string, string> = {};
     for (const question of questions) {
       if (!question.required) continue;
@@ -46,35 +51,68 @@ export default function SurveyForm({
       }
     }
     setValidationErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0) return;
+    if (Object.keys(nextErrors).length > 0) {
+      const firstInvalid = questions.find((q) => nextErrors[q.id]);
+      if (firstInvalid) {
+        document
+          .querySelector(`[data-question-id="${firstInvalid.id}"]`)
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return;
+    }
     onSubmit(answers);
   }
 
+  const label = loading
+    ? "作成中…"
+    : hasResult
+      ? "もう一度作成する"
+      : "AIで口コミを作成する";
+
   return (
-    <div className="flex flex-col gap-4 pb-8">
-      {questions.map((question, index) => (
-        <QuestionCard
-          key={question.id}
-          question={question}
-          index={index}
-          total={questions.length}
-          value={answers[question.id]}
-          onChange={(value) => handleChange(question.id, value)}
-          otherDetail={otherDetails[question.id] ?? ""}
-          onOtherDetailChange={(text) => handleOtherDetailChange(question.id, text)}
-          errorMessage={validationErrors[question.id]}
-        />
-      ))}
+    <>
+      <div className="flex flex-col gap-3">
+        {questions.map((question, index) => (
+          <QuestionCard
+            key={question.id}
+            question={question}
+            index={index}
+            value={answers[question.id]}
+            onChange={(value) => handleChange(question.id, value)}
+            otherDetail={otherDetails[question.id] ?? ""}
+            onOtherDetailChange={(text) => handleOtherDetailChange(question.id, text)}
+            errorMessage={validationErrors[question.id]}
+          />
+        ))}
+      </div>
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
-          {error}
+      <div
+        className={[
+          "fixed inset-x-0 bottom-0 border-t border-greige bg-ivory/95 backdrop-blur transition-transform duration-150",
+          hideCta ? "translate-y-full" : "translate-y-0",
+        ].join(" ")}
+      >
+        <div
+          className="mx-auto w-full max-w-[500px] px-4 pt-3"
+          style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+        >
+          <button
+            type="button"
+            className="btn-primary flex items-center justify-center gap-2"
+            onClick={handleSubmit}
+            disabled={loading}
+            aria-busy={loading}
+          >
+            {loading && (
+              <span
+                className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                aria-hidden="true"
+              />
+            )}
+            {label}
+          </button>
         </div>
-      )}
-
-      <button type="button" className="btn-primary" onClick={handleSubmit}>
-        AIで口コミを作成する
-      </button>
-    </div>
+      </div>
+    </>
   );
 }

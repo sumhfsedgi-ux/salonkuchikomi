@@ -6,7 +6,6 @@ import TextareaQuestion from "@/components/review/TextareaQuestion";
 interface Props {
   question: SurveyQuestion;
   index: number;
-  total: number;
   value: string[] | string;
   onChange: (value: string[] | string) => void;
   otherDetail: string;
@@ -17,7 +16,6 @@ interface Props {
 export default function QuestionCard({
   question,
   index,
-  total,
   value,
   onChange,
   otherDetail,
@@ -25,25 +23,27 @@ export default function QuestionCard({
   errorMessage,
 }: Props) {
   return (
-    <div className="card">
-      <p className="mb-1 text-[11px] font-medium text-stone-400">
-        質問 {index + 1} / {total}
-      </p>
-      <div className="mb-3 flex items-start gap-2">
+    <div className="card" data-question-id={question.id}>
+      <div className="mb-2 flex items-baseline gap-2">
+        <span className="shrink-0 text-xs font-semibold text-sage-dark">
+          {String(index + 1).padStart(2, "0")}
+        </span>
         <p className="text-balance text-sm font-medium leading-relaxed text-stone-800">
           {question.question}
         </p>
+      </div>
+      <div className="mb-2 flex flex-wrap items-center gap-1.5">
         {question.required ? (
-          <span className="mt-0.5 shrink-0 rounded bg-sage/15 px-1.5 py-0.5 text-[10px] font-medium text-sage-dark">
+          <span className="rounded bg-sage/15 px-1.5 py-0.5 text-[10px] font-medium text-sage-dark">
             必須
           </span>
         ) : (
-          <span className="mt-0.5 shrink-0 rounded bg-beige px-1.5 py-0.5 text-[10px] font-medium text-stone-500">
+          <span className="rounded bg-beige px-1.5 py-0.5 text-[10px] font-medium text-stone-500">
             任意
           </span>
         )}
         {question.type === "multiple" && (
-          <span className="mt-0.5 shrink-0 rounded bg-beige px-1.5 py-0.5 text-[10px] font-medium text-stone-500">
+          <span className="rounded bg-beige px-1.5 py-0.5 text-[10px] font-medium text-stone-500">
             最大{question.maxSelections}つ
           </span>
         )}
