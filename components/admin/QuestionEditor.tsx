@@ -46,6 +46,11 @@ function tempId() {
 
 const AUTOSAVE_DELAY_MS = 800;
 
+// Below this many required questions, customers could leave every question
+// optional/blank and the AI would have nothing to work with -- see
+// saveSurveyAction, which enforces the same minimum server-side as a backstop.
+const MIN_REQUIRED_QUESTIONS = 2;
+
 // Whether the draft has everything it needs to be saved as-is. Used to hold
 // off autosaving while a just-added question/option is still blank (e.g.
 // right after "＋ 質問を追加"), so the status text doesn't flash an error
@@ -56,6 +61,10 @@ function isDraftComplete(draft: QuestionData[]): boolean {
     if (q.question_type === "text") return true;
     return q.options.length > 0 && q.options.every((o) => o.option_text.trim());
   });
+}
+
+function countRequired(draft: QuestionData[]): number {
+  return draft.filter((q) => q.required).length;
 }
 
 // Holds the entire survey's questions/options as local-only draft state.
@@ -111,6 +120,7 @@ const QuestionEditor = forwardRef<QuestionEditorHandle, { questions: QuestionDat
       setStatus("idle");
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       if (!isDraftComplete(draft)) return;
+      if (countRequired(draft) < MIN_REQUIRED_QUESTIONS) return;
       timeoutRef.current = setTimeout(() => {
         void flush();
       }, AUTOSAVE_DELAY_MS);
@@ -201,6 +211,8 @@ const QuestionEditor = forwardRef<QuestionEditorHandle, { questions: QuestionDat
       useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
     );
 
+    const missingRequired = Math.max(0, MIN_REQUIRED_QUESTIONS - countRequired(draft));
+
     return (
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -225,6 +237,12 @@ const QuestionEditor = forwardRef<QuestionEditorHandle, { questions: QuestionDat
             {status === "idle" && "・"}
           </p>
         </div>
+
+        {missingRequired > 0 && (
+          <div className="rounded-lg border border-earth/30 bg-earth/10 p-3 text-sm text-earth">
+            口コミ作成に必要な情報を確保するため、必須項目をあと{missingRequired}問設定してください
+          </div>
+        )}
 
         {error && (
           <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">

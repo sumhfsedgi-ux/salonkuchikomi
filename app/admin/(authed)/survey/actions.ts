@@ -62,7 +62,18 @@ const saveQuestionSchema = z
     message: "選択肢を1つ以上追加してください。",
   });
 
-const saveSurveySchema = z.array(saveQuestionSchema).max(50);
+// Requiring at least 2 required questions keeps a customer from being able
+// to leave every question blank -- see QuestionEditor.tsx, which blocks
+// autosave (and shows the customer-facing count) for the same reason. This
+// is the server-side backstop in case that client-side gate is ever bypassed.
+const MIN_REQUIRED_QUESTIONS = 2;
+
+const saveSurveySchema = z
+  .array(saveQuestionSchema)
+  .max(50)
+  .refine((qs) => qs.filter((q) => q.required).length >= MIN_REQUIRED_QUESTIONS, {
+    message: `必須項目を${MIN_REQUIRED_QUESTIONS}問以上設定してください。`,
+  });
 
 export type SaveSurveyQuestionInput = z.input<typeof saveQuestionSchema>;
 
