@@ -62,7 +62,7 @@ export default function SingleSelectQuestion({
                 onChange={(e) =>
                   onOtherDetailChange(e.target.value.slice(0, OTHER_DETAIL_MAX_LENGTH))
                 }
-                placeholder="具体的に教えてください（任意）"
+                placeholder="具体的に教えてください"
                 rows={2}
                 className="col-span-2 w-full resize-none rounded-lg border border-greige bg-white p-3 text-sm text-stone-700 placeholder:text-stone-400 transition focus:border-sage focus:outline-none"
               />

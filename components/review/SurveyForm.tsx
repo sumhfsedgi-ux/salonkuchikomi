@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { SurveyQuestion, SurveyAnswers } from "@/lib/types";
 import QuestionCard from "@/components/review/QuestionCard";
+import { OTHER_OPTION_TEXT } from "@/lib/constants";
 
 interface Props {
   questions: SurveyQuestion[];
@@ -43,11 +44,20 @@ export default function SurveyForm({
     if (loading) return;
     const nextErrors: Record<string, string> = {};
     for (const question of questions) {
-      if (!question.required) continue;
       const value = answers[question.id];
-      const isEmpty = Array.isArray(value) ? value.length === 0 : !value;
-      if (isEmpty) {
-        nextErrors[question.id] = "この項目を選択してください";
+      if (question.required) {
+        const isEmpty = Array.isArray(value) ? value.length === 0 : !value;
+        if (isEmpty) {
+          nextErrors[question.id] = "この項目を選択してください";
+          continue;
+        }
+      }
+      // "その他" は必須/任意の質問を問わず、選んだ以上は具体的な内容の入力を必須にする。
+      const selectsOther =
+        question.type !== "text" &&
+        (Array.isArray(value) ? value.includes(OTHER_OPTION_TEXT) : value === OTHER_OPTION_TEXT);
+      if (selectsOther && !otherDetails[question.id]?.trim()) {
+        nextErrors[question.id] = "「その他」の具体的な内容を入力してください";
       }
     }
     setValidationErrors(nextErrors);
