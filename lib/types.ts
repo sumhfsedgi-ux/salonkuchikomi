@@ -35,6 +35,7 @@ export interface PublicSalon {
   slug: string;
   googleReviewUrl: string | null;
   description: string | null;
+  businessType: string | null;
 }
 
 // The full salon row, only ever readable/writable by its owner via RLS.

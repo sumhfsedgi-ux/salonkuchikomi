@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentSalon } from "@/lib/supabase/queries";
+import { getCurrentSalon, applyDefaultBusinessType } from "@/lib/supabase/queries";
 
 // Every action below re-resolves "my own salon" and "my own survey" from the
 // authenticated session (never a client-supplied id), then scopes every
@@ -40,6 +40,8 @@ export async function restartSurveyAction(
     console.error("restartSurveyAction failed", error);
     return { error: "アンケートの作り直しに失敗しました。もう一度お試しください。" };
   }
+
+  await applyDefaultBusinessType(supabase, salon.id, templateId);
 
   revalidatePath("/admin");
   revalidatePath("/admin/survey");

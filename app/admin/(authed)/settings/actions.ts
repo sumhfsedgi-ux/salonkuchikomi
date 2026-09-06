@@ -9,6 +9,14 @@ const updateSalonSchema = z.object({
   name: z.string().trim().min(1, "店舗名を入力してください").max(100).optional(),
   google_review_url: z.string().trim().max(500).optional(),
   description: z.string().trim().max(500).optional(),
+  // Normalized to null on empty: unlike description/google_review_url,
+  // salons.business_type has a check constraint that rejects ''.
+  business_type: z
+    .string()
+    .trim()
+    .max(100, "業種は100文字以内で入力してください")
+    .optional()
+    .transform((v) => (v ? v : null)),
 });
 
 // Only ever resolves "my own salon" via the authenticated session — never
@@ -21,7 +29,7 @@ export async function updateSalonAction(
   if (!salon) return { error: "店舗情報が見つかりません。" };
 
   const raw: Record<string, string> = {};
-  for (const key of ["name", "google_review_url", "description"] as const) {
+  for (const key of ["name", "google_review_url", "description", "business_type"] as const) {
     const value = formData.get(key);
     if (value !== null) raw[key] = String(value);
   }

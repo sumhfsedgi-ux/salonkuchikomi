@@ -6,6 +6,7 @@ import { updateSalonAction } from "@/app/admin/(authed)/settings/actions";
 
 export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
   const [name, setName] = useState(salon.name);
+  const [businessType, setBusinessType] = useState(salon.businessType ?? "");
   const [googleReviewUrl, setGoogleReviewUrl] = useState(salon.googleReviewUrl ?? "");
   const [description, setDescription] = useState(salon.description ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -20,6 +21,7 @@ export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
 
     const formData = new FormData();
     formData.set("name", name);
+    formData.set("business_type", businessType);
     formData.set("google_review_url", googleReviewUrl);
     formData.set("description", description);
 
@@ -43,6 +45,22 @@ export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
+          className="w-full rounded-lg border border-greige px-3 py-2.5 text-sm text-stone-800 focus:border-sage focus:outline-none"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="business_type" className="mb-1 block text-sm font-medium text-stone-700">
+          業種（任意）
+        </label>
+        <p className="mb-1 text-xs text-stone-500">
+          口コミ作成AIが回答内容を正しく理解するための参考情報として使用します。
+        </p>
+        <input
+          id="business_type"
+          value={businessType}
+          onChange={(e) => setBusinessType(e.target.value)}
+          placeholder="例：ヘアサロン、エステサロン、整体院"
           className="w-full rounded-lg border border-greige px-3 py-2.5 text-sm text-stone-800 focus:border-sage focus:outline-none"
         />
       </div>

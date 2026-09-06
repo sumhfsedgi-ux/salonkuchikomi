@@ -11,7 +11,7 @@ import { copyToClipboard } from "@/lib/copyToClipboard";
 import { OTHER_OPTION_TEXT } from "@/lib/constants";
 
 interface Props {
-  salon: { id: string; name: string; googleReviewUrl: string };
+  salon: { id: string; name: string; googleReviewUrl: string; businessType: string | null };
   questions: SurveyQuestion[];
 }
 
@@ -74,6 +74,9 @@ export default function ReviewFlow({ salon, questions }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           salonId: salon.id,
+          salonName: salon.name,
+          businessType: salon.businessType ?? undefined,
+          previousReview: generatedReview || undefined,
           answers: questions.map((question) => {
             const raw = currentAnswers[question.id];
             const detail = otherDetails[question.id]?.trim();

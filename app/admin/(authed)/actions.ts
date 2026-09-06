@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentSalon } from "@/lib/supabase/queries";
+import { getCurrentSalon, applyDefaultBusinessType } from "@/lib/supabase/queries";
 import { generateRandomSlug } from "@/lib/generateSlug";
 import type { OwnerSalon } from "@/lib/types";
 
@@ -52,7 +52,7 @@ export async function createSalonAction(
       .from("salons")
       .insert({ owner_id: profile.id, name: parsed.data.name, slug: generateRandomSlug() })
       .select(
-        "id, owner_id, name, slug, google_review_url, description, onboarding_completed, created_at, updated_at",
+        "id, owner_id, name, slug, google_review_url, description, business_type, onboarding_completed, created_at, updated_at",
       )
       .single();
 
@@ -66,6 +66,7 @@ export async function createSalonAction(
           slug: inserted.slug,
           googleReviewUrl: inserted.google_review_url,
           description: inserted.description,
+          businessType: inserted.business_type,
           onboardingCompleted: inserted.onboarding_completed,
           createdAt: inserted.created_at,
           updatedAt: inserted.updated_at,
@@ -108,6 +109,8 @@ export async function startSurveyAction(
     console.error("startSurveyAction failed", error);
     return { error: "アンケートの作成に失敗しました。もう一度お試しください。" };
   }
+
+  await applyDefaultBusinessType(supabase, salonId, templateId);
 
   revalidatePath("/admin");
   revalidatePath("/admin/survey");

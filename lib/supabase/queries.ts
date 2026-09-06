@@ -44,7 +44,7 @@ export const getCurrentSalon = cache(async (
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "id, salons(id, owner_id, name, slug, google_review_url, description, onboarding_completed, created_at, updated_at)",
+      "id, salons(id, owner_id, name, slug, google_review_url, description, business_type, onboarding_completed, created_at, updated_at)",
     )
     .eq("user_id", user.id)
     .maybeSingle();
@@ -60,11 +60,50 @@ export const getCurrentSalon = cache(async (
     slug: salon.slug,
     googleReviewUrl: salon.google_review_url,
     description: salon.description,
+    businessType: salon.business_type,
     onboardingCompleted: salon.onboarding_completed,
     createdAt: salon.created_at,
     updatedAt: salon.updated_at,
   };
 });
+
+/**
+ * After creating/restarting a survey from a template, backfills the salon's
+ * business_type from the template's name -- but only if the owner hasn't
+ * already set one (never overwrites an existing value). No-op if no
+ * template was used (p_template_id null, i.e. "0から作成"). Best-effort:
+ * failures are logged, not surfaced, since the survey itself was already
+ * created successfully by the time this runs.
+ */
+export async function applyDefaultBusinessType(
+  supabase: SupabaseClient,
+  salonId: string,
+  templateId: string | null,
+): Promise<void> {
+  if (!templateId) return;
+
+  const { data: salon } = await supabase
+    .from("salons")
+    .select("business_type")
+    .eq("id", salonId)
+    .maybeSingle();
+  if (!salon || (salon.business_type && salon.business_type.trim() !== "")) return;
+
+  const { data: template } = await supabase
+    .from("survey_templates")
+    .select("name")
+    .eq("id", templateId)
+    .maybeSingle();
+  if (!template) return;
+
+  const { error } = await supabase
+    .from("salons")
+    .update({ business_type: template.name, updated_at: new Date().toISOString() })
+    .eq("id", salonId);
+  if (error) {
+    console.error("applyDefaultBusinessType failed to update salons", error);
+  }
+}
 
 export interface ActiveSurveyWithQuestions {
   id: string;

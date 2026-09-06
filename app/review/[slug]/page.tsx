@@ -28,7 +28,7 @@ const getSalonAndQuestions = cache(async (slug: string) => {
 
   const { data: salon } = await supabase
     .from("salon_public")
-    .select("id, name, slug, google_review_url, description")
+    .select("id, name, slug, google_review_url, description, business_type")
     .eq("slug", slug)
     .maybeSingle();
   if (!salon) return null;
@@ -102,6 +102,7 @@ const getSalonAndQuestions = cache(async (slug: string) => {
       id: salon.id as string,
       name: salon.name as string,
       googleReviewUrl: (salon.google_review_url as string | null) ?? "",
+      businessType: (salon.business_type as string | null) ?? null,
     },
     questions: surveyQuestions,
   };
