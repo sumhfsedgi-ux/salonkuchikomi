@@ -41,18 +41,29 @@ export default function GeneratedReview({
         />
       </div>
 
-      <button type="button" className="btn-primary" onClick={onCopy}>
-        口コミをコピーする
-      </button>
+      {/*
+        A real <a target="_blank"> whose default action is never prevented,
+        not a scripted window.open(). That default action is the browser's
+        own "open this link in a new tab" behavior tied directly to the
+        trusted click event, so it isn't subject to popup-blocker heuristics
+        the way a window.open() called after an `await` would be -- this is
+        what keeps iOS Safari from silently blocking the Google tab. onCopy
+        is async and intentionally not awaited here: the copy attempt runs
+        alongside the navigation rather than gating it, so a slow or failed
+        Clipboard API call never delays or blocks getting to Google's page.
+      */}
       <a
         href={googleReviewUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="btn-secondary block text-center"
+        onClick={onCopy}
+        className="btn-primary block text-center"
       >
-        Google口コミページを開く
+        Google口コミを書く
       </a>
       <p className="text-center text-xs text-stone-400">
+        口コミ文をコピーして、Googleの投稿画面を開きます
+        <br />
         投稿前に内容をご確認ください
       </p>
     </div>

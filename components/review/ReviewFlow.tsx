@@ -105,13 +105,17 @@ export default function ReviewFlow({ salon, questions }: Props) {
     }
   }
 
+  // Reads `generatedReview` fresh on every render, so this always copies
+  // whatever is currently in the (editable) textarea -- including any edits
+  // the customer made after generation -- never the original AI output.
+  // Deliberately never blocks navigation on the result: the "Google口コミを
+  // 書く" link's default action (opening googleReviewUrl) always proceeds
+  // regardless of whether the copy succeeds, so a Clipboard API failure
+  // never strands the customer -- they can still select and copy the
+  // textarea manually once they land on Google's page.
   async function handleCopy() {
     const ok = await copyToClipboard(generatedReview);
-    if (!ok) {
-      setToastMessage("コピーできませんでした");
-      return;
-    }
-    setToastMessage("コピーしました");
+    setToastMessage(ok ? "コピーしました" : "コピーできませんでした。テキストを選択してコピーしてください");
   }
 
   const showResult = loading || generatedReview !== "" || error !== null;
