@@ -2,7 +2,12 @@
 
 import { useState } from "react";
 import type { OwnerSalon } from "@/lib/types";
-import { updateSalonAction } from "@/app/admin/(authed)/settings/actions";
+import { updateSalonAction } from "@/app/dashboard/settings/actions";
+import Label from "@/components/ui/Label";
+import Input from "@/components/ui/Input";
+import Textarea from "@/components/ui/Textarea";
+import Alert from "@/components/ui/Alert";
+import Button from "@/components/ui/Button";
 
 export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
   const [name, setName] = useState(salon.name);
@@ -37,82 +42,53 @@ export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
       <div>
-        <label htmlFor="name" className="mb-1 block text-sm font-medium text-stone-700">
-          店舗名
-        </label>
-        <input
-          id="name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-          className="w-full rounded-lg border border-greige px-3 py-2.5 text-sm text-stone-800 focus:border-sage focus:outline-none"
-        />
+        <Label htmlFor="name">店舗名</Label>
+        <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
       </div>
 
       <div>
-        <label htmlFor="business_type" className="mb-1 block text-sm font-medium text-stone-700">
-          業種（任意）
-        </label>
-        <p className="mb-1 text-xs text-stone-500">
+        <Label htmlFor="business_type">業種（任意）</Label>
+        <p className="mb-1 text-xs text-ink-muted">
           口コミ作成AIが回答内容を正しく理解するための参考情報として使用します。
         </p>
-        <input
+        <Input
           id="business_type"
           value={businessType}
           onChange={(e) => setBusinessType(e.target.value)}
           placeholder="例：ヘアサロン、エステサロン、整体院"
-          className="w-full rounded-lg border border-greige px-3 py-2.5 text-sm text-stone-800 focus:border-sage focus:outline-none"
         />
       </div>
 
       <div>
-        <label htmlFor="google_review_url" className="mb-1 block text-sm font-medium text-stone-700">
-          Google口コミ投稿URL
-        </label>
-        <p className="mb-1 text-xs text-stone-500">
+        <Label htmlFor="google_review_url">Google口コミ投稿URL</Label>
+        <p className="mb-1 text-xs text-ink-muted">
           Googleビジネスプロフィール（Googleマップの管理画面）の「クチコミを増やす」機能から取得できるリンクを貼り付けてください。
         </p>
-        <input
+        <Input
           id="google_review_url"
           type="url"
           value={googleReviewUrl}
           onChange={(e) => setGoogleReviewUrl(e.target.value)}
           placeholder="https://..."
-          className="w-full rounded-lg border border-greige px-3 py-2.5 text-sm text-stone-800 focus:border-sage focus:outline-none"
         />
       </div>
 
       <div>
-        <label htmlFor="description" className="mb-1 block text-sm font-medium text-stone-700">
-          店舗説明（任意）
-        </label>
-        <textarea
+        <Label htmlFor="description">店舗説明（任意）</Label>
+        <Textarea
           id="description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={3}
-          className="w-full resize-none rounded-lg border border-greige px-3 py-2.5 text-sm text-stone-800 focus:border-sage focus:outline-none"
         />
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="rounded-lg bg-sage/10 p-3 text-sm text-sage-dark">
-          保存しました。
-        </div>
-      )}
+      {error && <Alert variant="error">{error}</Alert>}
+      {success && <Alert variant="success">保存しました。</Alert>}
 
-      <button
-        type="submit"
-        disabled={saving}
-        className="w-full rounded-lg bg-sage py-2.5 text-sm font-medium text-white transition hover:bg-sage-dark disabled:opacity-50 sm:w-auto sm:px-6"
-      >
+      <Button type="submit" disabled={saving} fullWidth className="sm:w-auto sm:px-6">
         {saving ? "保存しています..." : "保存する"}
-      </button>
+      </Button>
     </form>
   );
 }

@@ -43,8 +43,8 @@ export async function restartSurveyAction(
 
   await applyDefaultBusinessType(supabase, salon.id, templateId);
 
-  revalidatePath("/admin");
-  revalidatePath("/admin/survey");
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/reviews");
   return {};
 }
 
@@ -119,6 +119,6 @@ export async function saveSurveyAction(
     return { error: "保存に失敗しました。もう一度お試しください。" };
   }
 
-  revalidatePath("/admin/survey");
+  revalidatePath("/dashboard/reviews");
   return {};
 }

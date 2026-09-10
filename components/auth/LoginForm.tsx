@@ -1,7 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import Label from "@/components/ui/Label";
+import Input from "@/components/ui/Input";
+import Alert from "@/components/ui/Alert";
+import Button from "@/components/ui/Button";
 
 export default function LoginForm() {
   const [email, setEmail] = useState("");
@@ -30,53 +35,48 @@ export default function LoginForm() {
     // from a clean, unzoomed page load, regardless of anything odd that
     // happened to the viewport while this form was focused/filled in.
     // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.href = "/admin";
+    window.location.href = "/dashboard";
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate={false}>
       <div>
-        <label htmlFor="email" className="mb-1 block text-sm font-medium text-stone-700">
-          メールアドレス
-        </label>
-        <input
+        <Label htmlFor="email">メールアドレス</Label>
+        <Input
           id="email"
           type="email"
           required
           autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-lg border border-greige px-3 py-2.5 text-base text-stone-800 focus:border-sage focus:outline-none"
         />
       </div>
       <div>
-        <label htmlFor="password" className="mb-1 block text-sm font-medium text-stone-700">
-          パスワード
-        </label>
-        <input
+        <div className="flex items-baseline justify-between">
+          <Label htmlFor="password">パスワード</Label>
+        </div>
+        <Input
           id="password"
           type="password"
           required
           autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-lg border border-greige px-3 py-2.5 text-base text-stone-800 focus:border-sage focus:outline-none"
         />
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
-          {error}
-        </div>
-      )}
+      {error && <Alert variant="error">{error}</Alert>}
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full rounded-lg bg-sage py-2.5 text-sm font-medium text-white transition hover:bg-sage-dark disabled:opacity-50"
-      >
+      <Button type="submit" disabled={loading} fullWidth>
         {loading ? "ログイン中..." : "ログイン"}
-      </button>
+      </Button>
+
+      <Link
+        href="/forgot-password"
+        className="text-center text-sm text-ink-muted transition hover:text-sage-dark"
+      >
+        パスワードをお忘れですか？
+      </Link>
     </form>
   );
 }

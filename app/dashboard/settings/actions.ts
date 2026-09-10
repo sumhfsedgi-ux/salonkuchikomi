@@ -52,7 +52,7 @@ export async function updateSalonAction(
     return { error: "保存に失敗しました。もう一度お試しください。" };
   }
 
-  revalidatePath("/admin");
-  revalidatePath("/admin/settings");
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/settings");
   return { success: true };
 }

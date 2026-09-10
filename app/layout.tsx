@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
+import { SERVICE_NAME, SERVICE_TAGLINE } from "@/lib/brand";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -8,7 +9,7 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "salonpack | 口コミ作成支援",
+  title: `${SERVICE_NAME} | ${SERVICE_TAGLINE}`,
   description: "アンケートの回答をもとに、Google口コミの下書きを作成します。",
 };
 

@@ -114,7 +114,7 @@ export interface ActiveSurveyWithQuestions {
  * The salon's active survey plus its full question/option tree, in one
  * PostgREST request via embedded resources — instead of the 3 separate
  * sequential round trips (surveys, then questions, then question_options)
- * this replaces. Used by `/admin/survey`, where that chain was the largest
+ * this replaces. Used by `/dashboard/reviews`, where that chain was the largest
  * remaining source of latency after `getCurrentSalon` was memoized.
  */
 export async function getActiveSurveyWithQuestions(
@@ -171,7 +171,7 @@ export async function getTemplates(
 
 /**
  * A survey's questions and their options, in the shape `QuestionEditor`
- * expects. Shared between `/admin/survey` and the onboarding wizard's
+ * expects. Shared between `/dashboard/reviews` and the onboarding wizard's
  * question-review step, so both render the exact same editing UI.
  */
 export async function getSurveyQuestionsWithOptions(

@@ -11,7 +11,7 @@ import type { OwnerSalon } from "@/lib/types";
 export async function logoutAction() {
   const supabase = await createClient();
   await supabase.auth.signOut();
-  redirect("/admin/login");
+  redirect("/login");
 }
 
 const salonInfoSchema = z.object({
@@ -57,7 +57,7 @@ export async function createSalonAction(
       .single();
 
     if (!error && inserted) {
-      revalidatePath("/admin");
+      revalidatePath("/dashboard");
       return {
         salon: {
           id: inserted.id,
@@ -112,17 +112,17 @@ export async function startSurveyAction(
 
   await applyDefaultBusinessType(supabase, salonId, templateId);
 
-  revalidatePath("/admin");
-  revalidatePath("/admin/survey");
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/reviews");
   return {};
 }
 
 // Marks the onboarding wizard as finished. This is the only place
 // `onboarding_completed` is ever set to true, and it's what keeps
-// AdminHomePage from jumping straight to the dashboard as soon as a survey
-// row exists (which happens as early as STEP2) -- see the plan doc for why
-// that mattered. Resolves the caller's own salon server-side rather than
-// trusting a client-supplied id, same as every other action here.
+// the dashboard home page from jumping straight to the dashboard as soon as
+// a survey row exists (which happens as early as STEP2) -- see the plan doc
+// for why that mattered. Resolves the caller's own salon server-side rather
+// than trusting a client-supplied id, same as every other action here.
 export async function completeOnboardingAction(
   googleReviewUrl: string,
 ): Promise<{ error?: string }> {
@@ -149,6 +149,6 @@ export async function completeOnboardingAction(
     return { error: "保存に失敗しました。もう一度お試しください。" };
   }
 
-  revalidatePath("/admin");
-  redirect("/admin?onboarded=1");
+  revalidatePath("/dashboard");
+  redirect("/dashboard?onboarded=1");
 }

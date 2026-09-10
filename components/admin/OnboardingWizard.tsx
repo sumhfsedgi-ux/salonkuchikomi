@@ -5,8 +5,14 @@ import type { OwnerSalon } from "@/lib/types";
 import type { SurveyTemplateSummary } from "@/lib/supabase/queries";
 import TemplatePicker from "@/components/admin/TemplatePicker";
 import QuestionEditor, { type QuestionData, type QuestionEditorHandle } from "@/components/admin/QuestionEditor";
-import { createSalonAction, startSurveyAction, completeOnboardingAction } from "@/app/admin/(authed)/actions";
-import { updateSalonAction } from "@/app/admin/(authed)/settings/actions";
+import { createSalonAction, startSurveyAction, completeOnboardingAction } from "@/app/dashboard/actions";
+import { updateSalonAction } from "@/app/dashboard/settings/actions";
+import Card from "@/components/ui/Card";
+import Label from "@/components/ui/Label";
+import Input from "@/components/ui/Input";
+import Alert from "@/components/ui/Alert";
+import Button from "@/components/ui/Button";
+import PageHeader from "@/components/ui/PageHeader";
 
 const WIZARD_STEPS = [
   { step: 1, label: "店舗情報" },
@@ -28,7 +34,7 @@ function BackButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="self-start text-sm font-medium text-stone-400 transition hover:text-stone-600"
+      className="self-start text-sm font-medium text-ink-muted/70 transition hover:text-ink-muted"
     >
       ← 戻る
     </button>
@@ -132,14 +138,10 @@ export default function OnboardingWizard({
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold text-stone-800">
-          アンケートを作成しましょう
-        </h1>
-        <p className="mt-1 text-sm text-stone-500">
-          いくつかの項目を入力するだけで、お客様用の口コミ作成ページができあがります。
-        </p>
-      </div>
+      <PageHeader
+        title="アンケートを作成しましょう"
+        description="いくつかの項目を入力するだけで、お客様用の口コミ作成ページができあがります。"
+      />
 
       <ol className="flex flex-wrap gap-x-6 gap-y-2 text-xs">
         {WIZARD_STEPS.map((s) => (
@@ -147,10 +149,10 @@ export default function OnboardingWizard({
             key={s.step}
             className={
               s.step === step
-                ? "font-semibold text-stone-800"
+                ? "font-semibold text-ink"
                 : s.step < step
                   ? "text-sage-dark"
-                  : "text-stone-300"
+                  : "text-ink-muted/50"
             }
           >
             STEP{s.step} {s.label}
@@ -159,40 +161,29 @@ export default function OnboardingWizard({
       </ol>
 
       {step === 1 && (
-        <div className="max-w-xl rounded-2xl bg-white p-6 shadow-sm">
+        <Card className="max-w-xl">
           <form onSubmit={handleStep1Submit} className="flex flex-col gap-5">
             <div>
-              <label htmlFor="onboarding-name" className="mb-1 block text-sm font-medium text-stone-700">
-                店舗名
-              </label>
-              <input
+              <Label htmlFor="onboarding-name">店舗名</Label>
+              <Input
                 id="onboarding-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
-                className="w-full rounded-lg border border-greige px-3 py-2.5 text-sm text-stone-800 focus:border-sage focus:outline-none"
               />
             </div>
-            {step1Error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
-                {step1Error}
-              </div>
-            )}
-            <button
-              type="submit"
-              disabled={step1Saving}
-              className="w-full rounded-lg bg-sage py-2.5 text-sm font-medium text-white transition hover:bg-sage-dark disabled:opacity-50 sm:w-auto sm:px-6"
-            >
+            {step1Error && <Alert variant="error">{step1Error}</Alert>}
+            <Button type="submit" disabled={step1Saving} fullWidth className="sm:w-auto sm:px-6">
               {step1Saving ? "登録しています..." : "次へ"}
-            </button>
+            </Button>
           </form>
-        </div>
+        </Card>
       )}
 
       {step === 2 && (
         <div className="flex flex-col gap-4">
           <BackButton onClick={() => setStep(1)} />
-          <p className="text-sm text-stone-600">
+          <p className="text-sm text-ink-muted">
             業種に合わせたテンプレートから簡単に始められます。
           </p>
           <TemplatePicker templates={templates} onSelect={handleTemplateSelect} error={step2Error} />
@@ -202,24 +193,15 @@ export default function OnboardingWizard({
       {step === 3 && (
         <div className="flex flex-col gap-4">
           <BackButton onClick={() => setStep(2)} />
-          <p className="text-sm text-stone-600">
+          <p className="text-sm text-ink-muted">
             お客様に聞く質問です。文字をタップして書き換えたり、＝を持って順番を入れ替えたりできます。
           </p>
           <QuestionEditor key={surveyId} ref={questionEditorRef} questions={surveyQuestions} />
-          {step3Error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
-              {step3Error}
-            </div>
-          )}
+          {step3Error && <Alert variant="error">{step3Error}</Alert>}
           <div className="flex items-center gap-4">
-            <button
-              type="button"
-              disabled={step3Saving}
-              onClick={handleStep3Continue}
-              className="rounded-lg bg-sage px-6 py-2.5 text-sm font-medium text-white transition hover:bg-sage-dark disabled:opacity-50"
-            >
+            <Button type="button" disabled={step3Saving} onClick={handleStep3Continue}>
               {step3Saving ? "確認しています..." : "次へ"}
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -227,38 +209,27 @@ export default function OnboardingWizard({
       {step === 4 && (
         <div className="flex max-w-xl flex-col gap-4">
           <BackButton onClick={() => setStep(3)} />
-          <div className="rounded-2xl bg-white p-6 shadow-sm">
+          <Card>
             <form onSubmit={handleStep4Submit} className="flex flex-col gap-5">
               <div>
-                <label htmlFor="onboarding-google-url" className="mb-1 block text-sm font-medium text-stone-700">
-                  Google口コミ投稿URL
-                </label>
-                <p className="mb-1 text-xs text-stone-500">
+                <Label htmlFor="onboarding-google-url">Google口コミ投稿URL</Label>
+                <p className="mb-1 text-xs text-ink-muted">
                   Googleビジネスプロフィール（Googleマップの管理画面）の「クチコミを増やす」機能から取得できるリンクを貼り付けてください。後から店舗設定でいつでも変更できます。
                 </p>
-                <input
+                <Input
                   id="onboarding-google-url"
                   type="url"
                   value={googleReviewUrl}
                   onChange={(e) => setGoogleReviewUrl(e.target.value)}
                   placeholder="https://..."
-                  className="w-full rounded-lg border border-greige px-3 py-2.5 text-sm text-stone-800 focus:border-sage focus:outline-none"
                 />
               </div>
-              {step4Error && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
-                  {step4Error}
-                </div>
-              )}
-              <button
-                type="submit"
-                disabled={step4Saving}
-                className="w-full rounded-lg bg-sage py-2.5 text-sm font-medium text-white transition hover:bg-sage-dark disabled:opacity-50 sm:w-auto sm:px-6"
-              >
+              {step4Error && <Alert variant="error">{step4Error}</Alert>}
+              <Button type="submit" disabled={step4Saving} fullWidth className="sm:w-auto sm:px-6">
                 {step4Saving ? "保存しています..." : "完了する"}
-              </button>
+              </Button>
             </form>
-          </div>
+          </Card>
         </div>
       )}
     </div>

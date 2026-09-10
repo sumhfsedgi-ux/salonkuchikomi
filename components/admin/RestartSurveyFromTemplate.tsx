@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import TemplatePicker from "@/components/admin/TemplatePicker";
-import { restartSurveyAction } from "@/app/admin/(authed)/survey/actions";
+import { restartSurveyAction } from "@/app/dashboard/reviews/actions";
 import type { SurveyTemplateSummary } from "@/lib/supabase/queries";
 
 export default function RestartSurveyFromTemplate({

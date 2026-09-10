@@ -3,7 +3,11 @@ import { NextResponse, type NextRequest } from "next/server";
 
 /**
  * Refreshes the Supabase auth session cookie on every request, and gates
- * `/admin/**` (except `/admin/login`) behind an authenticated session.
+ * `/dashboard/**` behind an authenticated session. `/login`,
+ * `/forgot-password`, `/reset-password` and the legacy `/admin/**`
+ * redirect stubs (see app/admin/) are intentionally left unguarded -- the
+ * first three are the public auth screens themselves, and the stubs only
+ * ever call redirect() and read nothing sensitive.
  *
  * This is an *optimistic* check only: getClaims() verifies the JWT's
  * signature and expiry locally (via a cached JWKS, so it costs a network
@@ -11,9 +15,9 @@ import { NextResponse, type NextRequest } from "next/server";
  * it does not confirm the session hasn't been revoked server-side since the
  * token was issued. That's fine here because Proxy runs on every route
  * (per Next.js's own guidance, it should stick to cheap local checks, not
- * database/API round trips) and `app/admin/(authed)/layout.tsx` performs
- * the authoritative, server-verified check (`getUser()`) before any admin
- * data is ever read.
+ * database/API round trips) and `app/dashboard/layout.tsx` performs
+ * the authoritative, server-verified check (`getUser()`) before any
+ * dashboard data is ever read.
  */
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -42,11 +46,10 @@ export async function updateSession(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
 
   const { pathname } = request.nextUrl;
-  const isAdminRoute = pathname.startsWith("/admin");
-  const isLoginRoute = pathname === "/admin/login";
+  const isDashboardRoute = pathname.startsWith("/dashboard");
 
-  if (isAdminRoute && !isLoginRoute && !data?.claims) {
-    const loginUrl = new URL("/admin/login", request.url);
+  if (isDashboardRoute && !data?.claims) {
+    const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
   }
 

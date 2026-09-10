@@ -2,23 +2,20 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentSalon } from "@/lib/supabase/queries";
 import SalonSettingsForm from "@/components/admin/SalonSettingsForm";
+import PageHeader from "@/components/ui/PageHeader";
+import Card from "@/components/ui/Card";
 
-export default async function AdminSettingsPage() {
+export default async function DashboardSettingsPage() {
   const supabase = await createClient();
   const salon = await getCurrentSalon(supabase);
-  if (!salon) redirect("/admin");
+  if (!salon) redirect("/dashboard");
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold text-stone-800">店舗設定</h1>
-        <p className="mt-1 text-sm text-stone-500">
-          店舗名やGoogle口コミ投稿URLなどを編集できます。
-        </p>
-      </div>
-      <div className="max-w-xl rounded-2xl bg-white p-6 shadow-sm">
+      <PageHeader title="サロン設定" description="店舗名やGoogle口コミ投稿URLなどを編集できます。" />
+      <Card className="max-w-xl">
         <SalonSettingsForm salon={salon} />
-      </div>
+      </Card>
     </div>
   );
 }
