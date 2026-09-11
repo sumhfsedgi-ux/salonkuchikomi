@@ -78,9 +78,9 @@ export default async function DashboardHomePage({
           icon={BlogIcon}
           title="ブログ"
           description="Hot PepperブログをAIで作成"
-          status="coming-soon"
+          status="active"
           href="/dashboard/blog"
-          ctaLabel="詳しく見る"
+          ctaLabel="ブログを作る"
         />
         <FeatureCard
           icon={BellIcon}

@@ -214,7 +214,7 @@ export default function OnboardingWizard({
               <div>
                 <Label htmlFor="onboarding-google-url">Google口コミ投稿URL</Label>
                 <p className="mb-1 text-xs text-ink-muted">
-                  Googleビジネスプロフィール（Googleマップの管理画面）の「クチコミを増やす」機能から取得できるリンクを貼り付けてください。後から店舗設定でいつでも変更できます。
+                  Googleビジネスプロフィール（Googleマップの管理画面）の「クチコミを増やす」機能から取得できるリンクを貼り付けてください。後から口コミでいつでも変更できます。
                 </p>
                 <Input
                   id="onboarding-google-url"

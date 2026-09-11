@@ -11,6 +11,42 @@ import { getCurrentSalon, applyDefaultBusinessType } from "@/lib/supabase/querie
 // mutation by that survey id as a second, explicit check on top of RLS — not
 // just relying on the database policies alone.
 
+// 空文字、またはhttp/httpsの有効なURLのみ許可する(単なる文字数チェックにしない)。
+// 既存に保存済みの正しいURL値はこの検証を通すだけで、遡っての一括修正は行わない。
+const googleReviewUrlSchema = z.union([
+  z.literal(""),
+  z
+    .httpUrl("有効なURLを入力してください。")
+    .max(500, "Google口コミ投稿URLは500文字以内で入力してください。"),
+]);
+
+export async function updateGoogleReviewUrlAction(
+  formData: FormData,
+): Promise<{ error?: string; success?: boolean }> {
+  const supabase = await createClient();
+  const salon = await getCurrentSalon(supabase);
+  if (!salon) return { error: "店舗情報が見つかりません。" };
+
+  const raw = String(formData.get("google_review_url") ?? "").trim();
+  const parsed = googleReviewUrlSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "有効なURLを入力してください。" };
+  }
+
+  const { error } = await supabase
+    .from("salons")
+    .update({ google_review_url: parsed.data || null, updated_at: new Date().toISOString() })
+    .eq("id", salon.id);
+
+  if (error) {
+    console.error("updateGoogleReviewUrlAction failed", error);
+    return { error: "保存に失敗しました。もう一度お試しください。" };
+  }
+
+  revalidatePath("/dashboard/reviews");
+  return { success: true };
+}
+
 async function getCurrentSurveyId(
   supabase: SupabaseClient,
   salonId: string,

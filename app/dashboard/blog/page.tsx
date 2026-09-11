@@ -1,17 +1,20 @@
-import ComingSoon from "@/components/dashboard/ComingSoon";
-import { BlogIcon } from "@/components/ui/icons";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { getCurrentSalon } from "@/lib/supabase/queries";
+import PageHeader from "@/components/ui/PageHeader";
+import BlogSubNav from "@/components/blog/BlogSubNav";
+import CreateFlow from "@/components/blog/create/CreateFlow";
 
-// Intentionally static -- no Supabase query, no fetch, no import of
-// blog-app's code or API. Blog generation is a separate app today; this
-// page only reserves its place in the navigation until real integration
-// happens in a later project.
-export default function DashboardBlogPage() {
+export default async function DashboardBlogPage() {
+  const supabase = await createClient();
+  const salon = await getCurrentSalon(supabase);
+  if (!salon) redirect("/dashboard");
+
   return (
-    <ComingSoon
-      icon={BlogIcon}
-      title="ブログ"
-      pageDescription="Hot PepperブログをAIで作成"
-      bodyText="ブログ作成機能は近日公開予定です。公開までしばらくお待ちください。"
-    />
+    <div className="flex flex-col gap-6">
+      <PageHeader title="ブログ" description="Hot PepperブログをAIで作成" />
+      <BlogSubNav />
+      <CreateFlow />
+    </div>
   );
 }

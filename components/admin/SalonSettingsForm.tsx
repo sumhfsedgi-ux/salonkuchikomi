@@ -12,7 +12,6 @@ import Button from "@/components/ui/Button";
 export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
   const [name, setName] = useState(salon.name);
   const [businessType, setBusinessType] = useState(salon.businessType ?? "");
-  const [googleReviewUrl, setGoogleReviewUrl] = useState(salon.googleReviewUrl ?? "");
   const [description, setDescription] = useState(salon.description ?? "");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -27,7 +26,6 @@ export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
     const formData = new FormData();
     formData.set("name", name);
     formData.set("business_type", businessType);
-    formData.set("google_review_url", googleReviewUrl);
     formData.set("description", description);
 
     const result = await updateSalonAction(formData);
@@ -56,20 +54,6 @@ export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
           value={businessType}
           onChange={(e) => setBusinessType(e.target.value)}
           placeholder="例：ヘアサロン、エステサロン、整体院"
-        />
-      </div>
-
-      <div>
-        <Label htmlFor="google_review_url">Google口コミ投稿URL</Label>
-        <p className="mb-1 text-xs text-ink-muted">
-          Googleビジネスプロフィール（Googleマップの管理画面）の「クチコミを増やす」機能から取得できるリンクを貼り付けてください。
-        </p>
-        <Input
-          id="google_review_url"
-          type="url"
-          value={googleReviewUrl}
-          onChange={(e) => setGoogleReviewUrl(e.target.value)}
-          placeholder="https://..."
         />
       </div>
 
