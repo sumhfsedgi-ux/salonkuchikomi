@@ -18,7 +18,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import QuestionCardEditor from "@/components/admin/QuestionCardEditor";
-import { saveSurveyAction } from "@/app/admin/(authed)/survey/actions";
+import { saveSurveyAction } from "@/app/dashboard/reviews/actions";
 
 export interface OptionData {
   id: string;

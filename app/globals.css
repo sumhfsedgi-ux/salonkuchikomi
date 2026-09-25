@@ -7,6 +7,22 @@
   --color-sage: #8a9a7e;
   --color-sage-dark: #6e7d64;
   --color-earth: #a98b6e;
+
+  /* Formalized tokens for the dashboard design system (components/ui/*).
+     These extend rather than replace the palette above: ivory/sage/earth
+     are unchanged, this just names a few more values that were previously
+     only ever written as raw Tailwind classes (stone-500, red-600, etc)
+     scattered per-component. */
+  --color-surface: #ffffff;
+  --color-ink: #3f3a34;
+  --color-ink-muted: #7a7268;
+  --color-sage-soft: #eef1ea;
+  --color-border: #e8e4de;
+  --color-warning: #b45309;
+  --color-warning-soft: #fef3c7;
+  --color-danger: #dc2626;
+  --color-danger-soft: #fef2f2;
+
   --font-sans: var(--font-geist-sans);
 }
 
@@ -54,12 +70,6 @@ a:active {
   }
   .btn-primary {
     @apply w-full bg-sage text-white rounded-lg py-3 font-medium transition hover:bg-sage-dark disabled:opacity-50 disabled:pointer-events-none;
-  }
-  .btn-secondary {
-    @apply w-full bg-beige text-stone-700 border border-greige rounded-lg py-3 font-medium transition hover:bg-greige disabled:opacity-50 disabled:pointer-events-none;
-  }
-  .btn-text {
-    @apply text-sage-dark underline text-sm disabled:opacity-50 disabled:pointer-events-none;
   }
 
   @keyframes result-fade-in {

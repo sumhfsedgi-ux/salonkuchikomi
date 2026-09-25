@@ -4,7 +4,7 @@
 
 お客様は`/review/{ページURL}`を開いてアンケートに回答するだけで、その回答内容だけをもとにOpenAI APIが口コミ文章の下書きを生成します。生成された文章はお客様本人が内容を確認・編集し、コピーしてからGoogleの口コミ投稿ページへ移動して、ご自身で投稿します。**Googleへの自動投稿は行いません。**
 
-サロンオーナーは`/admin`にログインし、店舗情報・アンケート内容・Google口コミURLを自分で管理できます。
+サロンオーナーは`/login`にログインし、`/dashboard`から店舗情報・アンケート内容・Google口コミURLを自分で管理できます（旧`/admin`系のURLはそれぞれ対応する新URLへリダイレクトされます）。
 
 ## ブランチについて
 
@@ -23,10 +23,10 @@
 7. コピーした文章を貼り付けて、お客様自身が投稿する
 
 **サロンオーナー（ログイン必要）**
-1. `/admin/login` からログイン
+1. `/login` からログイン
 2. 初回は店舗情報登録→アンケートテンプレート選択→（必要なら質問編集）→Google口コミURL登録、の順に案内される
 3. 完成すると自店舗専用のお客様用URLが発行される
-4. 以後は `/admin` から店舗設定・アンケート内容をいつでも編集できる
+4. 以後は `/dashboard` から店舗設定・アンケート内容をいつでも編集できる
 
 ## セットアップ
 
@@ -41,7 +41,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-[http://localhost:3000](http://localhost:3000) で確認できます（未ログインなら自動的に `/admin/login` へ移動します）。
+[http://localhost:3000](http://localhost:3000) で確認できます（未ログインなら自動的に `/login` へ移動します）。
 
 ## 環境変数
 
@@ -89,7 +89,7 @@ supabase db reset   # ローカル開発環境の場合。migration+seedを両�
 1. Supabaseダッシュボード → Authentication → Users → **Add user** で、オーナーのメールアドレス・パスワードを設定してユーザーを作成
 2. 作成すると自動的に`profiles`テーブルに対応する行が作られます（DBトリガーによる自動処理）
 3. オーナーへログイン情報（メールアドレス・パスワード）を共有する
-4. オーナーが`/admin/login`からログインすると、初回は店舗情報登録のウィザードが表示されます
+4. オーナーが`/login`からログインすると、初回は店舗情報登録のウィザードが表示されます
 
 ## OpenAI API設定について
 
@@ -109,7 +109,7 @@ supabase db reset   # ローカル開発環境の場合。migration+seedを両�
 `master`ブランチで運用していた1店舗版から、このマルチテナント版へ切り替える際の手順です（`feature/multi-salon-admin`が`master`にマージされ本番昇格した後に実施してください）。
 
 1. Supabaseダッシュボードでオーナーアカウントを手動発行（上記「サロンオーナーアカウントの作成方法」参照）
-2. `/admin/login`でログインし、オンボーディングウィザードで店舗名を登録
+2. `/login`でログインし、オンボーディングウィザードで店舗名を登録
 3. テンプレート選択で「ハーブピーリング」を選ぶ（生成される質問は現行の最新版と一致する内容です）
 4. 質問編集は不要ならそのままスキップ
 5. これまで`NEXT_PUBLIC_GOOGLE_REVIEW_URL`に設定していたURLをGoogle口コミURLとして登録
@@ -122,26 +122,37 @@ supabase db reset   # ローカル開発環境の場合。migration+seedを両�
 
 ```
 app/
-  page.tsx                          ルート（ログイン状態に応じて/adminまたは/admin/loginへ）
+  page.tsx                          ルート（ログイン状態に応じて/dashboardまたは/loginへ）
   review/[slug]/page.tsx            お客様用アンケート画面（サロンごとに動的生成）
   api/generate-review/route.ts      OpenAI APIを呼び出すサーバーサイドAPI
-  admin/login/page.tsx              オーナーログイン画面
-  admin/(authed)/                   ログイン必須の管理画面（layout.tsx で認証ゲート）
-    page.tsx                        ダッシュボード／初回オンボーディング
+  (auth)/login/page.tsx             オーナーログイン画面
+  (auth)/forgot-password/page.tsx   パスワード再設定（メール送信）
+  (auth)/reset-password/page.tsx    パスワード再設定（新パスワード設定・初回パスワード設定を兼ねる）
+  dashboard/                        ログイン必須の管理画面（layout.tsx で認証ゲート、Sidebar/BottomNavのシェル）
+    page.tsx                        ホーム（口コミ/ブログ/予約通知の入口）
     settings/                       店舗設定
-    survey/                         アンケート設定（テンプレート選択・質問編集）
+    reviews/                        口コミ（アンケート設定・お客様用URL）
+    blog/                           ブログ（準備中プレースホルダー、blog-app未連携）
+    notifications/                  予約通知（準備中プレースホルダー、hmail未連携）
+  admin/                            旧URL互換のリダイレクトのみ（/dashboard系へ）
 components/
+  ui/                               共通デザインシステム（Button/Card/Input/Alert/Toast/Skeleton等）
+  layout/                           Sidebar・BottomNav・ProfileMenu・DashboardShell
+  dashboard/                        ホーム画面のFeatureCard等
+  auth/                             ログイン・パスワード再設定フォーム
   review/                           お客様向け画面のコンポーネント一式
-  admin/                            管理画面のコンポーネント一式
-  Toast.tsx                         共通トースト通知（review/admin両方で使用）
+  admin/                            アンケート編集・店舗設定フォーム等
+  Toast.tsx                         共通トースト通知（review/dashboard両方で使用）
 lib/
   types.ts                          共有の型定義（質問・回答・サロン情報）
   constants.ts                      共有定数
+  brand.ts                          サービス名・タグライン（正式名称確定までの仮定数）
+  cn.ts                             クラス名結合の小ユーティリティ
   supabase/                         Supabaseクライアント（ブラウザ／サーバー／proxy用）・共通クエリ
 supabase/
   migrations/                       テーブル・RLS・関数のマイグレーション
   seed.sql                          テンプレート初期データ
-proxy.ts                            認証セッションのリフレッシュ＋/admin配下の未ログインリダイレクト
+proxy.ts                            認証セッションのリフレッシュ＋/dashboard配下の未ログインリダイレクト
 ```
 
 ## セキュリティ設計の要点
