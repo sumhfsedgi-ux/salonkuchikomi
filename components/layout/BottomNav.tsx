@@ -3,14 +3,31 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
-import { NAV_ITEMS, isNavItemActive } from "@/components/layout/navItems";
+import { SettingsIcon } from "@/components/ui/icons";
+import { getNavItems, isNavItemActive } from "@/components/layout/navItems";
+import { getAppMode } from "@/lib/appMode";
 
-// The mobile navigation surface: a fixed bottom bar with exactly 4 items
-// (per the design brief's "5個以上を無理に並べない" rule) -- サロン設定 /
-// アカウント / ログアウト live in ProfileMenu instead, reached from
-// MobileHeader.
+// grid-cols-Nはtailwindが動的クラス名を解決できないため、項目数からの
+// ルックアップで静的なクラス名を選ぶ(navItemsは現状2件(reviewsモード)か
+// 4件(salonpackモード)のどちらか)。
+const GRID_COLS_CLASS: Record<number, string> = {
+  2: "grid-cols-2",
+  4: "grid-cols-4",
+};
+
+// The mobile navigation surface: a fixed bottom bar (per the design brief's
+// "5個以上を無理に並べない" rule)。SalonPackモードではサロン設定/アカウント/
+// ログアウトはProfileMenuの方に置いている(MobileHeaderから開く)。reviewsモードは
+// 主要機能が口コミ1つだけなので、常時アクセスできるよう「設定」をここに直接
+// 表示する(ProfileMenu側の「サロン設定」はreviewsモードでは非表示にして
+// 導線の重複を避けている -- components/layout/ProfileMenu.tsx参照)。
 export default function BottomNav() {
   const pathname = usePathname();
+  const mode = getAppMode();
+  const navItems = getNavItems(mode);
+  if (mode === "reviews") {
+    navItems.push({ href: "/dashboard/settings", label: "設定", icon: SettingsIcon });
+  }
 
   return (
     <nav
@@ -18,10 +35,10 @@ export default function BottomNav() {
       aria-label="メインナビゲーション"
     >
       <div
-        className="mx-auto grid max-w-md grid-cols-4"
+        className={cn("mx-auto grid max-w-md", GRID_COLS_CLASS[navItems.length] ?? "grid-cols-4")}
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const active = isNavItemActive(pathname, item.href);
           const Icon = item.icon;
           return (

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentSalon } from "@/lib/supabase/queries";
+import { requireFeatureAccess } from "@/lib/access/featureAccess";
 import { salonSettingsSchema, type SalonSettingsInput } from "@/lib/blog/validation";
 import { upsertSalonSettings } from "@/lib/blog/queries";
 
@@ -15,8 +15,7 @@ export async function saveSalonSettingsAction(
   input: SalonSettingsInput
 ): Promise<SaveSalonSettingsResult> {
   const supabase = await createClient();
-  const salon = await getCurrentSalon(supabase);
-  if (!salon) return { ok: false, error: "ログインが必要です。" };
+  const salon = await requireFeatureAccess(supabase, "blog");
 
   const parsed = salonSettingsSchema.safeParse(input);
   if (!parsed.success) {

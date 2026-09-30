@@ -215,27 +215,28 @@ const QuestionEditor = forwardRef<QuestionEditorHandle, { questions: QuestionDat
 
     return (
       <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-stone-400">
-            ⠿ をドラッグすると順番を変えられます。入力するとそのまま保存されます。
-          </p>
-          <p
-            className={[
-              "text-xs font-medium",
-              status === "saving"
-                ? "text-stone-400"
-                : status === "saved"
-                  ? "text-sage-dark"
-                  : status === "error"
-                    ? "text-red-500"
-                    : "text-transparent",
-            ].join(" ")}
-          >
-            {status === "saving" && "保存中…"}
-            {status === "saved" && "✓ 保存済み"}
-            {status === "error" && "保存できませんでした"}
-            {status === "idle" && "・"}
-          </p>
+        <div className="flex flex-col gap-1">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-ink">お客様への質問</h2>
+            <p
+              className={[
+                "text-xs font-medium",
+                status === "saving"
+                  ? "text-stone-400"
+                  : status === "saved"
+                    ? "text-sage-dark"
+                    : status === "error"
+                      ? "text-red-500"
+                      : "text-transparent",
+              ].join(" ")}
+            >
+              {status === "saving" && "保存中…"}
+              {status === "saved" && "✓ 保存済み"}
+              {status === "error" && "保存できませんでした"}
+              {status === "idle" && "・"}
+            </p>
+          </div>
+          <p className="text-xs text-stone-400">ドラッグで並び替え・入力内容は自動保存されます。</p>
         </div>
 
         {missingRequired > 0 && (
@@ -250,7 +251,12 @@ const QuestionEditor = forwardRef<QuestionEditorHandle, { questions: QuestionDat
           </div>
         )}
 
+        {/* idを明示しないと@dnd-kitがaria-describedby用IDをサーバーを跨いで
+            保持される連番カウンタで自動採番し、クライアント側(常に0開始)と
+            ズレてhydrationエラーになる(QuestionCardEditor.tsx内のDndContextと
+            同じ理由)。固定文字列で常に同じ値にする。 */}
         <DndContext
+          id="question-list"
           sensors={questionSensors}
           collisionDetection={closestCenter}
           onDragEnd={handleQuestionDragEnd}

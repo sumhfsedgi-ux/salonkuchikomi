@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { SettingsIcon, LogOutIcon, UserCircleIcon } from "@/components/ui/icons";
+import { isReviewsOnly } from "@/lib/appMode";
 import { logoutAction } from "@/app/dashboard/actions";
 
 // Mobile-only: サロン設定・ログアウトの入口を、常時表示のボトムナビから
@@ -50,15 +51,19 @@ export default function ProfileMenu() {
           role="menu"
           className="absolute right-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-xl border border-border bg-white py-1 shadow-md"
         >
-          <Link
-            href="/dashboard/settings"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-            className="flex min-h-11 items-center gap-2.5 px-4 py-2.5 text-sm text-ink transition hover:bg-ivory"
-          >
-            <SettingsIcon className="h-4 w-4" />
-            サロン設定
-          </Link>
+          {/* reviewsモードはBottomNavに常時「設定」タブがあるため、ここに
+              同じ遷移先を重複させない(SalonPackモードのみ表示)。 */}
+          {!isReviewsOnly() && (
+            <Link
+              href="/dashboard/settings"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="flex min-h-11 items-center gap-2.5 px-4 py-2.5 text-sm text-ink transition hover:bg-ivory"
+            >
+              <SettingsIcon className="h-4 w-4" />
+              サロン設定
+            </Link>
+          )}
           <form action={logoutAction}>
             <button
               type="submit"

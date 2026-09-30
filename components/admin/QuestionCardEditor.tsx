@@ -30,9 +30,9 @@ interface QuestionData {
 }
 
 const TYPE_LABELS: Record<QuestionData["question_type"], string> = {
-  single: "1つだけ選ぶ",
-  multiple: "3つだけ選ぶ",
-  text: "自由記入欄",
+  single: "1つ選択",
+  multiple: "最大3つ選択",
+  text: "自由記述",
 };
 
 function GripIcon() {
@@ -188,7 +188,7 @@ export default function QuestionCardEditor({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={[
-        "rounded-2xl bg-white p-5 shadow-sm transition-shadow",
+        "rounded-2xl bg-white p-5 shadow-sm transition-shadow sm:p-4",
         isDragging ? "z-10 shadow-lg" : "",
       ].join(" ")}
     >
@@ -223,7 +223,7 @@ export default function QuestionCardEditor({
         </button>
       </div>
 
-      <div className="mb-3 flex flex-wrap items-center gap-2 pl-2 sm:pl-9">
+      <div className="mb-3 flex flex-wrap items-center gap-2 pl-2 sm:mb-2 sm:pl-9">
         <TypePicker
           value={question.question_type}
           onChange={(type) =>
@@ -233,8 +233,14 @@ export default function QuestionCardEditor({
       </div>
 
       {question.question_type !== "text" ? (
-        <div className="mb-2 flex flex-col gap-0.5 pl-2 sm:pl-9">
+        <div className="mb-2 flex flex-col gap-0.5 pl-2 sm:mb-1.5 sm:pl-9">
+          {/* idを明示しないと@dnd-kitがaria-describedby用に内部の連番カウンタで
+              自動採番する。そのカウンタはサーバー側でリクエストをまたいで
+              保持されるため、同じページを2回目以降レンダリングするとクライアント
+              (常に0から)とズレてhydrationエラーになる。question.idを使えば
+              サーバー/クライアントで常に同じ値になる。 */}
           <DndContext
+            id={`option-list-${question.id}`}
             sensors={optionSensors}
             collisionDetection={closestCenter}
             onDragEnd={handleOptionDragEnd}

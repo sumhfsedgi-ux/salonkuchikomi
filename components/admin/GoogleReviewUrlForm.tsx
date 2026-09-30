@@ -34,9 +34,9 @@ export default function GoogleReviewUrlForm({ initialUrl }: { initialUrl: string
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
       <div>
-        <Label htmlFor="google_review_url">Google口コミ投稿URL</Label>
+        <Label htmlFor="google_review_url">Google口コミ投稿先</Label>
         <p className="mb-1 text-xs text-ink-muted">
-          口コミ作成後に移動する、Googleの投稿ページURLです。
+          口コミ文の作成後に開くGoogleの投稿ページです。
         </p>
         <Input
           id="google_review_url"

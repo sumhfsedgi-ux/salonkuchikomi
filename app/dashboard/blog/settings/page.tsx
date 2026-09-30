@@ -1,7 +1,6 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentSalon } from "@/lib/supabase/queries";
+import { requireFeatureAccess } from "@/lib/access/featureAccess";
 import { getSalonSettings } from "@/lib/blog/queries";
 import PageHeader from "@/components/ui/PageHeader";
 import BlogSubNav from "@/components/blog/BlogSubNav";
@@ -13,8 +12,7 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardBlogSettingsPage() {
   const supabase = await createClient();
-  const salon = await getCurrentSalon(supabase);
-  if (!salon) redirect("/dashboard");
+  const salon = await requireFeatureAccess(supabase, "blog");
 
   const settings = await getSalonSettings(salon.id);
 

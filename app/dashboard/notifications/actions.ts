@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentSalon } from "@/lib/supabase/queries";
+import { canAccessFeature } from "@/lib/access/featureAccess";
+import type { OwnerSalon } from "@/lib/types";
 import { updateNotificationSettings as updateMasterEnabledInDb } from "@/lib/notifications/db/notificationSettings";
 import {
   listLineConnections,
@@ -20,12 +22,34 @@ import { pushText, LineSendError } from "@/lib/notifications/line/LineClient";
 
 const TEST_MESSAGE = "予約通知の設定が完了しました";
 
-export async function updateMasterEnabledAction(
-  masterEnabled: boolean
-): Promise<{ ok: boolean; error?: string }> {
+/**
+ * この画面の全Server Actionで共通の入り口。APP_MODE/店舗の契約プラン両方の
+ * 許可を確認する(lib/access/featureAccess.ts)。ここではrequireFeatureAccess()
+ * のnotFound()/redirect()ではなく、この画面の既存の{ok, error}という戻り値の
+ * 形を保つためcanAccessFeature()を直接使う。
+ */
+async function resolveAccessibleSalon(): Promise<
+  { ok: true; salon: OwnerSalon } | { ok: false; error: string }
+> {
   const supabase = await createClient();
   const salon = await getCurrentSalon(supabase);
   if (!salon) return { ok: false, error: "ログインが必要です。" };
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user || !(await canAccessFeature(salon, user.id, "notifications"))) {
+    return { ok: false, error: "この機能は利用できません。" };
+  }
+  return { ok: true, salon };
+}
+
+export async function updateMasterEnabledAction(
+  masterEnabled: boolean
+): Promise<{ ok: boolean; error?: string }> {
+  const resolved = await resolveAccessibleSalon();
+  if (!resolved.ok) return resolved;
+  const { salon } = resolved;
 
   try {
     await updateMasterEnabledInDb(salon.id, masterEnabled);
@@ -42,9 +66,9 @@ export async function updateLineConnectionSettingsAction(
   connectionId: string,
   patch: LineConnectionSettingsUpdate
 ): Promise<{ ok: boolean; error?: string }> {
-  const supabase = await createClient();
-  const salon = await getCurrentSalon(supabase);
-  if (!salon) return { ok: false, error: "ログインが必要です。" };
+  const resolved = await resolveAccessibleSalon();
+  if (!resolved.ok) return resolved;
+  const { salon } = resolved;
 
   try {
     await updateLineConnectionSettingsInDb(connectionId, salon.id, patch);
@@ -59,9 +83,9 @@ export async function updateLineConnectionSettingsAction(
 
 /** 接続中の全スタッフへテスト通知をfan-out送信する。1人への失敗が他を止めない。 */
 export async function sendTestNotificationAction(): Promise<{ ok: boolean; error?: string }> {
-  const supabase = await createClient();
-  const salon = await getCurrentSalon(supabase);
-  if (!salon) return { ok: false, error: "ログインが必要です。" };
+  const resolved = await resolveAccessibleSalon();
+  if (!resolved.ok) return resolved;
+  const { salon } = resolved;
 
   // 直前に送ったばかりなら二重送信せず、成功扱いで返す(連打対策)。
   if (await hasRecentTestNotification(salon.id)) return { ok: true };

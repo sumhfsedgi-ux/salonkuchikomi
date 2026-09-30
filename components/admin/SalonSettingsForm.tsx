@@ -47,7 +47,7 @@ export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
       <div>
         <Label htmlFor="business_type">業種（任意）</Label>
         <p className="mb-1 text-xs text-ink-muted">
-          口コミ作成AIが回答内容を正しく理解するための参考情報として使用します。
+          口コミ文をより自然に作成するために使用します。
         </p>
         <Input
           id="business_type"
@@ -58,12 +58,14 @@ export default function SalonSettingsForm({ salon }: { salon: OwnerSalon }) {
       </div>
 
       <div>
-        <Label htmlFor="description">店舗説明（任意）</Label>
+        <Label htmlFor="description">店舗の特徴（任意）</Label>
+        <p className="mb-1 text-xs text-ink-muted">サロンの特徴や雰囲気などを入力してください。</p>
         <Textarea
           id="description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={3}
+          placeholder="例：完全予約制のプライベートサロン。落ち着いた空間で、一人ひとりのお悩みに合わせた施術を行っています。"
         />
       </div>
 

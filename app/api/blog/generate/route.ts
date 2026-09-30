@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentSalon } from "@/lib/supabase/queries";
+import { canAccessFeature } from "@/lib/access/featureAccess";
 import { generateRequestSchema } from "@/lib/blog/validation";
 import {
   getSalonSettings,
@@ -230,10 +231,20 @@ export async function POST(request: Request) {
   // 認証済みユーザー -> getCurrentSalon() -> salon.id の順で必ず解決する。
   // salonIdはリクエストボディ・クエリパラメータからは一切受け取らない
   // (generateRequestSchemaにもsalonIdフィールドは存在しない)。
+  //
+  // APP_MODE/店舗の契約プラン両方の許可を確認する(lib/access/featureAccess.ts)。
+  // requireFeatureAccess()のnotFound()/redirect()はページ向けのため、ここでは
+  // canAccessFeature()を直接使い、この経路の既存のJSONエラー契約を保つ。
   const supabase = await createClient();
   const salon = await getCurrentSalon(supabase);
   if (!salon) {
     return NextResponse.json({ error: "ログインが必要です。" }, { status: 401 });
+  }
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user || !(await canAccessFeature(salon, user.id, "blog"))) {
+    return NextResponse.json({ error: "この機能は利用できません。" }, { status: 403 });
   }
   const salonId = salon.id;
 
