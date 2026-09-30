@@ -4,6 +4,12 @@ import { cn } from "@/lib/cn";
 // A simple monogram-in-a-square stand-in for a real logo asset (none exists
 // yet -- see lib/brand.ts). Swapping this for a real mark later only means
 // replacing this one component.
+//
+// アイコンの文字は固定("S")で、SERVICE_NAMEの頭文字ではない。SalonPack /
+// 口コミ365どちらのモードでも同じアイコンにして、ブランドの統一感を出すため
+// (サービス名が変わってもアイコンだけは共通のまま)。
+const MARK_LETTER = "S";
+
 export default function Logo({
   className,
   markOnly = false,
@@ -17,7 +23,7 @@ export default function Logo({
         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sage text-sm font-semibold text-white"
         aria-hidden="true"
       >
-        {SERVICE_NAME.charAt(0)}
+        {MARK_LETTER}
       </span>
       {!markOnly && <span className="text-base font-semibold text-ink">{SERVICE_NAME}</span>}
     </span>

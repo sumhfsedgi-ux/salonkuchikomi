@@ -28,12 +28,16 @@ import { logoutAction } from "@/app/dashboard/actions";
 export default function Sidebar() {
   const pathname = usePathname();
   const settingsActive = isNavItemActive(pathname, "/dashboard/settings");
-  const navItems = getNavItems(getAppMode());
+  const mode = getAppMode();
+  const navItems = getNavItems(mode);
+  // reviewsモードは/dashboardが結局/dashboard/reviewsへredirectするだけなので、
+  // ロゴのリンク先は直接そこへ向ける(遠回りのredirectを挟まない)。
+  const homeHref = mode === "reviews" ? "/dashboard/reviews" : "/dashboard";
 
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-white md:flex md:h-dvh md:sticky md:top-0 md:self-start md:overflow-y-auto">
       <div className="px-5 pb-4 pt-6">
-        <Link href="/dashboard">
+        <Link href={homeHref}>
           <Logo />
         </Link>
       </div>

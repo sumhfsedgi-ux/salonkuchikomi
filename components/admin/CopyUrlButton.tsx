@@ -27,7 +27,7 @@ export default function CopyUrlButton({ url, variant = "button", className }: Pr
     <>
       {variant === "button" ? (
         <Button type="button" onClick={handleCopy} size="sm" className={cn("shrink-0", className)}>
-          URLをコピー
+          コピー
         </Button>
       ) : (
         <button
@@ -38,7 +38,7 @@ export default function CopyUrlButton({ url, variant = "button", className }: Pr
             className,
           )}
         >
-          URLをコピー
+          コピー
         </button>
       )}
       <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} variant={toastVariant} />

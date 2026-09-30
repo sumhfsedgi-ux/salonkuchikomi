@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
+import { SettingsIcon } from "@/components/ui/icons";
 import { getNavItems, isNavItemActive } from "@/components/layout/navItems";
 import { getAppMode } from "@/lib/appMode";
 
@@ -15,12 +16,18 @@ const GRID_COLS_CLASS: Record<number, string> = {
 };
 
 // The mobile navigation surface: a fixed bottom bar (per the design brief's
-// "5個以上を無理に並べない" rule) -- サロン設定 / アカウント / ログアウトは
-// ProfileMenuの方に置いている(MobileHeaderから開く)。項目数はAPP_MODEに
-// よって2件(口コミ365)か4件(SalonPack)に変わる。
+// "5個以上を無理に並べない" rule)。SalonPackモードではサロン設定/アカウント/
+// ログアウトはProfileMenuの方に置いている(MobileHeaderから開く)。reviewsモードは
+// 主要機能が口コミ1つだけなので、常時アクセスできるよう「設定」をここに直接
+// 表示する(ProfileMenu側の「サロン設定」はreviewsモードでは非表示にして
+// 導線の重複を避けている -- components/layout/ProfileMenu.tsx参照)。
 export default function BottomNav() {
   const pathname = usePathname();
-  const navItems = getNavItems(getAppMode());
+  const mode = getAppMode();
+  const navItems = getNavItems(mode);
+  if (mode === "reviews") {
+    navItems.push({ href: "/dashboard/settings", label: "設定", icon: SettingsIcon });
+  }
 
   return (
     <nav

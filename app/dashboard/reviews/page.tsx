@@ -26,15 +26,15 @@ export default async function DashboardReviewsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="口コミ" description="文字をタップして書き換えられます。変更はそのまま保存されます。" />
+      <PageHeader title="口コミ" description="お客様が回答する質問や、口コミ投稿までの導線を設定できます。" />
 
       <div className="flex flex-col gap-4">
-        <h2 className="text-sm font-semibold text-ink">口コミURL関連の設定</h2>
+        <h2 className="text-sm font-semibold text-ink">お客様用リンク</h2>
 
         <Card>
-          <p className="font-medium text-ink">お客様用口コミページURL</p>
+          <p className="font-medium text-ink">お客様用口コミページ</p>
           <p className="mt-1 text-sm text-ink-muted">
-            施術後のお客様へLINEやDMでこちらのURLをお送りください。
+            施術後にLINEやDMで送るページです。
           </p>
           <div className="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
             <div className="min-w-0 flex-1 truncate rounded-lg bg-ivory px-3 py-2.5 text-sm text-ink">

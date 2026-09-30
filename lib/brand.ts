@@ -9,5 +9,5 @@ import { isReviewsOnly } from "@/lib/appMode";
 // APP_MODE=reviewsのデプロイ(口コミ365)では別ブランドとして表示する。
 export const SERVICE_NAME = isReviewsOnly() ? "口コミ365" : "SalonPack";
 export const SERVICE_TAGLINE = isReviewsOnly()
-  ? "Google口コミ作成を、もっとシンプルに。"
+  ? "サロン運営を、もっとシンプルに。"
   : "サロン業務を、もっとシンプルに。";

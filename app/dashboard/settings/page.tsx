@@ -18,11 +18,11 @@ export default async function DashboardSettingsPage() {
         <SalonSettingsForm salon={salon} />
       </Card>
       <p className="text-sm text-ink-muted">
-        Google口コミ投稿URLは
+        Google口コミ投稿先の設定は
         <Link href="/dashboard/reviews" className="text-sage-dark underline underline-offset-2">
           口コミ
         </Link>
-        で設定します。
+        から変更できます。
       </p>
     </div>
   );

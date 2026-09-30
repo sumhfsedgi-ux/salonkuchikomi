@@ -16,17 +16,19 @@ export interface NavItem {
 // requireFeatureAccess()で別途判定する(店舗の契約プランも見る) -- ナビを
 // 出し分けるだけではアクセス制御にならない。
 export function getNavItems(mode: AppMode): NavItem[] {
-  const items: NavItem[] = [
+  // reviewsモードは現状「口コミ」が唯一の主要機能のため「ホーム」を省く
+  // (同じ遷移先の項目を並べない)。将来reviewsモードに機能が増えたら、
+  // この配列にホームを1行足すだけで復活できる。
+  if (mode === "reviews") {
+    return [{ href: "/dashboard/reviews", label: "口コミ", icon: ReviewIcon }];
+  }
+
+  return [
     { href: "/dashboard", label: "ホーム", icon: HomeIcon },
     { href: "/dashboard/reviews", label: "口コミ", icon: ReviewIcon },
+    { href: "/dashboard/blog", label: "ブログ", icon: BlogIcon },
+    { href: "/dashboard/notifications", label: "予約通知", icon: BellIcon },
   ];
-  if (mode === "salonpack") {
-    items.push(
-      { href: "/dashboard/blog", label: "ブログ", icon: BlogIcon },
-      { href: "/dashboard/notifications", label: "予約通知", icon: BellIcon },
-    );
-  }
-  return items;
 }
 
 export function isNavItemActive(pathname: string, href: string): boolean {
