@@ -1,6 +1,6 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentSalon } from "@/lib/supabase/queries";
+import { requireFeatureAccess } from "@/lib/access/featureAccess";
 import { getPost } from "@/lib/blog/queries";
 import HistoryDetail from "@/components/blog/history/HistoryDetail";
 
@@ -12,8 +12,7 @@ export default async function DashboardBlogHistoryDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const supabase = await createClient();
-  const salon = await getCurrentSalon(supabase);
-  if (!salon) redirect("/dashboard");
+  const salon = await requireFeatureAccess(supabase, "blog");
 
   const { id } = await params;
   const post = await getPost(salon.id, id);

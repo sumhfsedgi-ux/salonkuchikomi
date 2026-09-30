@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
 import Logo from "@/components/ui/Logo";
 import { SettingsIcon, LogOutIcon } from "@/components/ui/icons";
-import { NAV_ITEMS, isNavItemActive } from "@/components/layout/navItems";
+import { getNavItems, isNavItemActive } from "@/components/layout/navItems";
+import { getAppMode } from "@/lib/appMode";
 import { logoutAction } from "@/app/dashboard/actions";
 
 // The PC navigation surface: always-visible left sidebar, per the design
@@ -27,6 +28,7 @@ import { logoutAction } from "@/app/dashboard/actions";
 export default function Sidebar() {
   const pathname = usePathname();
   const settingsActive = isNavItemActive(pathname, "/dashboard/settings");
+  const navItems = getNavItems(getAppMode());
 
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-white md:flex md:h-dvh md:sticky md:top-0 md:self-start md:overflow-y-auto">
@@ -37,7 +39,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex flex-1 flex-col gap-1 px-3">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const active = isNavItemActive(pathname, item.href);
           const Icon = item.icon;
           return (

@@ -1,3 +1,5 @@
+import type { SalonPlan } from "@/lib/access/plan";
+
 export type QuestionType = "single" | "multiple" | "text";
 
 interface BaseQuestion {
@@ -42,6 +44,9 @@ export interface PublicSalon {
 export interface OwnerSalon extends PublicSalon {
   ownerId: string;
   onboardingCompleted: boolean;
+  // 契約プラン(lib/access/plan.ts参照)。常に管理者が確定させる値で、
+  // APP_MODEから自動的に導出してはならない。
+  plan: SalonPlan;
   createdAt: string;
   updatedAt: string;
 }

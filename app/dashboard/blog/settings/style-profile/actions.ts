@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentSalon } from "@/lib/supabase/queries";
+import { requireFeatureAccess } from "@/lib/access/featureAccess";
 import {
   hotpepperImportInputSchema,
   referencePostToggleSchema,
@@ -62,8 +62,7 @@ function hotPepperErrorMessage(kind: HotPepperFetchError["kind"]): string {
 
 async function requireSalonId(): Promise<{ salonId: string } | { error: string }> {
   const supabase = await createClient();
-  const salon = await getCurrentSalon(supabase);
-  if (!salon) return { error: "ログインが必要です。" };
+  const salon = await requireFeatureAccess(supabase, "blog");
   return { salonId: salon.id };
 }
 

@@ -1,6 +1,5 @@
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentSalon } from "@/lib/supabase/queries";
+import { requireFeatureAccess } from "@/lib/access/featureAccess";
 import { getMailConnection } from "@/lib/notifications/db/mailConnections";
 import { listLineConnections } from "@/lib/notifications/db/lineConnections";
 import { getNotificationSettings } from "@/lib/notifications/db/notificationSettings";
@@ -16,8 +15,7 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardNotificationsPage() {
   const supabase = await createClient();
-  const salon = await getCurrentSalon(supabase);
-  if (!salon) redirect("/dashboard");
+  const salon = await requireFeatureAccess(supabase, "notifications");
 
   const [mailConnection, lineConnections, settings, history] = await Promise.all([
     getMailConnection(salon.id),

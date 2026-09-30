@@ -47,12 +47,17 @@ export async function createSalonAction(
   // a readable URL segment) -- a collision is astronomically unlikely, but
   // retry with a fresh one on the rare unique-constraint hit rather than
   // failing the whole signup.
+  //
+  // plan は常に "reviews" で作成する。APP_MODE(どのURLから作成されたか)を
+  // 理由に "salonpack" を自動付与してはならない -- SalonPack側のURLを知って
+  // いるだけの新規登録者が有料機能を使えてしまうため。SalonPackへの契約変更は
+  // 別途、管理者が信頼できる手段でplanを更新する(lib/access/plan.ts参照)。
   for (let attempt = 0; attempt < CREATE_SALON_MAX_ATTEMPTS; attempt++) {
     const { data: inserted, error } = await supabase
       .from("salons")
-      .insert({ owner_id: profile.id, name: parsed.data.name, slug: generateRandomSlug() })
+      .insert({ owner_id: profile.id, name: parsed.data.name, slug: generateRandomSlug(), plan: "reviews" })
       .select(
-        "id, owner_id, name, slug, google_review_url, description, business_type, onboarding_completed, created_at, updated_at",
+        "id, owner_id, name, slug, google_review_url, description, business_type, onboarding_completed, plan, created_at, updated_at",
       )
       .single();
 
@@ -68,6 +73,7 @@ export async function createSalonAction(
           description: inserted.description,
           businessType: inserted.business_type,
           onboardingCompleted: inserted.onboarding_completed,
+          plan: inserted.plan,
           createdAt: inserted.created_at,
           updatedAt: inserted.updated_at,
         },

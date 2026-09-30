@@ -1,6 +1,9 @@
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentSalon, getTemplates, getSurveyQuestionsWithOptions } from "@/lib/supabase/queries";
+import { isReviewsOnly } from "@/lib/appMode";
+import { isFeatureEnabledForPlan } from "@/lib/access/plan";
 import OnboardingWizard from "@/components/admin/OnboardingWizard";
 import FeatureCard from "@/components/dashboard/FeatureCard";
 import CopyUrlButton from "@/components/admin/CopyUrlButton";
@@ -44,6 +47,12 @@ export default async function DashboardHomePage({
     );
   }
 
+  // オンボーディング完了後、reviewsモード(口コミ365)のデプロイでは常に
+  // 口コミ管理画面へ直接転送する -- 3カードのホームグリッドは見せない。
+  // ログイン後遷移の合流点はここ1箇所のみで、LoginForm/loginページ側の
+  // redirect("/dashboard")は変更不要(PLAN参照)。
+  if (isReviewsOnly()) redirect("/dashboard/reviews");
+
   const params = await searchParams;
   const justOnboarded = params?.onboarded === "1";
 
@@ -74,22 +83,29 @@ export default async function DashboardHomePage({
           ctaLabel="口コミを使う"
           secondaryAction={<CopyUrlButton url={customerUrl} variant="link" />}
         />
-        <FeatureCard
-          icon={BlogIcon}
-          title="ブログ"
-          description="Hot PepperブログをAIで作成"
-          status="active"
-          href="/dashboard/blog"
-          ctaLabel="ブログを作る"
-        />
-        <FeatureCard
-          icon={BellIcon}
-          title="予約通知"
-          description="予約をLINEで自動通知"
-          status="coming-soon"
-          href="/dashboard/notifications"
-          ctaLabel="詳しく見る"
-        />
+        {/* ブログ・予約通知は店舗の契約プランで使える場合のみ表示する
+            (このカード表示自体はあくまで見た目の出し分けで、実際のアクセス
+            制御は各ページ/Server Actionのrequire FeatureAccess()が担う)。 */}
+        {isFeatureEnabledForPlan(salon.plan, "blog") && (
+          <FeatureCard
+            icon={BlogIcon}
+            title="ブログ"
+            description="Hot PepperブログをAIで作成"
+            status="active"
+            href="/dashboard/blog"
+            ctaLabel="ブログを作る"
+          />
+        )}
+        {isFeatureEnabledForPlan(salon.plan, "notifications") && (
+          <FeatureCard
+            icon={BellIcon}
+            title="予約通知"
+            description="予約をLINEで自動通知"
+            status="active"
+            href="/dashboard/notifications"
+            ctaLabel="詳しく見る"
+          />
+        )}
       </div>
     </div>
   );

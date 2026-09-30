@@ -44,7 +44,7 @@ export const getCurrentSalon = cache(async (
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "id, salons(id, owner_id, name, slug, google_review_url, description, business_type, onboarding_completed, created_at, updated_at)",
+      "id, salons(id, owner_id, name, slug, google_review_url, description, business_type, onboarding_completed, plan, created_at, updated_at)",
     )
     .eq("user_id", user.id)
     .maybeSingle();
@@ -62,6 +62,7 @@ export const getCurrentSalon = cache(async (
     description: salon.description,
     businessType: salon.business_type,
     onboardingCompleted: salon.onboarding_completed,
+    plan: salon.plan,
     createdAt: salon.created_at,
     updatedAt: salon.updated_at,
   };

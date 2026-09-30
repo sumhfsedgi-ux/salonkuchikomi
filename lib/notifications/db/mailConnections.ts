@@ -1,5 +1,6 @@
 import { getNotificationsSupabaseAdmin } from "@/lib/notifications/admin";
 import { decrypt } from "@/lib/notifications/crypto";
+import type { SalonPlan } from "@/lib/access/plan";
 
 // (hmailの lib/db/mailConnections.ts を review-app のSupabaseクライアント方式へ
 // 移植。Drizzleの生Postgres接続の代わりに service-role Supabaseクライアントを使う。
@@ -10,6 +11,7 @@ import { decrypt } from "@/lib/notifications/crypto";
 export interface MailConnection {
   id: string;
   salonId: string;
+  salonPlan: SalonPlan;
   provider: string;
   emailAddress: string;
   encryptedRefreshToken: string;
@@ -35,15 +37,22 @@ interface MailConnectionRow {
   consecutive_failure_count: number;
   created_at: string;
   updated_at: string;
+  // salonsへの埋め込み。1対1(salon_idにunique制約あり)だが、PostgRESTは
+  // 埋め込みリレーションを配列として返すため、先頭要素を使う。
+  salons: { plan: string }[] | { plan: string } | null;
 }
 
 const MAIL_CONNECTION_COLUMNS =
-  "id, salon_id, provider, email_address, encrypted_refresh_token, token_iv, token_auth_tag, scope, status, consecutive_failure_count, created_at, updated_at";
+  "id, salon_id, provider, email_address, encrypted_refresh_token, token_iv, token_auth_tag, scope, status, consecutive_failure_count, created_at, updated_at, salons(plan)";
 
 function rowToMailConnection(row: MailConnectionRow): MailConnection {
+  const salonRow = Array.isArray(row.salons) ? row.salons[0] : row.salons;
   return {
     id: row.id,
     salonId: row.salon_id,
+    // 万一plan列を取得できなかった場合は、通知処理の対象外として扱う方が
+    // 安全なため'reviews'側(=notifications非対応)へフォールバックする。
+    salonPlan: (salonRow?.plan as SalonPlan) ?? "reviews",
     provider: row.provider,
     emailAddress: row.email_address,
     encryptedRefreshToken: row.encrypted_refresh_token,

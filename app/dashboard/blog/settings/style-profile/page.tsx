@@ -1,7 +1,6 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentSalon } from "@/lib/supabase/queries";
+import { requireFeatureAccess } from "@/lib/access/featureAccess";
 import { getSalonSettings, listReferencePosts, getStyleProfile } from "@/lib/blog/queries";
 import PageHeader from "@/components/ui/PageHeader";
 import HotPepperImportPanel from "@/components/blog/settings/HotPepperImportPanel";
@@ -17,8 +16,7 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardBlogStyleProfilePage() {
   const supabase = await createClient();
-  const salon = await getCurrentSalon(supabase);
-  if (!salon) redirect("/dashboard");
+  const salon = await requireFeatureAccess(supabase, "blog");
 
   const [settings, posts, profile] = await Promise.all([
     getSalonSettings(salon.id),
