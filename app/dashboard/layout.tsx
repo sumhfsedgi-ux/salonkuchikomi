@@ -11,5 +11,9 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
 
   const salon = await getCurrentSalon(supabase);
 
-  return <DashboardShell salonName={salon?.name ?? SERVICE_NAME}>{children}</DashboardShell>;
+  return (
+    <DashboardShell salonName={salon?.name ?? SERVICE_NAME} salonPlan={salon?.plan ?? "reviews"}>
+      {children}
+    </DashboardShell>
+  );
 }

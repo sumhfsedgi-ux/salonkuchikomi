@@ -4,8 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
 import { SettingsIcon } from "@/components/ui/icons";
-import { getNavItems, isNavItemActive } from "@/components/layout/navItems";
+import { getNavItems, filterNavItemsByPlan, isNavItemActive } from "@/components/layout/navItems";
 import { getAppMode } from "@/lib/appMode";
+import type { SalonPlan } from "@/lib/access/plan";
 
 // grid-cols-Nはtailwindが動的クラス名を解決できないため、項目数からの
 // ルックアップで静的なクラス名を選ぶ(navItemsは現状2件(reviewsモード)か
@@ -21,10 +22,10 @@ const GRID_COLS_CLASS: Record<number, string> = {
 // 主要機能が口コミ1つだけなので、常時アクセスできるよう「設定」をここに直接
 // 表示する(ProfileMenu側の「サロン設定」はreviewsモードでは非表示にして
 // 導線の重複を避けている -- components/layout/ProfileMenu.tsx参照)。
-export default function BottomNav() {
+export default function BottomNav({ plan }: { plan: SalonPlan }) {
   const pathname = usePathname();
   const mode = getAppMode();
-  const navItems = getNavItems(mode);
+  const navItems = filterNavItemsByPlan(getNavItems(mode), plan);
   if (mode === "reviews") {
     navItems.push({ href: "/dashboard/settings", label: "設定", icon: SettingsIcon });
   }
