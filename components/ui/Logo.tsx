@@ -6,7 +6,7 @@ import { cn } from "@/lib/cn";
 // replacing this one component.
 //
 // アイコンの文字は固定("S")で、SERVICE_NAMEの頭文字ではない。SalonPack /
-// 口コミ365どちらのモードでも同じアイコンにして、ブランドの統一感を出すため
+// 口コミ465どちらのモードでも同じアイコンにして、ブランドの統一感を出すため
 // (サービス名が変わってもアイコンだけは共通のまま)。
 const MARK_LETTER = "S";
 

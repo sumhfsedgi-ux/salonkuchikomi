@@ -6,8 +6,8 @@ import { isReviewsOnly } from "@/lib/appMode";
 // SERVICE_NAME/SERVICE_TAGLINE from here instead of hardcoding a string, so
 // renaming the product later is a one-line change in this file only.
 //
-// APP_MODE=reviewsのデプロイ(口コミ365)では別ブランドとして表示する。
-export const SERVICE_NAME = isReviewsOnly() ? "口コミ365" : "SalonPack";
+// APP_MODE=reviewsのデプロイ(口コミ465)では別ブランドとして表示する。
+export const SERVICE_NAME = isReviewsOnly() ? "口コミ465" : "SalonPack";
 export const SERVICE_TAGLINE = isReviewsOnly()
   ? "サロン運営を、もっとシンプルに。"
   : "サロン業務を、もっとシンプルに。";

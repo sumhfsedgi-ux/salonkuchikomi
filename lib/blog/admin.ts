@@ -1,3 +1,4 @@
+import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 // ブログ機能のDBアクセス専用モジュール。service-role keyでサーバーからのみ

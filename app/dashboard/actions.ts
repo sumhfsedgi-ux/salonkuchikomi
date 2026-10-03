@@ -43,6 +43,16 @@ export async function createSalonAction(
     .maybeSingle();
   if (!profile) return { error: "アカウント情報の取得に失敗しました。" };
 
+  // 「1オーナー1店舗」は現在の商品ルールで、DB制約にはしていない(将来の
+  // 1オーナー複数店舗・salon_membersへの拡張を妨げないため --
+  // lib/supabase/primarySalon.ts参照)。二重送信やブラウザの「戻る」で2店舗目が
+  // 作られないよう、既に店舗があれば新規作成せずにその店舗を返す
+  // (OnboardingWizardもクライアント側で既存店舗の更新に切り替えているが、
+  // サーバー側でも同じ前提を守る)。完全に同時の2リクエストまでは防げないため、
+  // 必要になればadvisory lock付きのRPCで作成する(docs/plans/reviews-465-plan.md §5)。
+  const existingSalon = await getCurrentSalon(supabase);
+  if (existingSalon) return { salon: existingSalon };
+
   // The slug is a random string (salon names are Japanese and can't become
   // a readable URL segment) -- a collision is astronomically unlikely, but
   // retry with a fresh one on the rare unique-constraint hit rather than
