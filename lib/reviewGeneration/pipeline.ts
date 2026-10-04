@@ -1,7 +1,9 @@
 // 口コミ生成 v2 のパイプライン(docs/plans/reviews-465-plan.md §7-1・§13-2)。
 //   構成プラン(コード) → 作文(LLM 1回) → Linter(コード)
 //   → 危険な文だけ同期で意味検証(LLM。NG・タイムアウトはその文を削除 = fail-closed)
-//   → 削除で足りなければ1回だけ部分修正 → それでも否定的な素材が消えるなら本人の原文を残す
+//   → 削除で足りなければ1回だけ部分修正 → 最後の文が抽象的な総括なら削る
+//   → 整いすぎ・事実の列挙だけなら1回だけ書き直す → それでも否定的な素材が消えるなら本人の原文を残す
+// 「嬉しく思いました」のように意味を変えずに直せる言い回しは、LLM の出力ごとにコードで直す。
 // 回答・素材・下書きの本文はログに出さない。返すメタデータにも本文は含めない。
 
 import {
@@ -16,7 +18,9 @@ import {
   countChars,
   findNegativeMarkers,
   foldSpelling,
+  limitExclamations,
   normalize,
+  simplifyPolishedPhrases,
   splitSentences,
   stripDecorations,
 } from "@/lib/ai/naturalJapanese/analyze";
@@ -26,6 +30,7 @@ import {
   issueKey,
   lintCodes,
   lintDraft,
+  MAX_EXCLAMATIONS,
   riskySentenceIndexes,
   TEXTURE_CODES,
   type LintResult,
@@ -211,6 +216,19 @@ function verificationTargets(result: LintResult): number[] {
   return [...targets].sort((a, b) => a - b);
 }
 
+/** 人間らしさの指摘を、文ごとの指摘と下書き全体への指摘に分ける(書き直しの依頼に使う)。 */
+function textureProblems(result: LintResult) {
+  const bySentence = new Map<number, string[]>();
+  const document: string[] = [];
+  for (const i of result.issues) {
+    if (!TEXTURE_CODES.has(i.code)) continue;
+    if (i.sentenceIndex === null) document.push(i.code);
+    else bySentence.set(i.sentenceIndex, [...(bySentence.get(i.sentenceIndex) ?? []), issueKey(i)]);
+  }
+  const count = result.issues.filter((i) => TEXTURE_CODES.has(i.code)).length;
+  return { bySentence, document: [...new Set(document)], count };
+}
+
 function issueCodesBySentence(result: LintResult, severities: ReadonlyArray<"block" | "risk">): Map<number, string[]> {
   const map = new Map<number, string[]>();
   for (const i of result.issues) {
@@ -288,6 +306,10 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
   const materialById = new Map(materials.map((m) => [m.id, m]));
   const lint = (sentences: readonly LintSentence[]) =>
     lintDraft(sentences, sources, { mainSourceIds: plan.mainIds, targetChars: LENGTH_TARGETS[plan.length].chars });
+  // LLM の出力を整え、整いすぎた言い回しを直す(お客様が自分で書いた言い回しは残す)。
+  const materialText = materials.map((m) => m.text).join("\n");
+  const tidy = (raw: RawDraft | null | undefined): DraftSentence[] =>
+    cleanSentences(raw).map((s) => ({ ...s, text: simplifyPolishedPhrases(s.text, materialText) }));
 
   // ── 1. 作文(使える文が1つも無ければ1回だけ作り直す) ──
   async function generateOnce(): Promise<DraftSentence[]> {
@@ -301,7 +323,7 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
       timeoutMs: Math.min(GENERATION_TIMEOUT_MS, remaining()),
     });
     meta.record("generation", result);
-    return cleanSentences(result.data);
+    return tidy(result.data);
   }
 
   let sentences: DraftSentence[] | null = null;
@@ -408,7 +430,7 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
         temperature: temperatureFor(resolveModel("review_repair"), REPAIR_TEMPERATURE),
       });
       meta.record("repair", repaired);
-      const repairedSentences = cleanSentences(repaired.raw);
+      const repairedSentences = tidy(repaired.raw);
       // 合格済みで変わっていない文は、もう一度検証しない。
       const accepted = new Set(kept.map((s) => normalize(s.text)));
       const repairedRejected = await reject(repairedSentences, accepted);
@@ -423,24 +445,37 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
     }
   }
 
-  // ── 4. 事実の列挙だけ・アンケートの要約だけになっていたら、1回だけ書き直す ──
+  // ── 4. 最後の文が「〜な体験でした」「全体的に〜」のような総括なら、削る ──
+  // (締めの文は無くてよい。その文の素材が他の文にも使われていて、短くなりすぎないときだけ。)
+  const last = kept.length - 1;
+  const closingIsSummary =
+    kept.length >= 2 && lint(kept).issues.some((i) => i.code === "abstract_ai_summary" && i.sentenceIndex === last);
+  if (closingIsSummary) {
+    const rest = kept.slice(0, last);
+    const restIds = new Set(rest.flatMap((s) => s.sourceIds));
+    const covered = kept[last].sourceIds.every((id) => restIds.has(id));
+    if (covered && countChars(assembleDraft(rest)) >= LENGTH_TARGETS.short.chars.min) {
+      kept = rest;
+      meta.flag("closing_dropped");
+    }
+  }
+
+  // ── 5. 整いすぎ・事実の列挙だけ・アンケートの要約だけになっていたら、1回だけ書き直す ──
   // (2026-10-04 の方針: 事実は作らず、体験者の気持ちや受け取り方を補う。修正をしたときはしない。)
-  const textureProblems = lint(kept)
-    .issues.filter((i) => TEXTURE_CODES.has(i.code))
-    .map((i) => i.code);
-  if (textureProblems.length > 0 && !repairAttempted && remaining() >= MIN_CALL_BUDGET_MS) {
+  const texture = textureProblems(lint(kept));
+  if (texture.count > 0 && !repairAttempted && remaining() >= MIN_CALL_BUDGET_MS) {
     try {
       const polished = await repairDraft(callJson, {
         materials,
-        sentences: kept.map((s) => ({ text: s.text, sourceIds: s.sourceIds, problems: [] })),
+        sentences: kept.map((s, i) => ({ text: s.text, sourceIds: s.sourceIds, problems: texture.bySentence.get(i) ?? [] })),
         missingNegativeIds: [],
-        documentProblems: [...new Set(textureProblems)],
+        documentProblems: texture.document,
         businessType,
         timeoutMs: Math.min(REPAIR_TIMEOUT_MS, remaining()),
         temperature: temperatureFor(resolveModel("review_repair"), POLISH_TEMPERATURE),
       });
       meta.record("repair", polished);
-      const polishedSentences = cleanSentences(polished.raw);
+      const polishedSentences = tidy(polished.raw);
       const accepted = new Set(kept.map((s) => normalize(s.text)));
       const polishedRejected = await reject(polishedSentences, accepted);
       const candidate = polishedSentences.filter((_, i) => !polishedRejected.has(i));
@@ -449,7 +484,7 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
       const improved =
         candidate.length > 0 &&
         documentBlockIssues(candidateLint).length === 0 &&
-        candidateLint.issues.filter((i) => TEXTURE_CODES.has(i.code)).length < textureProblems.length;
+        textureProblems(candidateLint).count < texture.count;
       if (improved) {
         kept = candidate;
         meta.action("polished");
@@ -462,7 +497,14 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
     }
   }
 
-  // ── 5. それでも反映されていない否定的な素材は、本人の原文をそのまま残す ──
+  // 感嘆符が多すぎれば減らす(次の手順で足す本人の原文は対象にしない)。
+  const limited = limitExclamations(kept.map((s) => s.text), MAX_EXCLAMATIONS);
+  if (limited.some((text, i) => text !== kept[i].text)) {
+    kept = kept.map((s, i) => ({ ...s, text: limited[i] }));
+    meta.flag("exclamations_limited");
+  }
+
+  // ── 6. それでも反映されていない否定的な素材は、本人の原文をそのまま残す ──
   for (const issue of documentBlockIssues(lint(kept))) {
     if (issue.code !== "negative_not_reflected" || !issue.sourceId) continue;
     const material = materialById.get(issue.sourceId);
@@ -497,6 +539,11 @@ const PLAIN_DRAFT_CODES = new Set<string>([
   "low_emotional_texture",
   "uniform_sentence_structure",
   "template_phrase",
+  "template_phrase:polished",
+  "abstract_ai_summary:abstract_noun",
+  "abstract_ai_summary:thinkable_noun",
+  "abstract_ai_summary:closing_summary",
+  "exclamation_overuse",
   "honorific_inflation",
 ]);
 

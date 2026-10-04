@@ -235,6 +235,71 @@ describe("runReviewPipeline: NG の文の扱い", () => {
   });
 });
 
+describe("runReviewPipeline: 綺麗な作文にしない", () => {
+  it("整いすぎた言い回しは、LLM を呼ばずにコードで直す", async () => {
+    const ai = fakeOpenAI({
+      review_generation: [
+        draft(
+          ["初めてでしたが、説明が分かりやすくて嬉しく思いました。", ["M1", "M3"]],
+          ["肌がなめらかになったように感じることができました。", ["M2"]],
+        ),
+      ],
+    });
+    const result = await runReviewPipeline({ materials: positiveOnly, businessType: null }, { callJson: ai.callJson, random: fixedRandom });
+    expect(result.draft).toBe("初めてでしたが、説明が分かりやすくて嬉しかったです。肌がなめらかになったように感じました。");
+    expect(ai.tasks()).toEqual(["review_generation"]);
+  });
+
+  it("最後の文が抽象的な総括で、その素材が他の文にも使われていれば削る", async () => {
+    const ai = fakeOpenAI({
+      review_generation: [
+        draft(
+          ["説明が分かりやすくて、肌もなめらかになったように感じて嬉しかったです。", ["M2", "M3"]],
+          ["またお願いしたいと思えるお店でした。", ["M3"]],
+        ),
+      ],
+    });
+    const result = await runReviewPipeline({ materials: positiveOnly, businessType: null }, { callJson: ai.callJson, random: fixedRandom });
+    expect(result.draft).toBe("説明が分かりやすくて、肌もなめらかになったように感じて嬉しかったです。");
+    expect(result.metadata.verifyFlags).toContain("closing_dropped");
+    expect(ai.tasks()).toEqual(["review_generation"]);
+  });
+
+  it("総括の文にしか使われていない素材があれば、削らずに1回だけ書き直す", async () => {
+    const ai = fakeOpenAI({
+      review_generation: [
+        draft(["説明が分かりやすかったです。", ["M3"]], ["肌がなめらかになったように感じて、心地よい体験でした。", ["M2"]]),
+      ],
+      review_repair: [
+        draft(["説明が分かりやすかったです。", ["M3"]], ["肌がなめらかになったように感じて嬉しかったです！", ["M2"]]),
+      ],
+    });
+    const result = await runReviewPipeline({ materials: positiveOnly, businessType: null }, { callJson: ai.callJson, random: fixedRandom });
+    expect(result.draft).toBe("説明が分かりやすかったです。肌がなめらかになったように感じて嬉しかったです！");
+    expect(result.metadata.repairAction).toBe("polished");
+    expect(ai.tasks()).toEqual(["review_generation", "review_repair"]);
+    expect(ai.calls[1].userPrompt).toContain("抽象的な名詞で体験をまとめている");
+  });
+
+  it("感嘆符は2つまで。多ければ前の文から句点に戻す", async () => {
+    const ai = fakeOpenAI({
+      review_generation: [
+        draft(
+          ["初めてでしたが、説明が分かりやすくて嬉しかったです！", ["M1", "M3"]],
+          ["肌がなめらかになったように感じました！", ["M2"]],
+          ["またお願いしたいです！", ["M3"]],
+        ),
+      ],
+    });
+    const result = await runReviewPipeline({ materials: positiveOnly, businessType: null }, { callJson: ai.callJson, random: fixedRandom });
+    expect(result.draft).toBe(
+      "初めてでしたが、説明が分かりやすくて嬉しかったです。肌がなめらかになったように感じました！またお願いしたいです！",
+    );
+    expect(result.metadata.verifyFlags).toContain("exclamations_limited");
+    expect(ai.tasks()).toEqual(["review_generation"]);
+  });
+});
+
 describe("runReviewPipeline: 作文の失敗", () => {
   it("使える文が1つも無ければ1回だけ作り直す", async () => {
     const ai = fakeOpenAI({
@@ -284,6 +349,12 @@ describe("runReviewPipeline: 呼び出しの内容", () => {
       { callJson: ai2.callJson, random: fixedRandom, resolveModel: gpt4oMini },
     );
     expect(ai2.calls[0].temperature).toBe(0.9);
+  });
+
+  it("構成の指示に、生成ごとの感嘆符の使い方が入る", async () => {
+    const ai = fakeOpenAI({ review_generation: [draft(["説明が分かりやすくて嬉しかったです。", ["M3"]])] });
+    await runReviewPipeline({ materials: positiveOnly, businessType: null }, { callJson: ai.callJson, random: fixedRandom });
+    expect(ai.calls[0].userPrompt).toMatch(/感嘆符\(！\): (使わない|最後の文にだけ1つ付けてよい|気持ちが動いた肯定的な文に1〜2個まで付けてよい)/);
   });
 
   it("source_ids は今回の素材IDだけを許し、素材は user 側にだけ入れる", async () => {

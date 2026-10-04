@@ -13,10 +13,13 @@ import { MAX_MATERIALS, type Material, type QuestionRole } from "@/lib/reviewGen
 export const DRAFT_LENGTHS = ["short", "medium", "long"] as const;
 export const OPENING_STYLES = ["main", "own_words", "reason", "staff_shop", "visit", "small_detail"] as const;
 export const CLOSING_STYLES = ["impression", "plain", "intent"] as const;
+/** 感嘆符(！)の使い方。生成ごとに揺らがせる(使わない／最後の文だけ／文中に1〜2個)。 */
+export const EXCLAMATION_STYLES = ["none", "last", "inline"] as const;
 
 export type DraftLength = (typeof DRAFT_LENGTHS)[number];
 export type OpeningStyle = (typeof OPENING_STYLES)[number];
 export type ClosingStyle = (typeof CLOSING_STYLES)[number];
+export type ExclamationStyle = (typeof EXCLAMATION_STYLES)[number];
 
 export interface CompositionPlan {
   mainIds: string[];
@@ -25,6 +28,7 @@ export interface CompositionPlan {
   length: DraftLength;
   opening: OpeningStyle;
   closing: ClosingStyle;
+  exclamation: ExclamationStyle;
 }
 
 /** 文の数と文字数の目安(LLM への指示と、Linter の style 判定に使う)。 */
@@ -124,6 +128,13 @@ function allowedClosings(used: readonly Material[]): ClosingStyle[] {
   return ["impression", "plain", "intent"];
 }
 
+function allowedExclamations(used: readonly Material[]): ExclamationStyle[] {
+  // 否定的な内容があるときは、最後の文が否定的な内容になりやすいので「最後の文だけ」は選ばない
+  // (否定的な内容の文に感嘆符を付けると、温度感が回答とずれる)。
+  if (used.some((m) => m.negative)) return ["none", "inline"];
+  return ["none", "last", "inline"];
+}
+
 function candidatePlan(materials: readonly Material[], random: Random): CompositionPlan {
   const main = chooseMain(materials, random);
   const mainIds = new Set(main.map((m) => m.id));
@@ -141,10 +152,11 @@ function candidatePlan(materials: readonly Material[], random: Random): Composit
   const extraCount = Math.min(pool.length, minExtra + Math.floor(random() * 3));
   const support = [...required, ...pool.slice(0, extraCount)];
   // 否定的な素材だけの口コミにしない。お客様が肯定的にも答えていれば、そのうち1つは必ず使う
-  // (否定だけが残ると、回答全体より厳しい口コミになるため)。
-  if ([...main, ...support].every((m) => m.negative)) {
+  // (否定だけが残ると、回答全体より厳しい口コミになるため)。来店回数は肯定的な内容に数えない。
+  const isPositive = (m: Material) => !m.negative && m.role !== "visit";
+  if (!main.some(isPositive) && !support.some(isPositive)) {
     const positive = pool
-      .filter((m) => !m.negative && !support.includes(m))
+      .filter((m) => isPositive(m) && !support.includes(m))
       .sort((a, b) => ROLE_PRIORITY[a.role] - ROLE_PRIORITY[b.role])[0];
     if (positive) support.push(positive);
   }
@@ -160,6 +172,7 @@ function candidatePlan(materials: readonly Material[], random: Random): Composit
     length: chooseLength(used.length, usedChars, random),
     opening: pickOne(allowedOpenings(used, support.length), random),
     closing: pickOne(allowedClosings(used), random),
+    exclamation: pickOne(allowedExclamations(used), random),
   };
 }
 

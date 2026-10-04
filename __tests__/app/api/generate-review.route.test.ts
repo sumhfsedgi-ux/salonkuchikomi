@@ -199,7 +199,7 @@ describe("POST /api/generate-review: v2", () => {
     vi.stubEnv("REVIEW_SHADOW_VERIFY_RATE", "0");
     vi.mocked(runReviewPipeline).mockResolvedValue({
       draft: "v2の口コミ",
-      plan: { mainIds: ["M1"], supportIds: [], unusedIds: ["M2"], length: "short", opening: "main", closing: "plain" },
+      plan: { mainIds: ["M1"], supportIds: [], unusedIds: ["M2"], length: "short", opening: "main", closing: "plain", exclamation: "none" },
       sentences: [],
       metadata: V2_METADATA,
     });
@@ -223,7 +223,7 @@ describe("POST /api/generate-review: v2", () => {
     vi.stubEnv("REVIEW_SHADOW_VERIFY_RATE", "1");
     vi.mocked(runReviewPipeline).mockResolvedValue({
       draft: "v2の口コミ",
-      plan: { mainIds: ["M1"], supportIds: [], unusedIds: [], length: "short", opening: "main", closing: "plain" },
+      plan: { mainIds: ["M1"], supportIds: [], unusedIds: [], length: "short", opening: "main", closing: "plain", exclamation: "none" },
       sentences: [{ text: "v2の口コミ", sourceIds: ["M1"], breakAfter: false }],
       metadata: V2_METADATA,
     });

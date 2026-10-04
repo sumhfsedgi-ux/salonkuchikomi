@@ -132,6 +132,57 @@ export function stripDecorations(text: string): string {
   return text.replace(DECORATION_PATTERN, "");
 }
 
+// 整いすぎた言い回しのうち、意味を変えずに機械的に直せるもの(「嬉しく思いました」→「嬉しかったです」、
+// 「安心することができました」→「安心できました」など)。
+const POLISHED_REWRITES: readonly (readonly [RegExp, string])[] = [
+  [/(嬉|うれ)しく思いました/gu, "$1しかったです"],
+  [/(嬉|うれ)しく思います/gu, "$1しいです"],
+  [/([\p{Script=Han}\p{Script=Katakana}ー]{2,})することができ/gu, "$1でき"],
+  [/感じることができ(?=ま|て)/gu, "感じ"],
+  [/過ごすことができ/gu, "過ごせ"],
+  [/受けることができ/gu, "受けられ"],
+];
+
+/**
+ * 整いすぎた言い回しを、直接的な言い方に直す。お客様が自分で書いた言い回し(protectedText に
+ * 含まれるもの)はそのまま残す。
+ */
+export function simplifyPolishedPhrases(text: string, protectedText = ""): string {
+  return POLISHED_REWRITES.reduce(
+    (current, [pattern, replacement]) =>
+      current.replace(pattern, (match: string, ...groups: unknown[]) =>
+        protectedText && containsPhrase(protectedText, match)
+          ? match
+          : replacement.replace(/\$1/g, typeof groups[0] === "string" ? groups[0] : ""),
+      ),
+    text,
+  );
+}
+
+const EXCLAMATION = /[！!]/gu;
+const FINAL_EXCLAMATION = /[！!]+$/u;
+
+/** 感嘆符の数。 */
+export function countExclamations(text: string): number {
+  return text.match(EXCLAMATION)?.length ?? 0;
+}
+
+/**
+ * 感嘆符を max 個までに減らす。続けて付いたもの(「！！」)は1つにし、それでも多ければ、
+ * 前の文の文末から句点に戻す(後ろの文の感嘆符を残す)。文中の感嘆符は変えない。
+ */
+export function limitExclamations(sentences: readonly string[], max: number): string[] {
+  const result = sentences.map((s) => s.replace(/([！!])[！!]+/gu, "$1"));
+  let surplus = result.reduce((sum, s) => sum + countExclamations(s), 0) - max;
+  for (let i = 0; i < result.length && surplus > 0; i++) {
+    if (FINAL_EXCLAMATION.test(result[i])) {
+      result[i] = result[i].replace(FINAL_EXCLAMATION, "。");
+      surplus--;
+    }
+  }
+  return result;
+}
+
 /** 空白・改行を除いた文字数。 */
 export function countChars(text: string): number {
   return [...normalize(text)].length;

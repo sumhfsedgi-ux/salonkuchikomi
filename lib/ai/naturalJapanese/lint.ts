@@ -9,7 +9,11 @@
 //   robotic_survey_summary          … アンケートを質問の順に要約しただけ
 //   low_emotional_texture           … 事実の列挙だけで、体験者の主観がほとんど無い
 //   uniform_sentence_structure      … 文型・語尾・文の長さが均一
-// 軽い感情の補完(嬉しかった・よかった・印象に残った など)は指摘しない。
+//   abstract_ai_summary             … 「〜な体験でした」「〜と思える〜でした」のように、体験を抽象的な名詞で
+//                                     まとめる・最後の文だけきれいに総括する(AIが綺麗にまとめた作文に見える)
+//   exclamation_overuse             … 感嘆符の使いすぎ(感嘆符があるだけでは指摘しない)
+// 軽い感情の補完(嬉しかった・よかった・話しやすかった など)は指摘しない。口語的な言い方、短い文、
+// たまに入る「！」、締めの文が無いことも指摘しない(一般のお客様の口コミとして自然なため)。
 //
 // 各文の sourceIds(どの素材をもとに書いたか)は LLM の自己申告でしかなく、意味が正しいことは
 // 保証しない。そこで、語彙で判定できる範囲を次の3段階で返す:
@@ -21,12 +25,14 @@ import {
   bigramOverlap,
   containsPhrase,
   countChars,
+  countExclamations,
   findPhrases,
   hasPerception,
   normalize,
   sentenceEnding,
 } from "@/lib/ai/naturalJapanese/analyze";
 import {
+  ABSTRACT_NOUN_PATTERN,
   ASPECT_PHRASES,
   CALLOUT_PHRASES,
   CHANGE_CLAIM_PHRASES,
@@ -39,13 +45,16 @@ import {
   OFF_TOPIC_PHRASES,
   OUTCOME_PHRASES,
   OVERALL_POSITIVE_PHRASES,
+  POLISHED_PHRASES,
   REPEAT_VISIT_PATTERN,
   SATISFACTION_PHRASES,
   SITUATION_PHRASES,
   SOFTENER_PHRASES,
   STRONG_EMOTION_PHRASES,
   SUBJECTIVE_MARKERS,
+  SUMMARY_MARKERS,
   TEMPLATE_PHRASES,
+  THINKABLE_NOUN_PATTERN,
   VISIT_FACT_PHRASES,
 } from "@/lib/ai/naturalJapanese/phrases";
 
@@ -96,6 +105,8 @@ export type LintCode =
   | "robotic_survey_summary"
   | "low_emotional_texture"
   | "uniform_sentence_structure"
+  | "abstract_ai_summary"
+  | "exclamation_overuse"
   | "main_not_used"
   | "own_words_paraphrased"
   | "template_phrase"
@@ -117,7 +128,11 @@ export type LintDetail =
   | "perception_dropped"
   | "purpose_as_result"
   | "extreme"
-  | "strong";
+  | "strong"
+  | "polished"
+  | "abstract_noun"
+  | "thinkable_noun"
+  | "closing_summary";
 
 export interface LintIssue {
   code: LintCode;
@@ -153,7 +168,10 @@ const COPIED_CHOICE_OVERLAP = 0.7;
 // 丁寧語のインフレは、この数以上で指摘する(1回なら普通の口コミにもある)。
 const HONORIFIC_MIN_COUNT = 2;
 // 句読点を除いてこれより短い文は、文になっていない断片とみなす(「ニキビ。」など)。
+// ただし気持ちを言い切った短い文(「嬉しい！」など)は、口コミとして自然なので断片にしない。
 const MIN_SENTENCE_CHARS = 5;
+/** 下書き全体の感嘆符はこの数まで(「最後だけ1つ」「文中に1〜2個」まで)。超えたら使いすぎ。 */
+export const MAX_EXCLAMATIONS = 2;
 // 明らかな文法の崩れ(「見えたです」「でしたです」など。「良かったです」は正しいので除く)。
 const UNGRAMMATICAL_PATTERN = /[^っ]たです|ですです|ますです/u;
 const PUNCTUATION = /[。．、,！？!?「」『』（）()…・〜~ー\s]/gu;
@@ -180,8 +198,17 @@ function unsupportedNumbers(sentence: string, supportText: string): string[] {
   return matches.filter((n) => !containsPhrase(supportText, n));
 }
 
+// 気持ちの言葉(感嘆符は除く。「ニキビ！」を気持ちを言い切った文とみなさないため)。
+const FEELING_MARKERS = SUBJECTIVE_MARKERS.filter((marker) => marker !== "！" && marker !== "!");
+
 function hasSubjectiveMarker(text: string): boolean {
   return findPhrases(text, SUBJECTIVE_MARKERS).length > 0;
+}
+
+/** 回答に無い、抽象的なまとめの言い回し(回答の言葉そのものなら除く)。 */
+function unsupportedMatch(text: string, pattern: RegExp, supportText: string): boolean {
+  const match = normalize(text).match(pattern);
+  return match !== null && !containsPhrase(supportText, match[0]);
 }
 
 function materialNumber(id: string): number {
@@ -217,7 +244,9 @@ export function lintDraft(
     // ── 文として成り立っているか(block) ──
     if (sentence.sourceIds.length === 0) issues.push(issue("no_source", "block", index));
     if (cited.length < sentence.sourceIds.length) issues.push(issue("unknown_source", "block", index));
-    if ([...text.replace(PUNCTUATION, "")].length < MIN_SENTENCE_CHARS) issues.push(issue("fragment", "block", index));
+    if ([...text.replace(PUNCTUATION, "")].length < MIN_SENTENCE_CHARS && findPhrases(text, FEELING_MARKERS).length === 0) {
+      issues.push(issue("fragment", "block", index));
+    }
     if (UNGRAMMATICAL_PATTERN.test(text)) issues.push(issue("ungrammatical", "block", index));
 
     // ── 回答に無い具体的な事実(block。来店回数が分からないときだけ risk) ──
@@ -298,6 +327,22 @@ export function lintDraft(
     }
 
     if (findPhrases(text, TEMPLATE_PHRASES).length > 0) issues.push(issue("template_phrase", "style", index));
+    if (unsupportedPhrases(text, POLISHED_PHRASES, allSourceText).length > 0) {
+      issues.push(issue("template_phrase", "style", index, { detail: "polished" }));
+    }
+
+    // ── 抽象的なまとめ(AIが綺麗にまとめた作文に見える) ──
+    if (unsupportedMatch(text, ABSTRACT_NOUN_PATTERN, allSourceText)) {
+      issues.push(issue("abstract_ai_summary", "style", index, { detail: "abstract_noun" }));
+    }
+    if (unsupportedMatch(text, THINKABLE_NOUN_PATTERN, allSourceText)) {
+      issues.push(issue("abstract_ai_summary", "style", index, { detail: "thinkable_noun" }));
+    }
+    // 最後の文だけ「全体的に〜」「総じて〜」と全体をまとめ直す。
+    const isClosing = sentences.length >= 2 && index === sentences.length - 1;
+    if (isClosing && unsupportedPhrases(text, SUMMARY_MARKERS, allSourceText).length > 0) {
+      issues.push(issue("abstract_ai_summary", "style", index, { detail: "closing_summary" }));
+    }
 
     traits.push({ citesNegative, hasClaimVocabulary: claims.length > 0 || medical.length > 0 });
   });
@@ -363,6 +408,10 @@ export function lintDraft(
   if (monotone || uniformLength) issues.push(issue("uniform_sentence_structure", "style", null));
 
   const draftText = sentences.map((s) => s.text).join("");
+  // 感嘆符は、続けて付ける(「！！」)か、数が多すぎるときだけ指摘する(毎文に付けると3つ以上になる)。
+  if (countExclamations(draftText) > MAX_EXCLAMATIONS || /[!?]{2,}/u.test(normalize(draftText))) {
+    issues.push(issue("exclamation_overuse", "style", null));
+  }
   if (findPhrases(draftText, HONORIFIC_INFLATION_PHRASES).length >= HONORIFIC_MIN_COUNT) {
     issues.push(issue("honorific_inflation", "style", null));
   }
@@ -400,10 +449,12 @@ export function documentBlockIssues(result: LintResult): LintIssue[] {
   return result.issues.filter((i) => i.severity === "block" && i.sentenceIndex === null);
 }
 
-/** 下書き全体の人間らしさに関する指摘(書き直しの判断に使う)。 */
+/** 人間らしさに関する指摘(残っていれば、パイプラインが1回だけ書き直す)。 */
 export const TEXTURE_CODES: ReadonlySet<LintCode> = new Set<LintCode>([
   "robotic_survey_summary",
   "low_emotional_texture",
+  "abstract_ai_summary",
+  "template_phrase",
 ]);
 
 /** 指摘の名前(細目があれば「code:detail」)。修正の依頼と記録に使う。文や素材の内容は含めない。 */

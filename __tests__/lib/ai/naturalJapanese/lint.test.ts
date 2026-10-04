@@ -42,7 +42,7 @@ describe("lintDraft: 気持ちの補完は指摘しない(2026-10-04 の方針)"
     expect(result.traits[2].citesNegative).toBe(true);
   });
 
-  it("「よかった」「ありがたかった」「またお願いしたいと思える」も指摘しない", () => {
+  it("「よかった」「ありがたかった」「またお願いしたいと思える」も事実の面では指摘しない(言い回しは style で見る)", () => {
     expect(
       nonStyle(
         [
@@ -297,5 +297,93 @@ describe("lintDraft: 文として成り立っているか", () => {
 
   it("下書きが空", () => {
     expect(codesOf([], [STAFF])).toEqual(["empty_draft"]);
+  });
+});
+
+describe("lintDraft: 綺麗な作文にしない(abstract_ai_summary・整いすぎた言い回し)", () => {
+  const keysOf = (texts: string[], sources: LintSource[] = [STAFF]) =>
+    codesOf(
+      texts.map((text) => ({ text, sourceIds: [sources[0].id] })),
+      sources,
+    );
+
+  it("体験を抽象的な名詞でまとめる文は abstract_ai_summary:abstract_noun", () => {
+    for (const text of [
+      "説明が丁寧で、心地よい体験でした。",
+      "満足のいく時間でした。",
+      "素敵なひとときを過ごせました。",
+      "リラックスできる時間が過ごせました。",
+    ]) {
+      expect(keysOf(["説明が分かりやすかったです。", text])).toContain("abstract_ai_summary:abstract_noun");
+    }
+  });
+
+  it("「〜と思える〜でした」の形は abstract_ai_summary:thinkable_noun", () => {
+    for (const text of ["またお願いしたいと思えるお店でした。", "またお願いしたいなと感じるお店です。"]) {
+      expect(keysOf(["説明が分かりやすかったです。", text])).toContain("abstract_ai_summary:thinkable_noun");
+    }
+  });
+
+  it("最後の文だけ「全体的に〜」とまとめ直すのは abstract_ai_summary:closing_summary(最後の文以外は指摘しない)", () => {
+    expect(keysOf(["説明が分かりやすかったです。", "全体的にリラックスできました。"])).toContain(
+      "abstract_ai_summary:closing_summary",
+    );
+    expect(keysOf(["全体的に説明が分かりやすかったです。", "またお願いしたいです。"])).not.toContain(
+      "abstract_ai_summary:closing_summary",
+    );
+  });
+
+  it("単純な感想・締めの無い文章・「〜のが嬉しいです」は指摘しない", () => {
+    const codes = keysOf([
+      "説明が分かりやすくて嬉しかったです！",
+      "肌が明るくなったように感じるのが嬉しいです。",
+      "次もお願いしようと思います。",
+      "またお願いしたいです！",
+    ]);
+    expect(codes.filter((c) => c.startsWith("abstract_ai_summary") || c.startsWith("template_phrase"))).toEqual([]);
+  });
+
+  it("整いすぎた言い回しは template_phrase:polished。お客様が自分で書いた言い回しなら指摘しない", () => {
+    for (const text of ["説明が丁寧で嬉しく思いました。", "安心感がありました。", "説明の分かりやすさが印象に残りました。"]) {
+      expect(keysOf([text])).toContain("template_phrase:polished");
+    }
+    const own = source("M8", "スタッフさんの気配りを嬉しく思いました", { ownWords: true });
+    expect(keysOf(["スタッフさんの気配りを嬉しく思いました。"], [own])).not.toContain("template_phrase:polished");
+  });
+
+  it("回答の言葉そのものなら抽象的なまとめとみなさない", () => {
+    const own = source("M8", "心地よい体験でした", { ownWords: true });
+    expect(keysOf(["本当に心地よい体験でした。"], [own])).not.toContain("abstract_ai_summary:abstract_noun");
+  });
+});
+
+describe("lintDraft: 感嘆符(exclamation_overuse)", () => {
+  const exclamationIssue = (texts: string[]) =>
+    codesOf(
+      texts.map((text) => ({ text, sourceIds: ["M3"] })),
+      [STAFF],
+    ).includes("exclamation_overuse");
+
+  it("感嘆符があるだけでは指摘しない(なし・最後だけ1つ・文中に1〜2個)", () => {
+    expect(exclamationIssue(["説明が分かりやすかったです。", "また行きたいです。"])).toBe(false);
+    expect(exclamationIssue(["説明が分かりやすかったです。", "また行きたいです！"])).toBe(false);
+    expect(exclamationIssue(["説明が分かりやすくて嬉しかったです！", "丁寧でした。", "また行きたいです！"])).toBe(false);
+  });
+
+  it("毎文に付ける・3つ以上・続けて付けるのは指摘する", () => {
+    expect(exclamationIssue(["説明が分かりやすかったです！", "丁寧でした！", "また行きたいです！"])).toBe(true);
+    expect(exclamationIssue(["説明が分かりやすかったです！！"])).toBe(true);
+  });
+
+  it("気持ちを言い切った短い文は断片にしない(感嘆符だけでは気持ちとみなさない)", () => {
+    const result = lintDraft(
+      [
+        { text: "説明が分かりやすかったです。", sourceIds: ["M3"] },
+        { text: "嬉しい！", sourceIds: ["M3"] },
+        { text: "ニキビ！", sourceIds: ["M3"] },
+      ],
+      [STAFF],
+    );
+    expect(result.issues.filter((i) => i.code === "fragment").map((i) => i.sentenceIndex)).toEqual([2]);
   });
 });

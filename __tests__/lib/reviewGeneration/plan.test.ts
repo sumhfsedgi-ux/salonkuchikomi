@@ -52,16 +52,26 @@ describe("buildCompositionPlan", () => {
     }
   });
 
-  it("否定的な素材だけの口コミにしない(肯定的な回答があれば1つは使う)", () => {
-    const materials = buildMaterials([
-      { questionText: "スタッフ・サロンについて感じたことを教えてください", questionType: "multiple", selected: ["その他"], otherDetail: "部屋が少し寒かった" },
-      { questionText: "施術後、体についてどのように感じましたか？", questionType: "multiple", selected: ["体が軽くなった気がする"] },
-      VISIT,
-    ]);
-    for (let seed = 1; seed <= 100; seed++) {
-      const plan = buildCompositionPlan(materials, { random: seeded(seed) });
-      const used = materials.filter((m) => usedIds(plan).includes(m.id));
-      expect(used.some((m) => !m.negative)).toBe(true);
+  it("否定的な素材だけの口コミにしない(肯定的な回答があれば1つは使う。来店回数は数えない)", () => {
+    const cases = [
+      buildMaterials([
+        { questionText: "スタッフ・サロンについて感じたことを教えてください", questionType: "multiple", selected: ["その他"], otherDetail: "部屋が少し寒かった" },
+        { questionText: "施術後、体についてどのように感じましたか？", questionType: "multiple", selected: ["体が軽くなった気がする"] },
+        VISIT,
+      ]),
+      // 「初めて」と否定的な自由記述だけを使うと、「自然な仕上がり」と答えたことが消える。
+      buildMaterials([
+        { questionText: "今回のご来店は何回目ですか？", questionType: "single", selected: ["初めて"] },
+        { questionText: "仕上がりはいかがでしたか？", questionType: "multiple", selected: ["自然な仕上がり"] },
+        { questionText: "ご自由にお書きください", questionType: "text", selected: [], freeText: "目にしみて少しヒリヒリしました" },
+      ]),
+    ];
+    for (const materials of cases) {
+      for (let seed = 1; seed <= 100; seed++) {
+        const plan = buildCompositionPlan(materials, { random: seeded(seed) });
+        const used = materials.filter((m) => usedIds(plan).includes(m.id));
+        expect(used.some((m) => !m.negative && m.role !== "visit")).toBe(true);
+      }
     }
   });
 
@@ -104,6 +114,15 @@ describe("buildCompositionPlan", () => {
     expect(
       closingsOf([NEGATIVE_FREE_TEXT, { questionText: "ご自由に", questionType: "text", selected: [], freeText: "また来ます！" }]),
     ).toContain("intent");
+  });
+
+  it("感嘆符の使い方は生成ごとに揺らぐ。否定的な内容があれば「最後の文だけ」は選ばない", () => {
+    const stylesOf = (inputs: MaterialInput[]) => {
+      const m = buildMaterials(inputs);
+      return new Set(Array.from({ length: 100 }, (_, i) => buildCompositionPlan(m, { random: seeded(i + 1) }).exclamation));
+    };
+    expect([...stylesOf([VISIT, EXPERIENCE, STAFF])].sort()).toEqual(["inline", "last", "none"]);
+    expect([...stylesOf([VISIT, EXPERIENCE, STAFF, NEGATIVE_FREE_TEXT])].sort()).toEqual(["inline", "none"]);
   });
 
   it("補助の素材があるときだけ「小さな感想から入る」書き出しを選べる", () => {

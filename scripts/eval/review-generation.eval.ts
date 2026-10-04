@@ -9,14 +9,15 @@
 // 比べるもの:
 //  1. v1 と v2 の下書き(36件): 失敗率・待ち時間・文字数・Linter の指摘・否定的な素材の反映・
 //     監査モデル(既定 gpt-4.1)による意味の判定(事実・効果の捏造、極端な感情、否定の反転・弱め)と、
-//     読み手としての採点(気持ち・温度感、自然さ、アンケートの要約に見えるか)
+//     読み手としての採点(気持ち・温度感、自然さ、アンケートの要約に見えるか、AIが綺麗にまとめた作文に見えるか)、
+//     感嘆符の数の分布
 //  2. 意味検証モデルの候補: 正解付きの20文で、NG を見つけられた割合・誤って NG にした割合・待ち時間
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, it } from "vitest";
 import { callOpenAIJson, type CallOpenAIJsonOptions } from "@/lib/ai/openai";
-import { sentenceEnding, splitSentences } from "@/lib/ai/naturalJapanese/analyze";
+import { countExclamations, sentenceEnding, splitSentences } from "@/lib/ai/naturalJapanese/analyze";
 import { generateReviewV1 } from "@/lib/reviewGeneration/legacyV1";
 import { buildMaterials, type Material, type MaterialInput } from "@/lib/reviewGeneration/materials";
 import { lintPlainDraft, runReviewPipeline, ReviewGenerationError } from "@/lib/reviewGeneration/pipeline";
@@ -141,6 +142,7 @@ interface QualityScore {
   warmth: number;
   naturalness: number;
   surveySummary: boolean;
+  polishedEssay: boolean;
 }
 
 const QUALITY_SCHEMA = {
@@ -151,29 +153,39 @@ const QUALITY_SCHEMA = {
       warmth: { type: "integer" },
       naturalness: { type: "integer" },
       survey_summary: { type: "boolean" },
+      polished_essay: { type: "boolean" },
     },
-    required: ["warmth", "naturalness", "survey_summary"],
+    required: ["warmth", "naturalness", "survey_summary", "polished_essay"],
     additionalProperties: false,
   },
 };
 
 const QUALITY_SYSTEM_PROMPT = `あなたは口コミの読み手として採点します。お客様のアンケート回答(素材)と、そこから作った口コミの下書きを読み、次を採点してください。事実の正しさはここでは採点しません。
 ・warmth(1〜5): 書いた本人の気持ちや受け取り方、温度感が伝わるか(1 = 事実の列挙だけ、5 = 本人が体験を思い返して気持ちを込めて書いたように感じる)
-・naturalness(1〜5): 実際のお客様が書いた口コミとして自然か(1 = AI やアンケートの要約に見える、5 = 本人が書いたとしか思えない)
-・survey_summary: アンケートの回答を順番に要約・列挙しただけに見えるなら true`;
+・naturalness(1〜5): 一般のお客様がスマホで書いたGoogle口コミとして自然か(1 = AI やアンケートの要約に見える、5 = 本人が書いたとしか思えない)
+  - 文章として完成されすぎていないことも自然さに含めます。少し口語的な言い方、短い文が混ざる、「！」がたまに入る、最後が単純な感想で終わる、締めの文が無い、は減点しません。
+  - 整いすぎた言い回し(嬉しく思いました、〜することができました、印象に残りました、安心感がありました など)、体験を抽象的な名詞でまとめる文(心地よい体験でした、満足のいく時間でした など)、最後だけきれいに総括する文(〜と思えるお店でした、全体的に〜 など)は減点します。
+  - 「！」を毎文のように使う、回答に対してテンションが高すぎる、も減点します。
+・survey_summary: アンケートの回答を順番に要約・列挙しただけに見えるなら true
+・polished_essay: AIが口コミとして綺麗にまとめた作文に見えるなら true`;
 
 /** 読み手としての採点(評価だけで使う。本番では使わない)。 */
 async function judgeQuality(materials: Material[], draft: string): Promise<QualityScore | null> {
   if (!draft.trim()) return null;
   return withJudgeRetry(async () => {
-    const result = await countingCall()<{ warmth: number; naturalness: number; survey_summary: boolean }>({
+    const result = await countingCall()<{
+      warmth: number;
+      naturalness: number;
+      survey_summary: boolean;
+      polished_essay: boolean;
+    }>({
       task: "review_verification",
       model: AUDIT_MODEL,
       systemPrompt: QUALITY_SYSTEM_PROMPT,
       userPrompt: `【素材】\n${materials.map((m) => `${m.id} ${m.text}`).join("\n")}\n\n【下書き】\n${draft}`,
       schema: QUALITY_SCHEMA,
       temperature: 0,
-      maxOutputTokens: 60,
+      maxOutputTokens: 80,
       timeoutMs: 30_000,
     });
     const clamp = (n: number) => Math.min(5, Math.max(1, Math.round(n)));
@@ -181,6 +193,7 @@ async function judgeQuality(materials: Material[], draft: string): Promise<Quali
       warmth: clamp(result.data.warmth),
       naturalness: clamp(result.data.naturalness),
       surveySummary: result.data.survey_summary === true,
+      polishedEssay: result.data.polished_essay === true,
     };
   });
 }
@@ -268,6 +281,7 @@ function summarizeQuality(scores: QualityScore[]) {
     warmthAvg: avg((q) => q.warmth),
     naturalnessAvg: avg((q) => q.naturalness),
     surveySummary: scores.filter((q) => q.surveySummary).length,
+    polishedEssay: scores.filter((q) => q.polishedEssay).length,
   };
 }
 
@@ -296,7 +310,12 @@ function summarizeDrafts(results: DraftResult[], cases: readonly ReviewCase[]) {
     textureLint: {
       lowEmotionalTexture: ok.filter((r) => r.lint.includes("low_emotional_texture")).length,
       uniformSentenceStructure: ok.filter((r) => r.lint.includes("uniform_sentence_structure")).length,
+      abstractAiSummary: ok.filter((r) => r.lint.some((c) => c.startsWith("abstract_ai_summary"))).length,
+      polishedPhrase: ok.filter((r) => r.lint.includes("template_phrase:polished")).length,
+      exclamationOveruse: ok.filter((r) => r.lint.includes("exclamation_overuse")).length,
     },
+    // 感嘆符の数ごとの下書きの数(なし・1つ・2つ・3つ以上)。
+    exclamations: countBy(ok.map((r) => String(Math.min(3, countExclamations(r.draft ?? ""))))),
     quality: summarizeQuality(ok.map((r) => r.quality).filter((q): q is QualityScore => q !== null)),
     negativeCases: negativeIndexes.length,
     negativeReflected,
@@ -401,7 +420,8 @@ async function reauditSavedDrafts(file: string) {
   const cases = REVIEW_CASES.filter((c) => saved.samples.some((s) => s.id === c.id));
   const perCase = await mapWithConcurrency(cases, CONCURRENCY, async (testCase) => {
     const sample = saved.samples.find((s) => s.id === testCase.id) as SavedSample;
-    return { testCase, sample, v1: await judge(testCase, sample.v1), v2: await judge(testCase, sample.v2) };
+    const v1 = SKIP_V1 ? null : await judge(testCase, sample.v1);
+    return { testCase, sample, v1, v2: await judge(testCase, sample.v2) };
   });
   const withoutLatency = (results: (DraftResult | null)[]) => {
     if (results.some((r) => r === null)) return null;
