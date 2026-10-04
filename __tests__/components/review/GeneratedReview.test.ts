@@ -30,7 +30,7 @@ describe("GeneratedReview の Google口コミへの導線", () => {
 
   it("投稿前に本人が確認・編集する案内と、自動で投稿されないことを表示する(チェックボックスは無い)", () => {
     const html = render("下書き");
-    expect(html).toContain("内容を確認して、必要に応じて編集してください。");
+    expect(html).toContain("内容を確認して、実際の体験と違うところがあれば自由に編集してください。");
     expect(html).toContain("自動で投稿されることはありません");
     expect(html).not.toContain('type="checkbox"');
   });

@@ -311,6 +311,22 @@ describe("runReviewPipeline: 呼び出しの内容", () => {
     expect(ai2.calls[0].temperature).toBe(0.9);
   });
 
+  it("伝えたい良さ(Appeal Planning)を渡し、店舗の説明は優先度付けにだけ使って LLM には渡さない", async () => {
+    const ai = fakeOpenAI({ review_generation: [draft(["説明が分かりやすくて、肌もなめらかになったように感じました。", ["M2", "M3"]])] });
+    const result = await runReviewPipeline(
+      { materials: positiveOnly, businessType: null, storeDescription: "個室で分かりやすいご説明を大切にしています" },
+      { callJson: ai.callJson, random: fixedRandom },
+    );
+    const prompt = ai.calls[0].userPrompt;
+    expect(prompt).toContain("【伝えたい良さ】(回答の中から選んだ、このお店の良さとして一番伝えたいもの。新しい事実ではない)");
+    // 店舗の説明と一致する回答(説明が分かりやすかった)を主役にする。
+    expect(prompt).toContain("主役: M3(説明)");
+    expect(prompt).not.toContain("個室");
+    expect(prompt).not.toContain("大切にしています");
+    expect(result.metadata.appeal.startsWith("explanation")).toBe(true);
+    expect(result.metadata.appealCovered).toBe(true);
+  });
+
   it("Style Seed は傾向として user 側に入れ、system には完成した例文を置かない", async () => {
     const ai = fakeOpenAI({ review_generation: [draft(["説明が分かりやすかったです。", ["M3"]])] });
     await runReviewPipeline({ materials: positiveOnly, businessType: null }, { callJson: ai.callJson, random: fixedRandom });

@@ -45,8 +45,16 @@ const STAGE1_IDS = [
   "es-rich", "nail-positive", "nail-neg-free", "nail-other-detail", "ma-reason", "ma-neg-pain",
   "el-positive-rich", "el-mixed",
 ];
-/** 本人の声(Voice Anchor)のケース。v2 の下書きは無いので、v3 だけを見る。 */
-const VOICE_IDS = ["hp-voice-casual", "nail-voice-excited", "ma-voice-plain", "hair-voice-neg"];
+/** 本人の声(Voice Anchor)と、伝えたい良さ・店舗情報のケース。v2 の下書きは無いので、v3 だけを見る。 */
+const VOICE_IDS = [
+  "hp-voice-casual",
+  "nail-voice-excited",
+  "ma-voice-plain",
+  "hair-voice-neg",
+  "el-appeal-example",
+  "hp-store-match",
+  "nail-store-only",
+];
 
 const budget = new CallBudget(MAX_CALLS);
 
@@ -138,7 +146,7 @@ describe("口コミ生成 review-v3 の評価", () => {
       const startedAt = Date.now();
       try {
         const result = await runReviewPipeline(
-          { materials, businessType: testCase.businessType },
+          { materials, businessType: testCase.businessType, storeDescription: testCase.salonDescription },
           { callJson: countingCall(budget) },
         );
         return {
@@ -146,6 +154,8 @@ describe("口コミ生成 review-v3 の評価", () => {
           judged: await judgeDraft(testCase, materials, result.draft),
           latencyMs: result.metadata.latencyMs,
           seed: result.metadata.styleSeed,
+          appeal: result.metadata.appeal,
+          appealCovered: result.metadata.appealCovered,
           repairAction: result.metadata.repairAction,
           flags: result.metadata.verifyFlags,
           llmCalls: result.metadata.llmCalls,
@@ -181,6 +191,7 @@ describe("口コミ生成 review-v3 の評価", () => {
         latencyP95: percentile(v3Ok.map((r) => r.latencyMs), 95),
         llmCallsAvg: v3Ok.length ? Math.round((v3Ok.reduce((s, r) => s + r.llmCalls, 0) / v3Ok.length) * 100) / 100 : null,
         repairActions: countBy(v3Ok.map((r) => r.repairAction)),
+        appealCovered: `${v3Ok.filter((r) => r.appealCovered).length}/${v3Ok.length}`,
         flags: countBy(v3Ok.flatMap((r) => r.flags)),
         compared: summarize(v3Compared, cases),
         all: summarize(v3Judged, cases),
@@ -200,6 +211,8 @@ describe("口コミ生成 review-v3 の評価", () => {
           v2Audit: before?.audit?.issues ?? null,
           v3: mine?.ok ? mine.judged.draft : `(失敗: ${mine && !mine.ok ? mine.errorKind : "unknown"})`,
           v3Seed: mine?.ok ? mine.seed : null,
+          v3Appeal: mine?.ok ? mine.appeal : null,
+          salonDescription: testCase.salonDescription ?? null,
           v3Flags: mine?.ok ? mine.flags : null,
           v3Quality: mine?.ok ? mine.judged.quality : null,
           v3Audit: mine?.ok ? (mine.judged.audit?.issues ?? null) : null,

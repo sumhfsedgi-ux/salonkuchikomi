@@ -116,6 +116,7 @@ export async function POST(request: Request) {
       const result = await runReviewPipeline({
         materials,
         businessType: survey.businessType,
+        storeDescription: survey.description,
         previousSeed: parsed.previousPlan,
       });
       record({ kind, ...eventFieldsFromMetadata(result.metadata) });

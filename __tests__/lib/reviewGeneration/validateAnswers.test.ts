@@ -17,6 +17,7 @@ const SURVEY: ActiveSurvey = {
   salonId: SALON_ID,
   salonName: "テストサロン",
   businessType: "エステ",
+  description: null,
   questions: [
     { id: Q_VISIT, text: "今回のご来店は何回目ですか？", type: "single", options: ["初めて", "2〜3回目"], maxSelections: null },
     {
@@ -35,7 +36,7 @@ describe("parseGenerateRequest", () => {
     const request = parseGenerateRequest({
       salonId: SALON_ID,
       answers: [{ questionId: Q_VISIT, values: ["初めて"] }],
-      previousPlan: { length: "short", emotion: "none", exclamation: "occasional", opening: "fact", closing: "neutral", materialAmount: "few", tone: "plain" },
+      previousPlan: { length: "short", emotion: "none", exclamation: "occasional", opening: "fact", closing: "neutral", tone: "plain" },
     });
     expect(request).toMatchObject({ salonId: SALON_ID, legacy: false, previousPlan: { opening: "fact" } });
   });
@@ -182,7 +183,7 @@ function fakeSupabase(tables: Record<string, { data: unknown; error?: unknown }>
 describe("loadActiveSurvey", () => {
   it("店舗・有効なアンケート・質問・選択肢を読む", async () => {
     const { client, filters } = fakeSupabase({
-      salon_public: { data: { id: SALON_ID, name: "テストサロン", business_type: null } },
+      salon_public: { data: { id: SALON_ID, name: "テストサロン", business_type: null, description: "丁寧なご説明を大切にしています" } },
       surveys: { data: { id: "survey-1" } },
       questions: {
         data: [{ id: Q_VISIT, question_text: "何回目？", question_type: "single", max_selections: null }],
@@ -194,6 +195,7 @@ describe("loadActiveSurvey", () => {
       salonId: SALON_ID,
       salonName: "テストサロン",
       businessType: null,
+      description: "丁寧なご説明を大切にしています",
       questions: [{ id: Q_VISIT, text: "何回目？", type: "single", options: ["初めて"], maxSelections: null }],
     });
     expect(filters).toContainEqual(["surveys", "is_active", true]);

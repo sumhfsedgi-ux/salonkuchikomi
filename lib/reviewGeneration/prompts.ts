@@ -7,13 +7,17 @@
 // (例文が新しい文体のアンカーになるため。例はテストと評価コードにだけ置く)。
 // review-v3.1: 「事実は作らない。感情・温度感・表現だけ少し強めてよい」。お客様の事実は100%忠実、
 // 気持ちの表現は回答と同じ方向に1.2〜1.3倍くらいまで。店舗情報はお客様の体験(証拠)とは分ける。
+// review-v3.2: 下書きは本人が確認・編集する前提なので、表現・感情は少し積極的に魅力的にしてよい
+// (新しい具体的事実は作らない)。Appeal Planning(appeal.ts)で決めた「伝えたい良さ」を中心に書かせる。
+// 流れ: Customer Evidence → Appeal Planning → Style Seed → 作文 → Single Review Lint → 必要なときだけ修正・作り直し。
 
 import type { Material, QuestionRole } from "@/lib/reviewGeneration/materials";
 import { voiceSamples } from "@/lib/reviewGeneration/materials";
+import { APPEAL_LABELS, type AppealPlan } from "@/lib/reviewGeneration/appeal";
 import type { StyleSeed } from "@/lib/reviewGeneration/plan";
 
 /** プロンプトを変えたら上げる(生成イベントに記録して、品質の比較に使う)。 */
-export const PROMPT_VERSION = "review-v3.1";
+export const PROMPT_VERSION = "review-v3.2";
 
 const ROLE_LABELS: Record<QuestionRole, string> = {
   visit: "来店回数",
@@ -88,16 +92,24 @@ const CLOSING_HINTS: Record<StyleSeed["closing"], string> = {
   neutral: "どちらでもよい",
   short_intention_allowed: "短い意向の一言で終えてもよい([意向] の素材を使うとき)",
 };
-const MATERIAL_HINTS: Record<StyleSeed["materialAmount"], string> = {
-  few: "少なめ",
-  some: "ふつう",
-  many: "多め",
-};
 const TONE_HINTS: Record<StyleSeed["tone"], string> = {
   plain: "落ち着いた「です・ます」",
   light: "少しくだけた「です・ます」",
   match_voice: "【本人の文章】の口調に合わせる",
 };
+
+/** 伝えたい良さ(Appeal Planning の結果)。内容の優先順位だけで、書き方は【スタイルの傾向】が決める。 */
+function appealBlock(appeal: AppealPlan): string {
+  const label = (id: string) => (appeal.categories[id] ? `${id}(${APPEAL_LABELS[appeal.categories[id]]})` : id);
+  const list = (ids: readonly string[]) => (ids.length > 0 ? ids.map(label).join(", ") : "なし");
+  return [
+    "【伝えたい良さ】(回答の中から選んだ、このお店の良さとして一番伝えたいもの。新しい事実ではない)",
+    `主役: ${list(appeal.primaryIds)}`,
+    `補助(必要なときだけ): ${list(appeal.supportIds)}`,
+    `締めに使ってよい: ${list(appeal.closingIds)}`,
+    `必ず入れる: ${list(appeal.requiredIds)}`,
+  ].join("\n");
+}
 
 function styleBlock(seed: StyleSeed): string {
   return [
@@ -107,14 +119,13 @@ function styleBlock(seed: StyleSeed): string {
     `感嘆符: ${EXCLAMATION_HINTS[seed.exclamation]}`,
     `書き出し: ${OPENING_HINTS[seed.opening]}`,
     `締め: ${CLOSING_HINTS[seed.closing]}`,
-    `使う素材の量: ${MATERIAL_HINTS[seed.materialAmount]}([否定的] の素材は必ず使う)`,
     `口調: ${TONE_HINTS[seed.tone]}`,
   ].join("\n");
 }
 
 const MUST_RULES = `【必ず守ること】
 1. お客様の事実は、素材のとおりに書く(足さない・変えない)。素材に無ければ書かない: 施術内容、効果、症状の改善、数値・期間・価格、待ち時間、スタッフが実際にした行動、設備、サービス内容、来店理由やきっかけ、来店回数、接客の評価、他店との比較、紹介・再来店した事実、翌日以降の変化、お店の事情の推測。「〜ように感じた」「〜気がした」は感じたこととして書き、効果として断定しない。来店理由や希望(「〜したい」、お悩み)を、達成された結果にしない。医療的な表現(治る、治療、症状 など)は使わない。
-2. 気持ち・温度感・表現は、回答と同じ方向にだけ、少し強めてよい(目安は元の回答の1.2〜1.3倍くらいまで)。強めてよいのは、満足、嬉しさ、楽しさ、安心感、回答にある再来店の意向、文章のテンション、「！」、自然な口語。新しい出来事・効果・事実になる言い方は、強めではなく捏造なので書かない。
+2. この下書きは、お客様本人が確認・編集してから投稿する。気持ち・温度感・表現は、回答と同じ方向に、少し積極的に魅力的にしてよい(満足、嬉しさ、楽しさ、安心感、回答にある再来店の意向、文章のテンション、「！」、自然な口語)。判断の基準は「元の回答の表現・感情を少し魅力的にする」なら書いてよく、「新しい具体的事実が必要になる」なら書かない。
 3. 【店舗情報】はお客様の体験ではない。店舗情報だけを根拠に、お客様の体験(スタッフの対応、雰囲気、設備 など)を書かない。
 4. [否定的] の素材は必ずどこかに入れる。消さない、反転しない、弱めない、「それ以外は満足」のように帳消しにしない、お店をかばう説明を足さない。否定的な内容の強さは、本人の書いた程度のままにする。肯定的な回答は自然に使えるなら使ってよいが、必ず足す必要はない。否定寄りの回答なら、口コミも否定寄りでよい。
 5. [本人の言葉] [本人の記入] は最重要の素材。【本人の文章】の語彙・テンション・くだけ具合・文の長さ・「！」「笑」・その人の言い回しを、書き手の声としてできるだけそのまま使い、綺麗に言い換えない。
@@ -133,6 +144,7 @@ ${MUST_RULES}
 
 【書き方】
 ・1〜4文くらい。短くてよい。結論や締めの文がなくてよい。
+・【伝えたい良さ】の主役が、読んだ人に一番伝わるように書く。補助は必要なときだけ使い、すべての回答を同じ重さで並べない。
 ・気持ちの言葉は、事実ごとに付けず、気持ちが動いたところで使う。評価の言葉が付かない、ただの事実の文が混ざってよい。
 ・文と文、文の中の前後をつなぐのは、関係がはっきりしているときだけ。
 ・基本は自然な「です・ます」。常体やくだけた言い方は、【本人の文章】にそれがあるときだけ合わせてよい。
@@ -143,10 +155,11 @@ ${OUTPUT_RULES}`;
 
 export function buildGenerationUserPrompt(
   materials: readonly Material[],
+  appeal: AppealPlan,
   seed: StyleSeed,
   businessType: string | null,
 ): string {
-  return `${storeBlock(businessType)}${materialsBlock(materials)}${voiceBlock(materials)}\n\n${styleBlock(seed)}`;
+  return `${storeBlock(businessType)}${materialsBlock(materials)}${voiceBlock(materials)}\n\n${appealBlock(appeal)}\n\n${styleBlock(seed)}`;
 }
 
 /** 生成・修正の出力形式。source_ids は今回の素材IDだけを許す。 */

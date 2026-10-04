@@ -48,6 +48,7 @@ const SURVEY: ActiveSurvey = {
   salonId: SALON_ID,
   salonName: "DBのサロン名",
   businessType: "エステ",
+  description: "丁寧なカウンセリングを大切にしています",
   questions: [{ id: Q_FREE, text: "ご自由にお書きください", type: "text", options: [], maxSelections: null }],
 };
 
@@ -63,9 +64,11 @@ const V2_METADATA = {
   verifyMode: "none" as const,
   verifyFlags: [],
   repairAction: "none" as const,
-  styleSeed: "short|none|occasional|fact|neutral|few|plain",
+  styleSeed: "short|none|occasional|fact|neutral|plain",
+  appeal: "finish",
+  appealCovered: true,
 };
-const SEED = { length: "short", emotion: "none", exclamation: "occasional", opening: "fact", closing: "neutral", materialAmount: "few", tone: "plain" } as const;
+const SEED = { length: "short", emotion: "none", exclamation: "occasional", opening: "fact", closing: "neutral", tone: "plain" } as const;
 
 function post(body: unknown, headers: Record<string, string> = {}): Request {
   return new Request("http://localhost/api/generate-review", {
@@ -212,6 +215,10 @@ describe("POST /api/generate-review: v2", () => {
       plan: SEED,
     });
     expect(Object.keys(json.plan).sort()).toEqual(Object.keys(SEED).sort());
+    // 店舗の説明は、Appeal Planning の優先度付けのためにだけパイプラインへ渡す。
+    expect(runReviewPipeline).toHaveBeenCalledWith(
+      expect.objectContaining({ storeDescription: "丁寧なカウンセリングを大切にしています" }),
+    );
     expect(generateReviewV1).not.toHaveBeenCalled();
 
     await runAfterCallbacks();

@@ -45,10 +45,10 @@ function seedsOf(inputs: MaterialInput[], count = 100): StyleSeed[] {
 const valuesOf = <K extends keyof StyleSeed>(seeds: StyleSeed[], key: K) => new Set(seeds.map((s) => s[key]));
 
 describe("buildStyleSeed", () => {
-  it("書き方の傾向だけを選び、どの素材を使うかは決めない", () => {
+  it("書き方の傾向だけを選び、どの素材を中心にするか(内容)は決めない(Appeal Planning と分ける)", () => {
     const [seed] = seedsOf([VISIT, EXPERIENCE, STAFF], 1);
     expect(Object.keys(seed).sort()).toEqual(
-      ["closing", "emotion", "exclamation", "length", "materialAmount", "opening", "tone"].sort(),
+      ["closing", "emotion", "exclamation", "length", "opening", "tone"].sort(),
     );
   });
 
@@ -105,7 +105,6 @@ describe("previousStyleSeedSchema", () => {
       exclamation: "occasional",
       opening: "fact",
       closing: "neutral",
-      materialAmount: "few",
       tone: "plain",
     };
     expect(previousStyleSeedSchema.safeParse(valid).success).toBe(true);

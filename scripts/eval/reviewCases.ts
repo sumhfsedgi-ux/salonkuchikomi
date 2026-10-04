@@ -12,6 +12,8 @@ export interface ReviewCase {
   /** 自由記述・「その他」に否定的な内容を含む。 */
   negative: boolean;
   answers: MaterialInput[];
+  /** オーナーが登録した店舗の説明(架空)。Appeal Planning の優先度付けにだけ使い、体験として書かせない。 */
+  salonDescription?: string;
 }
 
 const VISIT = "今回のご来店は何回目ですか？";
@@ -182,6 +184,10 @@ export const REVIEW_CASES: ReviewCase[] = [
   { id: "hp-voice-casual", businessType: "ハーブピーリング", note: "「笑」と口語を残す", negative: false, answers: [single(VISIT, "初めて"), multiple(SKIN_FEEL, ["肌がしっとりした"]), free("途中寝ちゃいました笑 思ってたよりピリピリしなかった！")] },
   { id: "nail-voice-excited", businessType: "ネイルサロン", note: "テンションと「！」を残す・回答にある意向", negative: false, answers: [multiple(NAIL_FINISH, ["デザインが気に入った"]), free("かわいすぎる！！また行きます")] },
   { id: "ma-voice-plain", businessType: "マッサージ", note: "常体の短い言い方を残す", negative: false, answers: [multiple(MASSAGE_FEEL, ["体が軽くなった気がする"]), free("強めが好きなのでちょうどよかった。")] },
+  // ── 伝えたい良さ(Appeal Planning)と店舗情報 ──
+  { id: "el-appeal-example", businessType: "まつげエクステ", note: "カウンセリングと仕上がりを主役にし、清潔感は補助、意向は締め", negative: false, answers: [multiple(STAFF, ["カウンセリングが丁寧", "清潔感がある"]), multiple(LASH_FINISH, ["理想通りの仕上がり"]), free("また来たいです")] },
+  { id: "hp-store-match", businessType: "ハーブピーリング", note: "店舗の特徴と一致する回答(説明)を前に出す", negative: false, answers: [single(VISIT, "初めて"), multiple(STAFF, ["落ち着いた雰囲気", "説明が分かりやすかった"]), multiple(SKIN_FEEL, ["肌がしっとりした"])], salonDescription: "肌の状態に合わせた分かりやすいご説明を大切にしています。" },
+  { id: "nail-store-only", businessType: "ネイルサロン", note: "店舗情報だけの内容(個室・カウンセリング)を体験として書かない", negative: false, answers: [multiple(NAIL_FINISH, ["デザインが気に入った"])], salonDescription: "個室でゆったり過ごせる、カウンセリングを大切にしたサロンです。" },
   { id: "hair-voice-neg", businessType: "ヘアサロン", note: "常体の否定(回答にある数値)を残す", negative: true, answers: [multiple(HAIR_MENU, ["カット"]), free("仕上がりは好き。でも予約の時間から15分くらい待たされた")] },
 ];
 

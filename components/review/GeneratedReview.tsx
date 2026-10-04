@@ -30,7 +30,7 @@ export default function GeneratedReview({
           口コミの下書きができました
         </h2>
         <p className="mt-2 text-balance text-sm text-stone-500">
-          内容を確認して、必要に応じて編集してください。
+          内容を確認して、実際の体験と違うところがあれば自由に編集してください。
         </p>
       </div>
 

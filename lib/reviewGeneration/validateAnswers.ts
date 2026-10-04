@@ -112,6 +112,8 @@ export interface ActiveSurvey {
   salonId: string;
   salonName: string;
   businessType: string | null;
+  /** オーナーが登録した店舗の説明(お客様の体験ではない。Appeal Planning の優先度付けにだけ使う)。 */
+  description: string | null;
   questions: SurveyQuestionRecord[];
 }
 
@@ -134,7 +136,7 @@ interface OptionRow {
 export async function loadActiveSurvey(supabase: SupabaseClient, salonId: string): Promise<ActiveSurvey | null> {
   const { data: salon, error: salonError } = await supabase
     .from("salon_public")
-    .select("id, name, business_type")
+    .select("id, name, business_type, description")
     .eq("id", salonId)
     .maybeSingle();
   if (salonError) throw salonError;
@@ -175,6 +177,7 @@ export async function loadActiveSurvey(supabase: SupabaseClient, salonId: string
     salonId: salon.id as string,
     salonName: salon.name as string,
     businessType: (salon.business_type as string | null) ?? null,
+    description: (salon.description as string | null) ?? null,
     questions: questions.map((q) => ({
       id: q.id,
       text: q.question_text,

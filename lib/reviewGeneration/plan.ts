@@ -1,8 +1,8 @@
 // 口コミ生成 v3 の Style Seed(docs/plans/reviews-465-plan.md §14-4)。
 // 生成ごとに書き方の「傾向」を独立に選び、毎回同じ書き方に収束するのを防ぐ。
 // 傾向であって hard constraint ではない(LLM には「自然さを優先して外れてよい」と伝える)。
-// 事実の内容は変えない。どの素材を使うかも決めない(否定的な素材を必ず使うことは、
-// プロンプトと Linter で守る)。
+// 事実の内容は変えない。どの素材を中心にするか(内容の優先順位)は Appeal Planning(appeal.ts)が
+// 決め、Style Seed は書き方(長さ・入り方・感情の濃さ・締め方 など)の傾向だけを決める。
 
 import { z } from "zod";
 import type { Material } from "@/lib/reviewGeneration/materials";
@@ -12,7 +12,6 @@ export const EMOTION_TENDENCIES = ["none", "low", "medium"] as const;
 export const EXCLAMATION_TENDENCIES = ["none", "occasional", "expressive"] as const;
 export const OPENING_TENDENCIES = ["fact", "own_words", "reason", "feeling", "visit"] as const;
 export const CLOSING_TENDENCIES = ["none_preferred", "neutral", "short_intention_allowed"] as const;
-export const MATERIAL_AMOUNTS = ["few", "some", "many"] as const;
 export const TONES = ["plain", "light", "match_voice"] as const;
 
 export interface StyleSeed {
@@ -21,7 +20,6 @@ export interface StyleSeed {
   exclamation: (typeof EXCLAMATION_TENDENCIES)[number];
   opening: (typeof OPENING_TENDENCIES)[number];
   closing: (typeof CLOSING_TENDENCIES)[number];
-  materialAmount: (typeof MATERIAL_AMOUNTS)[number];
   tone: (typeof TONES)[number];
 }
 
@@ -32,7 +30,6 @@ export const previousStyleSeedSchema = z.object({
   exclamation: z.enum(EXCLAMATION_TENDENCIES),
   opening: z.enum(OPENING_TENDENCIES),
   closing: z.enum(CLOSING_TENDENCIES),
-  materialAmount: z.enum(MATERIAL_AMOUNTS),
   tone: z.enum(TONES),
 });
 
@@ -85,10 +82,6 @@ function candidateSeed(materials: readonly Material[], random: Random): StyleSee
         : [["none_preferred", 1], ["neutral", 1]],
       random,
     ),
-    materialAmount: pickWeighted(
-      content.length <= 2 ? [["few", 1], ["some", 1]] : [["few", 4], ["some", 4], ["many", 1]],
-      random,
-    ),
     // くだけた口調は、本人の文章があるときだけその口調に合わせる。無ければ「です・ます」の範囲で揺らす。
     tone: hasVoice(materials) ? "match_voice" : pickWeighted([["plain", 3], ["light", 2]], random),
   };
@@ -96,7 +89,7 @@ function candidateSeed(materials: readonly Material[], random: Random): StyleSee
 
 /** Style Seed が同じかどうかを比べるための文字列。 */
 export function styleSeedSignature(seed: StyleSeed): string {
-  return [seed.length, seed.emotion, seed.exclamation, seed.opening, seed.closing, seed.materialAmount, seed.tone].join("|");
+  return [seed.length, seed.emotion, seed.exclamation, seed.opening, seed.closing, seed.tone].join("|");
 }
 
 const RETRY_ATTEMPTS = 12;

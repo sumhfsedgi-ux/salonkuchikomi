@@ -1,7 +1,9 @@
 // 口コミ生成のパイプライン(docs/plans/reviews-465-plan.md §14)。
-//   Style Seed(コード) → 作文(LLM 1回) → Single Review Lint(コード)
+//   Customer Evidence(素材) → Appeal Planning(コード。何を一番伝えるか)
+//   → Style Seed(コード。どう書くか) → 作文(LLM 1回) → Single Review Lint(コード)
 //   → 最後の文が抽象的な総括なら削る
-//   → 構造の問題(要約・均一・繰り返し・あいまいなつなぎ・抽象総括)は、Style Seed を変えて全文を1回だけ作り直す
+//   → 構造の問題(要約・均一・繰り返し・あいまいなつなぎ・抽象総括)は、Style Seed だけを変えて全文を1回だけ作り直す
+//     (伝えたい良さ = Appeal Planning は変えない)
 //   → 危険な文だけ同期で意味検証(LLM。NG・タイムアウトはその文を削除 = fail-closed)
 //   → 否定的な素材が消えた・下書きが空なら、事実違反の文だけ1回部分修正 → それでも消えるなら本人の原文を残す
 // 回答・素材・下書きの本文はログに出さない。返すメタデータにも本文は含めない。
@@ -33,6 +35,7 @@ import {
   type LintResult,
   type LintSentence,
 } from "@/lib/ai/naturalJapanese/lint";
+import { buildAppealPlan } from "@/lib/reviewGeneration/appeal";
 import { toLintSources, type Material } from "@/lib/reviewGeneration/materials";
 import {
   alternativeStyleSeed,
@@ -76,6 +79,10 @@ export interface PipelineMetadata {
   repairAction: RepairAction;
   /** 最終的に使った Style Seed(書き方の傾向。本文は含まない)。 */
   styleSeed: string;
+  /** 伝えたい良さの主役の分類(例: "counseling+finish"。本文は含まない)。 */
+  appeal: string;
+  /** 主役の回答が、最終的な下書きのどこかで使われているか。 */
+  appealCovered: boolean;
 }
 
 export interface PipelineResult {
@@ -111,6 +118,8 @@ export interface PipelineDeps {
 export interface PipelineInput {
   materials: Material[];
   businessType: string | null;
+  /** オーナーが登録した店舗の説明。お客様の体験ではないので LLM には渡さず、Appeal Planning の優先度付けにだけ使う。 */
+  storeDescription?: string | null;
   previousSeed?: PreviousStyleSeed;
 }
 
@@ -239,6 +248,8 @@ class MetadataRecorder {
   private repairAction: RepairAction = "none";
   verifyMode: VerifyMode = "none";
   styleSeed = "";
+  appeal = "";
+  appealCovered = false;
 
   constructor(
     private readonly startedAt: number,
@@ -279,6 +290,8 @@ class MetadataRecorder {
       verifyFlags: [...this.verifyFlags],
       repairAction: this.repairAction,
       styleSeed: this.styleSeed,
+      appeal: this.appeal,
+      appealCovered: this.appealCovered,
     };
   }
 }
@@ -295,6 +308,9 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
   const { materials, businessType } = input;
   if (materials.length === 0) throw new ReviewGenerationError("素材がありません", "no_materials");
 
+  // 何を一番伝えるか(内容の優先順位)と、どう書くか(書き方の傾向)を、別々に決める。
+  const appeal = buildAppealPlan(materials, input.storeDescription);
+  meta.appeal = appeal.primaryIds.map((id) => appeal.categories[id] ?? "other").join("+");
   let seed = buildStyleSeed(materials, { random, previous: input.previousSeed });
   meta.styleSeed = styleSeedSignature(seed);
   const sources = toLintSources(materials);
@@ -306,7 +322,7 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
     const result = await callJson<RawDraft>({
       task: "review_generation",
       systemPrompt: GENERATION_SYSTEM_PROMPT,
-      userPrompt: buildGenerationUserPrompt(materials, styleSeed, businessType),
+      userPrompt: buildGenerationUserPrompt(materials, appeal, styleSeed, businessType),
       schema: draftSchema(materials.map((m) => m.id)),
       temperature: temperatureFor(resolveModel("review_generation"), GENERATION_TEMPERATURE),
       maxOutputTokens: 700,
@@ -475,6 +491,9 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
   if (kept.length === 0) {
     throw new ReviewGenerationError("使える下書きができませんでした", "unusable_draft", meta.snapshot(lintCodes(lint(kept))));
   }
+
+  const citedIds = new Set(kept.flatMap((s) => s.sourceIds));
+  meta.appealCovered = appeal.primaryIds.length === 0 || appeal.primaryIds.some((id) => citedIds.has(id));
 
   return {
     draft: assembleDraft(kept),

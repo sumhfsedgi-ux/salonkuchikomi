@@ -103,7 +103,7 @@ async function runV2(testCase: ReviewCase, materials: Material[]): Promise<Draft
   const startedAt = Date.now();
   try {
     const result = await runReviewPipeline(
-      { materials, businessType: testCase.businessType },
+      { materials, businessType: testCase.businessType, storeDescription: testCase.salonDescription },
       { callJson: call() },
     );
     return {

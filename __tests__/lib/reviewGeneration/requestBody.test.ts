@@ -49,7 +49,7 @@ describe("buildGenerateRequestBody", () => {
       answers: { [QUESTIONS[0].id]: "初めて" },
       otherDetails: {},
       previousReview: "前回の下書き",
-      previousPlan: { length: "short", emotion: "none", exclamation: "occasional", opening: "fact", closing: "neutral", materialAmount: "few", tone: "plain" },
+      previousPlan: { length: "short", emotion: "none", exclamation: "occasional", opening: "fact", closing: "neutral", tone: "plain" },
     });
     const parsed = parseGenerateRequest(JSON.parse(JSON.stringify(body)));
     expect(parsed?.legacy).toBe(false);
