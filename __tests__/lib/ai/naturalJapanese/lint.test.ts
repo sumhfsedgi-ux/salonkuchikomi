@@ -387,3 +387,69 @@ describe("lintDraft: 感嘆符(exclamation_overuse)", () => {
     expect(result.issues.filter((i) => i.code === "fragment").map((i) => i.sentenceIndex)).toEqual([2]);
   });
 });
+
+describe("lintDraft: 1文への詰め込み・関係のあいまいなつなぎ", () => {
+  const PORES = source("M1", "毛穴の開き");
+  const PROPOSAL = source("M2", "自分の肌に合った提案をしてもらえた");
+  const CONSULT = source("M3", "相談しやすい");
+  const FIRST = source("M4", "初めて", { visitCount: true });
+  const SOURCES = [PORES, PROPOSAL, CONSULT, FIRST];
+  const codesFor = (text: string, sourceIds: string[]) => codesOf([{ text, sourceIds }], SOURCES);
+
+  it("「Aしてもらえて、Bが気になっていたけどCでした」は weak_connection", () => {
+    expect(codesFor("自分の肌に合った提案をしてもらえて、毛穴の開きが気になっていたけど安心できました。", ["M2", "M1"])).toContain(
+      "weak_connection",
+    );
+  });
+
+  it("因果関係がはっきりしたつなぎ・1つの内容の文は指摘しない", () => {
+    for (const [text, ids] of [
+      ["毛穴の開きが気になって伺いました。", ["M1"]],
+      ["肌の状態に合わせて提案してもらえて、相談もしやすかったです。", ["M2", "M3"]],
+      ["毛穴のことを相談したところ、肌の状態に合わせて提案してもらえたのがよかったです。", ["M1", "M2"]],
+    ] as const) {
+      const codes = codesFor(text, [...ids]);
+      expect(codes).not.toContain("weak_connection");
+      expect(codes).not.toContain("overloaded_sentence");
+    }
+  });
+
+  it("別々の回答を3つ以上、または2つを読点2つ以上でつなぐと overloaded_sentence(来店回数は数えない)", () => {
+    expect(codesFor("毛穴の開きが気になっていて、提案も肌に合っていて、相談しやすかったです。", ["M1", "M2", "M3"])).toContain(
+      "overloaded_sentence",
+    );
+    expect(codesFor("毛穴が気になっていて、肌に合った提案をしてもらえて、嬉しかったです。", ["M1", "M2"])).toContain(
+      "overloaded_sentence",
+    );
+    expect(codesFor("初めてでしたが、相談しやすくて、気負わずに過ごせました。", ["M4", "M3"])).not.toContain("overloaded_sentence");
+  });
+});
+
+describe("lintDraft: 同じ内容の繰り返し(repeated_content)", () => {
+  const RELAX = source("M1", "リラックスできた");
+  const TALK = source("M2", "スタッフが話しやすい");
+
+  it("同じ回答の言葉を別の文でもう一度書くと、2回目の文を指摘する", () => {
+    const result = lintDraft(
+      [
+        { text: "すごくリラックスできました。", sourceIds: ["M1"] },
+        { text: "スタッフさんが話しやすかったです。", sourceIds: ["M2"] },
+        { text: "リラックスできてよかったです。", sourceIds: ["M1"] },
+      ],
+      [RELAX, TALK],
+    );
+    expect(result.issues.filter((i) => i.code === "repeated_content").map((i) => i.sentenceIndex)).toEqual([2]);
+  });
+
+  it("出典にしただけで回答の言葉を使っていない締めの文は数えない", () => {
+    expect(
+      codesOf(
+        [
+          { text: "スタッフさんがすごく話しやすかったです。", sourceIds: ["M2"] },
+          { text: "またお願いしたいです！", sourceIds: ["M2"] },
+        ],
+        [TALK],
+      ),
+    ).not.toContain("repeated_content");
+  });
+});

@@ -12,6 +12,9 @@
 //   abstract_ai_summary             … 「〜な体験でした」「〜と思える〜でした」のように、体験を抽象的な名詞で
 //                                     まとめる・最後の文だけきれいに総括する(AIが綺麗にまとめた作文に見える)
 //   exclamation_overuse             … 感嘆符の使いすぎ(感嘆符があるだけでは指摘しない)
+//   overloaded_sentence             … 1文に別々の回答を詰め込みすぎている
+//   weak_connection                 … 「Aしてもらえて、Bが気になっていたけどCでした」のような、関係のあいまいなつなぎ
+//   repeated_content                … 同じ回答の内容を、別の文でもう一度書いている
 // 軽い感情の補完(嬉しかった・よかった・話しやすかった など)は指摘しない。口語的な言い方、短い文、
 // たまに入る「！」、締めの文が無いことも指摘しない(一般のお客様の口コミとして自然なため)。
 //
@@ -69,6 +72,8 @@ export interface LintSource {
   purposeLike: boolean;
   /** 自由記述・「その他」の詳細(本人の言葉なので言い回しを残す)。 */
   ownWords: boolean;
+  /** 来店回数(「初めてでしたが」のような前置きなので、1文に入れた内容の数に数えない)。 */
+  visitCount?: boolean;
 }
 
 export interface LintSentence {
@@ -107,6 +112,9 @@ export type LintCode =
   | "uniform_sentence_structure"
   | "abstract_ai_summary"
   | "exclamation_overuse"
+  | "overloaded_sentence"
+  | "weak_connection"
+  | "repeated_content"
   | "main_not_used"
   | "own_words_paraphrased"
   | "template_phrase"
@@ -159,6 +167,8 @@ export interface LintResult {
 
 // 本人の言い回しがこの割合より残っていなければ、言い換えすぎとみなす。
 const OWN_WORDS_MIN_OVERLAP = 0.3;
+// 回答の言葉がこの割合以上入っている文が2つあれば、同じ内容の繰り返しとみなす。
+const REPEAT_MIN_OVERLAP = 0.3;
 // 同じ語尾がこの数だけ続いたら均一とみなす。
 const MONOTONE_RUN = 3;
 // 文の長さのばらつき(変動係数)がこれ未満なら均一とみなす(3文以上のとき)。
@@ -172,6 +182,11 @@ const HONORIFIC_MIN_COUNT = 2;
 const MIN_SENTENCE_CHARS = 5;
 /** 下書き全体の感嘆符はこの数まで(「最後だけ1つ」「文中に1〜2個」まで)。超えたら使いすぎ。 */
 export const MAX_EXCLAMATIONS = 2;
+// 1文に入れてよい別々の回答の数(来店回数は数えない)。これを超えるか、2つを読点2つ以上でつなぐと詰め込み。
+const MAX_TOPICS_PER_SENTENCE = 2;
+const CLAUSE_BREAK = /[、,]/gu;
+// 「〜て、」「〜で、」でつないだあとに逆接を重ねる(「提案してもらえて、毛穴が気になっていたけど安心できました」)。
+const WEAK_LINK_PATTERN = /[てで]、[^。]*?(?:けど|けれど|のに|ですが|ましたが|でしたが)/u;
 // 明らかな文法の崩れ(「見えたです」「でしたです」など。「良かったです」は正しいので除く)。
 const UNGRAMMATICAL_PATTERN = /[^っ]たです|ですです|ますです/u;
 const PUNCTUATION = /[。．、,！？!?「」『』（）()…・〜~ー\s]/gu;
@@ -344,6 +359,16 @@ export function lintDraft(
       issues.push(issue("abstract_ai_summary", "style", index, { detail: "closing_summary" }));
     }
 
+    // ── 1文への詰め込み・関係のあいまいなつなぎ(読んだときに引っかかる文) ──
+    const topics = cited.filter((s) => !s.visitCount).length;
+    const clauseBreaks = normalize(text).match(CLAUSE_BREAK)?.length ?? 0;
+    if (topics > MAX_TOPICS_PER_SENTENCE || (topics === MAX_TOPICS_PER_SENTENCE && clauseBreaks >= 2)) {
+      issues.push(issue("overloaded_sentence", "style", index));
+    }
+    if (topics >= 2 && WEAK_LINK_PATTERN.test(normalize(text))) {
+      issues.push(issue("weak_connection", "style", index));
+    }
+
     traits.push({ citesNegative, hasClaimVocabulary: claims.length > 0 || medical.length > 0 });
   });
 
@@ -368,6 +393,18 @@ export function lintDraft(
       .join("");
     if (bigramOverlap(source.text, citingText) < OWN_WORDS_MIN_OVERLAP) {
       issues.push(issue("own_words_paraphrased", "style", null, { sourceId: source.id }));
+    }
+  }
+
+  // 同じ回答の言葉を、別の文でもう一度書いている(2回目以降の文を指摘する)。出典にしただけで
+  // 回答の言葉を使っていない文(「またお願いしたいです！」の出典など)は数えない。
+  for (const source of sources) {
+    if (countChars(source.text) < 2) continue;
+    const repeating = sentences
+      .map((s, index) => ({ s, index }))
+      .filter(({ s }) => s.sourceIds.includes(source.id) && bigramOverlap(source.text, s.text) >= REPEAT_MIN_OVERLAP);
+    for (const { index } of repeating.slice(1)) {
+      issues.push(issue("repeated_content", "style", index, { sourceId: source.id }));
     }
   }
 
@@ -455,6 +492,9 @@ export const TEXTURE_CODES: ReadonlySet<LintCode> = new Set<LintCode>([
   "low_emotional_texture",
   "abstract_ai_summary",
   "template_phrase",
+  "overloaded_sentence",
+  "weak_connection",
+  "repeated_content",
 ]);
 
 /** 指摘の名前(細目があれば「code:detail」)。修正の依頼と記録に使う。文や素材の内容は含めない。 */

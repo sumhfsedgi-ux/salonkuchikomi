@@ -281,6 +281,26 @@ describe("runReviewPipeline: 綺麗な作文にしない", () => {
     expect(ai.calls[1].userPrompt).toContain("抽象的な名詞で体験をまとめている");
   });
 
+  it("関係のあいまいなつなぎ方の文は、1回だけ書き直して文を分ける", async () => {
+    const pores = buildMaterials([
+      { questionText: "今回、どのようなお悩みでご来店されましたか？", questionType: "multiple", selected: ["毛穴の開き"] },
+      { questionText: "施術について感じたことを教えてください", questionType: "multiple", selected: ["自分の肌に合った提案をしてもらえた"] },
+      { questionText: "スタッフ・サロンについて感じたことを教えてください", questionType: "multiple", selected: ["相談しやすい"] },
+    ]);
+    const ai = fakeOpenAI({
+      review_generation: [
+        draft(["自分の肌に合った提案をしてもらえて、毛穴の開きが気になっていたけど安心できました。", ["M2", "M1"]], ["相談もしやすかったです。", ["M3"]]),
+      ],
+      review_repair: [
+        draft(["毛穴の開きが気になって伺いました。", ["M1"]], ["肌の状態に合わせて提案してもらえて、相談もしやすかったです。", ["M2", "M3"]]),
+      ],
+    });
+    const result = await runReviewPipeline({ materials: pores, businessType: null }, { callJson: ai.callJson, random: fixedRandom });
+    expect(result.draft).toBe("毛穴の開きが気になって伺いました。肌の状態に合わせて提案してもらえて、相談もしやすかったです。");
+    expect(result.metadata.repairAction).toBe("polished");
+    expect(ai.calls[1].userPrompt).toContain("関係のあいまいなつなぎ方");
+  });
+
   it("感嘆符は2つまで。多ければ前の文から句点に戻す", async () => {
     const ai = fakeOpenAI({
       review_generation: [

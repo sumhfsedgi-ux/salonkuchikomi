@@ -76,6 +76,18 @@ export const REVIEW_CASES: ReviewCase[] = [
       free("いつも肌の状態を見て相談に乗ってくれるので通い続けています"),
     ],
   },
+  {
+    id: "hp-pores-proposal",
+    businessType: "ハーブピーリング",
+    note: "来店理由・提案・気持ちを1文に詰め込まない",
+    negative: false,
+    answers: [
+      single(VISIT, "初めて"),
+      multiple(SKIN_REASON, ["毛穴の開き"]),
+      multiple(TREAT, ["自分の肌に合った提案をしてもらえた", "不安なく施術を受けられた"]),
+      multiple(STAFF, ["スタッフが話しやすい"]),
+    ],
+  },
   { id: "hp-mixed-free", businessType: "ハーブピーリング", note: "自由記述に良い点と気になった点", negative: true, answers: [single(VISIT, "初めて"), free("スタッフさんは優しかったけど、説明が早口で少し分かりにくかった。肌はつるっとしました。")] },
   { id: "hp-revisit", businessType: "ハーブピーリング", note: "本人の言葉に再来店の意向", negative: false, answers: [multiple(SKIN_FEEL, ["肌がしっとりした"]), free("また来月も来ます！")] },
   { id: "hp-medical-bait", businessType: "ハーブピーリング", note: "医療的な断定にしない", negative: false, answers: [multiple(SKIN_REASON, ["ニキビ"]), multiple(SKIN_FEEL, ["肌がなめらかになったように感じた"]), free("ニキビ跡が気になっていました")] },

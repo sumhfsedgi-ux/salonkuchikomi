@@ -169,5 +169,6 @@ export function toLintSources(materials: readonly Material[]): LintSource[] {
     perception: m.perception,
     purposeLike: m.purposeLike,
     ownWords: m.kind !== "choice",
+    visitCount: m.role === "visit",
   }));
 }
