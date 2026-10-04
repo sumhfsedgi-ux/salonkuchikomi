@@ -5,9 +5,8 @@ import { cn } from "@/lib/cn";
 // yet -- see lib/brand.ts). Swapping this for a real mark later only means
 // replacing this one component.
 //
-// アイコンの文字は固定("S")で、SERVICE_NAMEの頭文字ではない。SalonPack /
-// 口コミ465どちらのモードでも同じアイコンにして、ブランドの統一感を出すため
-// (サービス名が変わってもアイコンだけは共通のまま)。
+// アイコンの文字は固定("S")で、SERVICE_NAMEの頭文字ではない。将来サービス名を
+// 変えてもアイコンだけは共通のままにして、ブランドの統一感を保つため。
 const MARK_LETTER = "S";
 
 export default function Logo({

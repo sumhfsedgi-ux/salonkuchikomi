@@ -1,13 +1,10 @@
-import { isReviewsOnly } from "@/lib/appMode";
-
-// Placeholder product identity. The final brand name hasn't been decided yet
-// (the codebase's only existing name, "salonpack", is a dev codename, not a
-// customer-facing brand). Every screen that shows the product name imports
+// Product identity. Every screen that shows the product name imports
 // SERVICE_NAME/SERVICE_TAGLINE from here instead of hardcoding a string, so
 // renaming the product later is a one-line change in this file only.
 //
-// APP_MODE=reviewsのデプロイ(口コミ465)では別ブランドとして表示する。
-export const SERVICE_NAME = isReviewsOnly() ? "口コミ465" : "SalonPack";
-export const SERVICE_TAGLINE = isReviewsOnly()
-  ? "サロン運営を、もっとシンプルに。"
-  : "サロン業務を、もっとシンプルに。";
+// 画面上のサービス名は、店舗の契約プラン(salons.plan)に関係なく常に「SalonPack」。
+// 「口コミ465」は口コミ機能だけを使える契約プラン(plan=reviews)の名前で、
+// 画面のブランドを切り替えるものではない。APP_MODE でも切り替えない
+// (どの機能を使えるかは lib/access/plan.ts が salons.plan で判定する)。
+export const SERVICE_NAME = "SalonPack";
+export const SERVICE_TAGLINE = "サロン業務を、もっとシンプルに。";
