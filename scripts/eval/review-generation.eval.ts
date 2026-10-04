@@ -7,7 +7,8 @@
 //
 // 比べるもの:
 //  1. v1 と v2 の下書き(36件): 失敗率・待ち時間・文字数・Linter の指摘・否定的な素材の反映・
-//     監査モデル(既定 gpt-4.1)による意味の判定(反転・弱め・回答に無い満足表現・誇張など)
+//     監査モデル(既定 gpt-4.1)による意味の判定(事実・効果の捏造、極端な感情、否定の反転・弱め)と、
+//     読み手としての採点(気持ち・温度感、自然さ、アンケートの要約に見えるか)
 //  2. 意味検証モデルの候補: 正解付きの20文で、NG を見つけられた割合・誤って NG にした割合・待ち時間
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -121,6 +122,56 @@ async function audit(materials: Material[], draft: string): Promise<AuditResult 
   }
 }
 
+interface QualityScore {
+  warmth: number;
+  naturalness: number;
+  surveySummary: boolean;
+}
+
+const QUALITY_SCHEMA = {
+  name: "review_quality",
+  schema: {
+    type: "object",
+    properties: {
+      warmth: { type: "integer" },
+      naturalness: { type: "integer" },
+      survey_summary: { type: "boolean" },
+    },
+    required: ["warmth", "naturalness", "survey_summary"],
+    additionalProperties: false,
+  },
+};
+
+const QUALITY_SYSTEM_PROMPT = `あなたは口コミの読み手として採点します。お客様のアンケート回答(素材)と、そこから作った口コミの下書きを読み、次を採点してください。事実の正しさはここでは採点しません。
+・warmth(1〜5): 書いた本人の気持ちや受け取り方、温度感が伝わるか(1 = 事実の列挙だけ、5 = 本人が体験を思い返して気持ちを込めて書いたように感じる)
+・naturalness(1〜5): 実際のお客様が書いた口コミとして自然か(1 = AI やアンケートの要約に見える、5 = 本人が書いたとしか思えない)
+・survey_summary: アンケートの回答を順番に要約・列挙しただけに見えるなら true`;
+
+/** 読み手としての採点(評価だけで使う。本番では使わない)。 */
+async function judgeQuality(materials: Material[], draft: string): Promise<QualityScore | null> {
+  if (!draft.trim()) return null;
+  try {
+    const result = await countingCall()<{ warmth: number; naturalness: number; survey_summary: boolean }>({
+      task: "review_verification",
+      model: AUDIT_MODEL,
+      systemPrompt: QUALITY_SYSTEM_PROMPT,
+      userPrompt: `【素材】\n${materials.map((m) => `${m.id} ${m.text}`).join("\n")}\n\n【下書き】\n${draft}`,
+      schema: QUALITY_SCHEMA,
+      temperature: 0,
+      maxOutputTokens: 60,
+      timeoutMs: 30_000,
+    });
+    const clamp = (n: number) => Math.min(5, Math.max(1, Math.round(n)));
+    return {
+      warmth: clamp(result.data.warmth),
+      naturalness: clamp(result.data.naturalness),
+      surveySummary: result.data.survey_summary === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
 interface DraftResult {
   ok: boolean;
   draft?: string;
@@ -128,6 +179,7 @@ interface DraftResult {
   errorKind?: string;
   lint: string[];
   audit: AuditResult | null;
+  quality: QualityScore | null;
   // v2 だけ
   verifyMode?: string;
   repairAction?: string;
@@ -142,13 +194,14 @@ async function runV1(testCase: ReviewCase, materials: Material[]): Promise<Draft
   const startedAt = Date.now();
   const result = await generateReviewV1({ answers: toV1Answers(testCase.answers), businessType: testCase.businessType });
   if (result.ok && result.attempts > 1) budget.take(result.attempts - 1);
-  if (!result.ok) return { ok: false, latencyMs: Date.now() - startedAt, errorKind: result.kind, lint: [], audit: null };
+  if (!result.ok) return { ok: false, latencyMs: Date.now() - startedAt, errorKind: result.kind, lint: [], audit: null, quality: null };
   return {
     ok: true,
     draft: result.review,
     latencyMs: result.latencyMs,
     lint: lintPlainDraft(result.review, materials),
     audit: await audit(materials, result.review),
+    quality: await judgeQuality(materials, result.review),
   };
 }
 
@@ -165,6 +218,7 @@ async function runV2(testCase: ReviewCase, materials: Material[]): Promise<Draft
       latencyMs: result.metadata.latencyMs,
       lint: lintPlainDraft(result.draft, materials),
       audit: await audit(materials, result.draft),
+      quality: await judgeQuality(materials, result.draft),
       verifyMode: result.metadata.verifyMode,
       repairAction: result.metadata.repairAction,
       llmCalls: result.metadata.llmCalls,
@@ -175,8 +229,33 @@ async function runV2(testCase: ReviewCase, materials: Material[]): Promise<Draft
   } catch (err) {
     const errorKind =
       err instanceof ReviewGenerationError ? `${err.kind}${err.causeKind ? `:${err.causeKind}` : ""}` : "unexpected";
-    return { ok: false, latencyMs: Date.now() - startedAt, errorKind, lint: [], audit: null };
+    return { ok: false, latencyMs: Date.now() - startedAt, errorKind, lint: [], audit: null, quality: null };
   }
+}
+
+// 表示しない扱いになる指摘(v1 と v2 で比べられるもの)。
+const BLOCKING_PLAIN_CODES = new Set([
+  "factual_invention:situation",
+  "factual_invention:number",
+  "factual_invention:comparison",
+  "factual_invention:visit_count",
+  "factual_invention:off_topic",
+  "promotional_callout",
+  "unsupported_effect:medical",
+  "extreme_emotional_exaggeration:extreme",
+  "negative_not_reflected",
+]);
+
+function summarizeQuality(scores: QualityScore[]) {
+  if (scores.length === 0) return null;
+  const avg = (f: (q: QualityScore) => number) =>
+    Math.round((scores.reduce((sum, q) => sum + f(q), 0) / scores.length) * 100) / 100;
+  return {
+    judged: scores.length,
+    warmthAvg: avg((q) => q.warmth),
+    naturalnessAvg: avg((q) => q.naturalness),
+    surveySummary: scores.filter((q) => q.surveySummary).length,
+  };
 }
 
 function summarizeDrafts(results: DraftResult[], cases: readonly ReviewCase[]) {
@@ -200,9 +279,12 @@ function summarizeDrafts(results: DraftResult[], cases: readonly ReviewCase[]) {
     charsMin: chars.length ? Math.min(...chars) : null,
     charsMax: chars.length ? Math.max(...chars) : null,
     lintCounts: countBy(ok.flatMap((r) => r.lint)),
-    draftsWithBlockingLint: ok.filter((r) =>
-      r.lint.some((c) => ["unsupported_satisfaction", "unsupported_revisit", "unsupported_recommend", "fabricated_situation", "medical_claim", "off_topic", "negative_not_reflected"].includes(c)),
-    ).length,
+    draftsWithBlockingLint: ok.filter((r) => r.lint.some((c) => BLOCKING_PLAIN_CODES.has(c))).length,
+    textureLint: {
+      lowEmotionalTexture: ok.filter((r) => r.lint.includes("low_emotional_texture")).length,
+      uniformSentenceStructure: ok.filter((r) => r.lint.includes("uniform_sentence_structure")).length,
+    },
+    quality: summarizeQuality(ok.map((r) => r.quality).filter((q): q is QualityScore => q !== null)),
     negativeCases: negativeIndexes.length,
     negativeReflected,
     auditSentences: sentenceCount,
@@ -271,8 +353,9 @@ function estimateCalls() {
     auditModel: AUDIT_MODEL,
     skipV1: SKIP_V1,
     skipVerifiers: SKIP_VERIFIERS,
-    expectedCalls: cases * v1 + Math.round(cases * 1.9) + cases * (1 + v1) + verifier,
-    worstCaseCalls: cases * 2 * v1 + cases * 5 + cases * (1 + v1) + verifier,
+    // 監査と読み手としての採点は、下書き1件につき1回ずつ。
+    expectedCalls: cases * v1 + Math.round(cases * 1.9) + cases * (1 + v1) * 2 + verifier,
+    worstCaseCalls: cases * 2 * v1 + cases * 6 + cases * (1 + v1) * 2 + verifier,
     maxCalls: MAX_CALLS,
   };
 }
@@ -324,6 +407,8 @@ describe("口コミ生成のオフライン評価", () => {
         v1Audit: v1?.audit?.issues ?? null,
         v2: v2.ok ? v2.draft : `(失敗: ${v2.errorKind})`,
         v2Audit: v2.audit?.issues ?? null,
+        v1Quality: v1?.quality ?? null,
+        v2Quality: v2.quality,
         v2RepairAction: v2.repairAction,
       })),
     };

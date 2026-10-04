@@ -118,28 +118,28 @@ describe("runReviewPipeline: NG の文の扱い", () => {
           ["待ち時間が長かったのは残念でした。", ["M4"]],
         ),
       ],
-      review_verification: [verdicts([0, false, ["exaggeration"]], [2, true])],
+      review_verification: [verdicts([0, false, ["unsupported_effect"]], [2, true])],
     });
     const result = await runReviewPipeline({ materials, businessType: null }, { callJson: ai.callJson, random: fixedRandom });
     expect(result.draft).toBe("説明が分かりやすかったです。待ち時間が長かったのは残念でした。");
     expect(result.metadata.repairAction).toBe("removed");
-    expect(result.metadata.verifyFlags).toContain("exaggeration");
+    expect(result.metadata.verifyFlags).toContain("unsupported_effect");
     expect(ai.tasks()).toEqual(["review_generation", "review_verification"]);
   });
 
-  it("回答に無い満足の表現(block)は、意味検証を待たずに削除する", async () => {
+  it("極端な感情(block)は、意味検証を待たずに削除する", async () => {
     const ai = fakeOpenAI({
       review_generation: [
         draft(
           ["初めてでしたが、説明が分かりやすかったです。", ["M1", "M3"]],
-          ["大満足です。", ["M3"]],
+          ["人生が変わるほどの大感動でした。", ["M3"]],
           ["肌がなめらかになったように感じました。", ["M2"]],
         ),
       ],
     });
     const result = await runReviewPipeline({ materials: positiveOnly, businessType: null }, { callJson: ai.callJson, random: fixedRandom });
     expect(result.draft).toBe("初めてでしたが、説明が分かりやすかったです。肌がなめらかになったように感じました。");
-    expect(result.metadata.lintCodes).not.toContain("unsupported_satisfaction");
+    expect(result.metadata.lintCodes).not.toContain("extreme_emotional_exaggeration:extreme");
     expect(ai.tasks()).toEqual(["review_generation"]);
   });
 
@@ -171,6 +171,34 @@ describe("runReviewPipeline: NG の文の扱い", () => {
     expect(result.metadata.repairAction).toBe("repaired");
     // 直した文に危険な表現が無く、否定的な素材の文は合格済みで変わっていないので、再検証はしない。
     expect(ai.tasks()).toEqual(["review_generation", "review_verification", "review_repair"]);
+  });
+
+  it("事実の列挙だけの下書きは、1回だけ書き直して体験者の気持ちを補う", async () => {
+    const ai = fakeOpenAI({
+      review_generation: [draft(["初めての来店でした。", ["M1"]], ["説明が分かりやすかったです。", ["M3"]])],
+      review_repair: [
+        draft(
+          ["初めての来店でしたが、説明が分かりやすくて嬉しかったです。", ["M1", "M3"]],
+          ["施術のあとは肌がなめらかになったように感じました。", ["M2"]],
+        ),
+      ],
+    });
+    const result = await runReviewPipeline({ materials: positiveOnly, businessType: null }, { callJson: ai.callJson, random: fixedRandom });
+    expect(result.draft).toBe("初めての来店でしたが、説明が分かりやすくて嬉しかったです。施術のあとは肌がなめらかになったように感じました。");
+    expect(result.metadata.repairAction).toBe("polished");
+    expect(ai.tasks()).toEqual(["review_generation", "review_repair"]);
+    expect(ai.calls[1].userPrompt).toContain("【全体への指摘】");
+  });
+
+  it("書き直しで否定的な素材の反映が消えたら、書き直す前の下書きを使う", async () => {
+    const ai = fakeOpenAI({
+      review_generation: [draft(["説明は丁寧でした。", ["M3"]], ["待ち時間は長かったです。", ["M4"]])],
+      review_verification: [verdicts([1, true])],
+      review_repair: [draft(["説明が丁寧で嬉しかったです。", ["M3"]])],
+    });
+    const result = await runReviewPipeline({ materials, businessType: null }, { callJson: ai.callJson, random: fixedRandom });
+    expect(result.draft).toBe("説明は丁寧でした。待ち時間は長かったです。");
+    expect(result.metadata.verifyFlags).toContain("polish_rejected");
   });
 
   it("意味検証も修正も失敗したら NG 扱いにし、否定的な素材は本人の原文を残す(fail-closed)", async () => {
@@ -343,10 +371,12 @@ describe("cleanSentences / assembleDraft", () => {
 
 describe("lintPlainDraft(v1 の下書きの計測用)", () => {
   it("出典が無くても判定できる指摘だけを返す", () => {
-    const codes = lintPlainDraft("仕事帰りに寄りました。肌がなめらかになりました。大満足です。", materials);
-    expect(codes).toEqual(expect.arrayContaining(["fabricated_situation", "unsupported_satisfaction"]));
+    const codes = lintPlainDraft("仕事帰りに寄りました。肌がなめらかになりました。人生が変わるほど大感動です。", materials);
+    expect(codes).toEqual(
+      expect.arrayContaining(["factual_invention:situation", "extreme_emotional_exaggeration:extreme"]),
+    );
     // 出典の対応が必要な指摘(知覚表現の消失など)は返さない。
-    expect(codes).not.toContain("perception_dropped");
+    expect(codes).not.toContain("unsupported_effect:perception_dropped");
   });
 
   it("否定的な素材の目印が下書きに残っていなければ negative_not_reflected", () => {
@@ -357,7 +387,7 @@ describe("lintPlainDraft(v1 の下書きの計測用)", () => {
 
 describe("runShadowVerification", () => {
   it("全文を検証して、指摘コードと NG の数だけを返す", async () => {
-    const ai = fakeOpenAI({ review_verification: [verdicts([0, true], [1, false, ["unsupported_fact"]])] });
+    const ai = fakeOpenAI({ review_verification: [verdicts([0, true], [1, false, ["factual_invention"]])] });
     const result = await runShadowVerification(
       materials,
       [
@@ -366,7 +396,7 @@ describe("runShadowVerification", () => {
       ],
       { callJson: ai.callJson },
     );
-    expect(result).toMatchObject({ verifyFlags: ["unsupported_fact"], unsupportedCount: 1 });
+    expect(result).toMatchObject({ verifyFlags: ["factual_invention"], unsupportedCount: 1 });
   });
 
   it("失敗したら null(お客様への応答には影響させない)", async () => {

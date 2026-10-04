@@ -167,7 +167,11 @@ export const REVIEW_CASES: ReviewCase[] = [
   { id: "el-recommend", businessType: "まつげエクステ", note: "本人の言葉に推奨", negative: false, answers: [multiple(LASH_FINISH, ["自然な仕上がり"]), free("友達にもすすめたいです")] },
 ];
 
-/** 意味検証モデルの比較用: 素材と1文、正解(素材から言えるか)。 */
+/**
+ * 意味検証モデルの比較用: 素材と1文、正解(2026-10-04 の方針で問題があるか)。
+ * 方針: 事実(施術内容・効果・数値・期間・他店比較・来店回数・スタッフの行動 など)は作らない。
+ * 回答と矛盾しない自然な気持ちは補ってよい。極端な感情・否定の反転や弱めは不可。
+ */
 export interface VerificationCase {
   id: string;
   answers: MaterialInput[];
@@ -175,25 +179,34 @@ export interface VerificationCase {
   expectedSupported: boolean;
 }
 
+const LASH_LIGHT = "仕上がりについて感じたことを教えてください";
+
 export const VERIFICATION_CASES: VerificationCase[] = [
-  { id: "v-perception-ok", answers: [multiple(SKIN_FEEL, ["肌がなめらかになったように感じた"])], sentence: "施術のあとは肌がなめらかになったように感じました。", expectedSupported: true },
+  // 問題ないもの(気持ちの補完を含む)
+  { id: "v-perception-ok", answers: [multiple(SKIN_FEEL, ["肌がなめらかになったように感じた"])], sentence: "施術のあとは肌がなめらかになったように感じて、嬉しかったです。", expectedSupported: true },
+  { id: "v-negative-ok", answers: [free("待ち時間が長かった")], sentence: "待ち時間が長かったのは少し残念でした。", expectedSupported: true },
+  { id: "v-reason-ok", answers: [multiple(ESTHE_REASON, ["疲れを取りたい"])], sentence: "疲れを取りたくて伺いました。", expectedSupported: true },
+  { id: "v-staff-ok", answers: [multiple(STAFF, ["スタッフが話しやすい"])], sentence: "スタッフさんが話しやすくて、気負わずに過ごせたのがありがたかったです。", expectedSupported: true },
+  { id: "v-warm-ok", answers: [multiple(LASH_LIGHT, ["軽い付け心地"])], sentence: "付け心地が軽くて、そこはかなり嬉しかったです。", expectedSupported: true },
+  { id: "v-impressed-ok", answers: [multiple(TREAT, ["説明が分かりやすかった"])], sentence: "説明がとても分かりやすくて、印象に残っています。", expectedSupported: true },
+  { id: "v-soft-intent-ok", answers: [multiple(TREAT, ["説明が分かりやすかった"])], sentence: "説明が分かりやすくて、またお願いしたいと思いました。", expectedSupported: true },
+  { id: "v-pain-ok", answers: [free("施術中に少し痛みがあった")], sentence: "施術中に少し痛みがありました。", expectedSupported: true },
+  { id: "v-pore-ok", answers: [multiple(SKIN_FEEL, ["毛穴が目立ちにくく感じた"])], sentence: "毛穴が目立ちにくくなった気がして、気に入っています。", expectedSupported: true },
+  { id: "v-atmosphere-ok", answers: [multiple(STAFF, ["落ち着いた雰囲気"])], sentence: "落ち着いた雰囲気で、居心地がよかったです。", expectedSupported: true },
+  { id: "v-visit-ok", answers: [single(VISIT, "4回以上")], sentence: "何度か通っています。", expectedSupported: true },
+  // 問題があるもの
   { id: "v-medical", answers: [multiple(SKIN_FEEL, ["肌がなめらかになったように感じた"])], sentence: "肌荒れが完全に治りました。", expectedSupported: false },
+  { id: "v-improve", answers: [multiple(SKIN_FEEL, ["肌がしっとりした"])], sentence: "肌荒れも改善しました。", expectedSupported: false },
   { id: "v-flip", answers: [free("待ち時間が長かった")], sentence: "待ち時間も気になりませんでした。", expectedSupported: false },
   { id: "v-soften", answers: [free("待ち時間が長かった")], sentence: "待ち時間は少しだけ長かったけど、大満足です。", expectedSupported: false },
-  { id: "v-negative-ok", answers: [free("待ち時間が長かった")], sentence: "待ち時間が長かったのは残念でした。", expectedSupported: true },
-  { id: "v-added-revisit", answers: [multiple(TREAT, ["説明が分かりやすかった"])], sentence: "説明が分かりやすくて、また来たいと思いました。", expectedSupported: false },
   { id: "v-reason-result", answers: [multiple(ESTHE_REASON, ["疲れを取りたい"])], sentence: "疲れが取れてすっきりしました。", expectedSupported: false },
-  { id: "v-reason-ok", answers: [multiple(ESTHE_REASON, ["疲れを取りたい"])], sentence: "疲れを取りたくて伺いました。", expectedSupported: true },
-  { id: "v-added-fact", answers: [single(VISIT, "初めて")], sentence: "友人の紹介で初めて来ました。", expectedSupported: false },
-  { id: "v-staff-ok", answers: [multiple(STAFF, ["スタッフが話しやすい"])], sentence: "スタッフさんが話しやすかったです。", expectedSupported: true },
-  { id: "v-exaggeration", answers: [multiple(TREAT, ["リラックスできた"])], sentence: "人生で一番リラックスできた最高の時間でした。", expectedSupported: false },
-  { id: "v-satisfaction-ok", answers: [free("仕上がりに満足しています")], sentence: "仕上がりに満足しています。", expectedSupported: true },
+  { id: "v-referral", answers: [single(VISIT, "初めて")], sentence: "友人の紹介で初めて来ました。", expectedSupported: false },
+  { id: "v-extreme", answers: [multiple(TREAT, ["リラックスできた"])], sentence: "人生で一番リラックスできた、過去一の時間でした。", expectedSupported: false },
+  { id: "v-number", answers: [multiple(LASH_LIGHT, ["持ちが良いと感じた"])], sentence: "3週間経っても綺麗なままでした。", expectedSupported: false },
+  { id: "v-compare", answers: [multiple(LASH_LIGHT, ["持ちが良いと感じた"])], sentence: "他店より圧倒的に持ちが良かったです。", expectedSupported: false },
+  { id: "v-staff-action", answers: [multiple(STAFF, ["スタッフが話しやすい"])], sentence: "スタッフさんが自宅でのケア方法まで教えてくれました。", expectedSupported: false },
   { id: "v-flip-2", answers: [free("説明が少し分かりにくかった")], sentence: "説明はとても分かりやすかったです。", expectedSupported: false },
-  { id: "v-pain-ok", answers: [free("施術中に少し痛みがあった")], sentence: "施術中に少し痛みがありました。", expectedSupported: true },
   { id: "v-pain-flip", answers: [free("施術中に少し痛みがあった")], sentence: "痛みもほとんどなく快適でした。", expectedSupported: false },
   { id: "v-pore-claim", answers: [multiple(SKIN_FEEL, ["毛穴が目立ちにくく感じた"])], sentence: "毛穴が目立たなくなりました。", expectedSupported: false },
-  { id: "v-pore-ok", answers: [multiple(SKIN_FEEL, ["毛穴が目立ちにくく感じた"])], sentence: "毛穴が目立ちにくくなった気がします。", expectedSupported: true },
-  { id: "v-atmosphere-ok", answers: [multiple(STAFF, ["落ち着いた雰囲気"])], sentence: "お店は落ち着いた雰囲気でした。", expectedSupported: true },
-  { id: "v-visit-ok", answers: [single(VISIT, "4回以上")], sentence: "何度か通っています。", expectedSupported: true },
   { id: "v-concern-result", answers: [multiple(SKIN_REASON, ["ニキビ"])], sentence: "ニキビが改善しました。", expectedSupported: false },
 ];

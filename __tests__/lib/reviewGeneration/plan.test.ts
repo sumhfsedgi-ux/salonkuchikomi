@@ -78,20 +78,27 @@ describe("buildCompositionPlan", () => {
     expect(buildCompositionPlan(materials, { random: seeded(1) }).length).toBe("short");
   });
 
-  it("今後の意向で締めるのは、回答に再来店・推奨の内容があるときだけ", () => {
-    const withoutIntent = buildMaterials([VISIT, EXPERIENCE, STAFF]);
-    for (let seed = 1; seed <= 100; seed++) {
-      expect(buildCompositionPlan(withoutIntent, { random: seeded(seed) }).closing).not.toBe("intent");
-    }
+  it("「またお願いしたい」と思える気持ちで締めるのは、否定的な内容が無いか、回答に意向があるときだけ", () => {
+    const closingsOf = (inputs: MaterialInput[]) => {
+      const m = buildMaterials(inputs);
+      return new Set(Array.from({ length: 100 }, (_, i) => buildCompositionPlan(m, { random: seeded(i + 1) }).closing));
+    };
+    // 肯定的な回答だけなら、気持ちとしての意向で締めてよい。
+    expect(closingsOf([VISIT, EXPERIENCE, STAFF])).toContain("intent");
+    // 否定的な内容があって意向が無ければ、全体の感想や前向きな気持ちで締めない(打ち消しに見えるため)。
+    expect([...closingsOf([VISIT, EXPERIENCE, STAFF, NEGATIVE_FREE_TEXT])]).toEqual(["plain"]);
+    // 回答に意向があれば、否定的な内容があっても締めに使える。
+    expect(
+      closingsOf([NEGATIVE_FREE_TEXT, { questionText: "ご自由に", questionType: "text", selected: [], freeText: "また来ます！" }]),
+    ).toContain("intent");
+  });
 
-    const withIntent = buildMaterials([
-      EXPERIENCE,
-      { questionText: "ご自由に", questionType: "text", selected: [], freeText: "また来ます！" },
-    ]);
-    const closings = new Set(
-      Array.from({ length: 100 }, (_, i) => buildCompositionPlan(withIntent, { random: seeded(i + 1) }).closing),
-    );
-    expect(closings).toContain("intent");
+  it("補助の素材があるときだけ「小さな感想から入る」書き出しを選べる", () => {
+    const single = buildMaterials([STAFF]);
+    for (let seed = 1; seed <= 50; seed++) {
+      const plan = buildCompositionPlan(single, { random: seeded(seed) });
+      if (plan.supportIds.length === 0) expect(plan.opening).not.toBe("small_detail");
+    }
   });
 
   it("再生成では前回と違う構成を選ぶ", () => {

@@ -34,7 +34,7 @@ create table if not exists public.ai_generation_events (
   verify_mode text check (verify_mode in ('none', 'sync', 'shadow')),
   verify_flags text[] not null default '{}',
   repair_action text
-    check (repair_action in ('none', 'removed', 'regenerated', 'repaired', 'own_words_fallback')),
+    check (repair_action in ('none', 'removed', 'regenerated', 'polished', 'repaired', 'own_words_fallback')),
   error_kind text check (char_length(error_kind) <= 40),
   created_at timestamptz not null default now(),
   unique (generation_id, kind)

@@ -22,9 +22,11 @@ import {
 import {
   blockedSentenceIndexes,
   documentBlockIssues,
+  issueKey,
   lintCodes,
   lintDraft,
   riskySentenceIndexes,
+  TEXTURE_CODES,
   type LintResult,
   type LintSentence,
 } from "@/lib/ai/naturalJapanese/lint";
@@ -52,7 +54,7 @@ export interface DraftSentence {
 }
 
 /** 下書きに対して行った対応(強いもの優先で1つ記録する)。 */
-export type RepairAction = "none" | "removed" | "regenerated" | "repaired" | "own_words_fallback";
+export type RepairAction = "none" | "removed" | "regenerated" | "polished" | "repaired" | "own_words_fallback";
 export type VerifyMode = "none" | "sync";
 
 /** 生成イベントに記録するメタデータ(本文は含めない)。 */
@@ -116,6 +118,8 @@ const MIN_CALL_BUDGET_MS = 2_500;
 const GENERATION_TEMPERATURE = 0.9;
 const VERIFICATION_TEMPERATURE = 0;
 const REPAIR_TEMPERATURE = 0.3;
+// 書き直し(気持ちや受け取り方を補う)は、言い回しに幅を持たせる。
+const POLISH_TEMPERATURE = 0.7;
 // 推論系のモデルは既定以外の temperature を受け付けないので送らない。
 const REASONING_MODEL = /^(o\d|gpt-5)/i;
 
@@ -123,8 +127,9 @@ const REPAIR_ACTION_RANK: Record<RepairAction, number> = {
   none: 0,
   removed: 1,
   regenerated: 2,
-  repaired: 3,
-  own_words_fallback: 4,
+  polished: 3,
+  repaired: 4,
+  own_words_fallback: 5,
 };
 
 function temperatureFor(model: string | null, value: number): number | undefined {
@@ -209,7 +214,7 @@ function issueCodesBySentence(result: LintResult, severities: ReadonlyArray<"blo
   const map = new Map<number, string[]>();
   for (const i of result.issues) {
     if (i.sentenceIndex === null || !severities.includes(i.severity as "block" | "risk")) continue;
-    map.set(i.sentenceIndex, [...(map.get(i.sentenceIndex) ?? []), i.code]);
+    map.set(i.sentenceIndex, [...(map.get(i.sentenceIndex) ?? []), issueKey(i)]);
   }
   return map;
 }
@@ -386,7 +391,9 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
     rejected.size > 0 && countChars(assembleDraft(kept)) < LENGTH_TARGETS[plan.length].chars.min;
   const needsRepair = documentBlockIssues(lint(kept)).length > 0 || mainLostByRemoval || tooShortAfterRemoval;
 
+  let repairAttempted = false;
   if (needsRepair && remaining() >= MIN_CALL_BUDGET_MS) {
+    repairAttempted = true;
     const missingNegativeIds = documentBlockIssues(lint(kept))
       .filter((i) => i.code === "negative_not_reflected" && i.sourceId)
       .map((i) => i.sourceId as string);
@@ -415,7 +422,46 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
     }
   }
 
-  // ── 4. それでも反映されていない否定的な素材は、本人の原文をそのまま残す ──
+  // ── 4. 事実の列挙だけ・アンケートの要約だけになっていたら、1回だけ書き直す ──
+  // (2026-10-04 の方針: 事実は作らず、体験者の気持ちや受け取り方を補う。修正をしたときはしない。)
+  const textureProblems = lint(kept)
+    .issues.filter((i) => TEXTURE_CODES.has(i.code))
+    .map((i) => i.code);
+  if (textureProblems.length > 0 && !repairAttempted && remaining() >= MIN_CALL_BUDGET_MS) {
+    try {
+      const polished = await repairDraft(callJson, {
+        materials,
+        sentences: kept.map((s) => ({ text: s.text, sourceIds: s.sourceIds, problems: [] })),
+        missingNegativeIds: [],
+        documentProblems: [...new Set(textureProblems)],
+        businessType,
+        timeoutMs: Math.min(REPAIR_TIMEOUT_MS, remaining()),
+        temperature: temperatureFor(resolveModel("review_repair"), POLISH_TEMPERATURE),
+      });
+      meta.record("repair", polished);
+      const polishedSentences = cleanSentences(polished.raw);
+      const accepted = new Set(kept.map((s) => normalize(s.text)));
+      const polishedRejected = await reject(polishedSentences, accepted);
+      const candidate = polishedSentences.filter((_, i) => !polishedRejected.has(i));
+      // 否定的な素材の反映が消えたり、かえって悪くなったりしたら、書き直す前の下書きを使う。
+      const candidateLint = lint(candidate);
+      const improved =
+        candidate.length > 0 &&
+        documentBlockIssues(candidateLint).length === 0 &&
+        candidateLint.issues.filter((i) => TEXTURE_CODES.has(i.code)).length < textureProblems.length;
+      if (improved) {
+        kept = candidate;
+        meta.action("polished");
+      } else {
+        meta.flag("polish_rejected");
+      }
+    } catch {
+      meta.countFailedCall();
+      meta.flag("polish_failed");
+    }
+  }
+
+  // ── 5. それでも反映されていない否定的な素材は、本人の原文をそのまま残す ──
   for (const issue of documentBlockIssues(lint(kept))) {
     if (issue.code !== "negative_not_reflected" || !issue.sourceId) continue;
     const material = materialById.get(issue.sourceId);
@@ -438,17 +484,19 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
 
 // 出典の対応が無くても判定できる指摘だけ(v1 と v2 で比べられるもの)。
 const PLAIN_DRAFT_CODES = new Set<string>([
-  "unsupported_satisfaction",
-  "unsupported_revisit",
-  "unsupported_recommend",
-  "fabricated_situation",
-  "medical_claim",
-  "off_topic",
-  "strong_intensifier",
-  "unsupported_evaluation",
+  "factual_invention:situation",
+  "factual_invention:number",
+  "factual_invention:comparison",
+  "factual_invention:visit_count",
+  "factual_invention:off_topic",
+  "promotional_callout",
+  "unsupported_effect:medical",
+  "extreme_emotional_exaggeration:extreme",
+  "extreme_emotional_exaggeration:strong",
+  "low_emotional_texture",
+  "uniform_sentence_structure",
   "template_phrase",
   "honorific_inflation",
-  "monotone_endings",
 ]);
 
 /**

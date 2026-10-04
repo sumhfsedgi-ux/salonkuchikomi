@@ -11,7 +11,7 @@ import { RECOMMEND_PHRASES, REVISIT_PHRASES } from "@/lib/ai/naturalJapanese/phr
 import { MAX_MATERIALS, type Material, type QuestionRole } from "@/lib/reviewGeneration/materials";
 
 export const DRAFT_LENGTHS = ["short", "medium", "long"] as const;
-export const OPENING_STYLES = ["main", "own_words", "reason", "staff_shop", "visit"] as const;
+export const OPENING_STYLES = ["main", "own_words", "reason", "staff_shop", "visit", "small_detail"] as const;
 export const CLOSING_STYLES = ["impression", "plain", "intent"] as const;
 
 export type DraftLength = (typeof DRAFT_LENGTHS)[number];
@@ -104,23 +104,24 @@ function chooseLength(usedCount: number, usedChars: number, random: Random): Dra
   return pickOne(options, random);
 }
 
-function allowedOpenings(used: readonly Material[]): OpeningStyle[] {
+function allowedOpenings(used: readonly Material[], supportCount: number): OpeningStyle[] {
   const openings: OpeningStyle[] = ["main"];
   if (used.some(isOwnWords)) openings.push("own_words");
   if (used.some((m) => m.role === "reason")) openings.push("reason");
   if (used.some((m) => m.role === "staff_shop")) openings.push("staff_shop");
   if (used.some((m) => m.role === "visit")) openings.push("visit");
+  if (supportCount > 0) openings.push("small_detail");
   return openings;
 }
 
 function allowedClosings(used: readonly Material[]): ClosingStyle[] {
-  const closings: ClosingStyle[] = ["impression", "plain"];
-  // 今後の意向で締めるのは、回答に再来店・推奨の内容があるときだけ。
   const hasIntent = used.some(
     (m) => findPhrases(m.text, [...REVISIT_PHRASES, ...RECOMMEND_PHRASES]).length > 0,
   );
-  if (hasIntent) closings.push("intent");
-  return closings;
+  // 否定的な内容があるときに「全体の感想」や前向きな気持ちで締めると、否定を帳消しにして見える。
+  // そのときは特別な締めを足さない(本人が今後の意向を書いていれば、その意向では締めてよい)。
+  if (used.some((m) => m.negative)) return hasIntent ? ["plain", "intent"] : ["plain"];
+  return ["impression", "plain", "intent"];
 }
 
 function candidatePlan(materials: readonly Material[], random: Random): CompositionPlan {
@@ -149,7 +150,7 @@ function candidatePlan(materials: readonly Material[], random: Random): Composit
     supportIds: materials.filter((m) => supportIds.has(m.id)).map((m) => m.id),
     unusedIds: materials.filter((m) => !mainIds.has(m.id) && !supportIds.has(m.id)).map((m) => m.id),
     length: chooseLength(used.length, usedChars, random),
-    opening: pickOne(allowedOpenings(used), random),
+    opening: pickOne(allowedOpenings(used, support.length), random),
     closing: pickOne(allowedClosings(used), random),
   };
 }
@@ -187,7 +188,7 @@ export function buildCompositionPlan(
   }
   if (planSignature(plan) === previousSignature) {
     const used = materials.filter((m) => plan.mainIds.includes(m.id) || plan.supportIds.includes(m.id));
-    const otherOpenings = allowedOpenings(used).filter((o) => o !== previous.opening);
+    const otherOpenings = allowedOpenings(used, plan.supportIds.length).filter((o) => o !== previous.opening);
     if (otherOpenings.length > 0) plan = { ...plan, opening: pickOne(otherOpenings, random) };
   }
   return plan;

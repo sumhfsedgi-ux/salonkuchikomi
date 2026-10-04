@@ -175,7 +175,7 @@ describe("POST /api/generate-review: v1(既定)", () => {
         model: "gpt-4o-mini",
         latencyMs: 900,
         // v1 の下書きにも同じ Linter をかけて、指摘コードだけを残す。
-        lintFlags: expect.arrayContaining(["unsupported_satisfaction"]),
+        lintFlags: expect.arrayContaining(["extreme_emotional_exaggeration:strong"]),
       }),
     ]);
     expect(JSON.stringify(recordedEvents())).not.toContain("SECRET");
