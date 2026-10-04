@@ -52,18 +52,20 @@ const SURVEY: ActiveSurvey = {
 };
 
 const V2_METADATA = {
-  promptVersion: "review-v2.0",
+  promptVersion: "review-v3.0",
   generationModel: "gpt-4o-mini",
   verificationModel: null,
   latencyMs: 1200,
   inputTokens: 800,
   outputTokens: 120,
   llmCalls: 1,
-  lintCodes: ["main_not_used"],
+  lintCodes: ["uniform_sentence_structure"],
   verifyMode: "none" as const,
   verifyFlags: [],
   repairAction: "none" as const,
+  styleSeed: "short|none|occasional|fact|neutral|few|plain",
 };
+const SEED = { length: "short", emotion: "none", exclamation: "occasional", opening: "fact", closing: "neutral", materialAmount: "few", tone: "plain" } as const;
 
 function post(body: unknown, headers: Record<string, string> = {}): Request {
   return new Request("http://localhost/api/generate-review", {
@@ -199,7 +201,7 @@ describe("POST /api/generate-review: v2", () => {
     vi.stubEnv("REVIEW_SHADOW_VERIFY_RATE", "0");
     vi.mocked(runReviewPipeline).mockResolvedValue({
       draft: "v2の口コミ",
-      plan: { mainIds: ["M1"], supportIds: [], unusedIds: ["M2"], length: "short", opening: "main", closing: "plain", exclamation: "none" },
+      seed: SEED,
       sentences: [],
       metadata: V2_METADATA,
     });
@@ -207,14 +209,14 @@ describe("POST /api/generate-review: v2", () => {
     const json = await response.json();
     expect(json).toMatchObject({
       review: "v2の口コミ",
-      plan: { mainIds: ["M1"], supportIds: [], length: "short", opening: "main", closing: "plain" },
+      plan: SEED,
     });
-    expect(json.plan.unusedIds).toBeUndefined();
+    expect(Object.keys(json.plan).sort()).toEqual(Object.keys(SEED).sort());
     expect(generateReviewV1).not.toHaveBeenCalled();
 
     await runAfterCallbacks();
     expect(recordedEvents()).toEqual([
-      expect.objectContaining({ kind: "generated", pipeline: "v2", promptVersion: "review-v2.0", lintFlags: ["main_not_used"] }),
+      expect.objectContaining({ kind: "generated", pipeline: "v2", promptVersion: "review-v3.0", lintFlags: ["uniform_sentence_structure"] }),
     ]);
     expect(runShadowVerification).not.toHaveBeenCalled();
   });
@@ -223,7 +225,7 @@ describe("POST /api/generate-review: v2", () => {
     vi.stubEnv("REVIEW_SHADOW_VERIFY_RATE", "1");
     vi.mocked(runReviewPipeline).mockResolvedValue({
       draft: "v2の口コミ",
-      plan: { mainIds: ["M1"], supportIds: [], unusedIds: [], length: "short", opening: "main", closing: "plain", exclamation: "none" },
+      seed: SEED,
       sentences: [{ text: "v2の口コミ", sourceIds: ["M1"], breakAfter: false }],
       metadata: V2_METADATA,
     });

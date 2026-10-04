@@ -116,7 +116,7 @@ export async function POST(request: Request) {
       const result = await runReviewPipeline({
         materials,
         businessType: survey.businessType,
-        previousPlan: parsed.previousPlan,
+        previousSeed: parsed.previousPlan,
       });
       record({ kind, ...eventFieldsFromMetadata(result.metadata) });
 
@@ -141,12 +141,8 @@ export async function POST(request: Request) {
         });
       }
 
-      const { mainIds, supportIds, length, opening, closing } = result.plan;
-      return NextResponse.json({
-        review: result.draft,
-        generationId,
-        plan: { mainIds, supportIds, length, opening, closing },
-      });
+      // 再生成のときに前回と違う書き方にするため、Style Seed を返す(本文は含まない)。
+      return NextResponse.json({ review: result.draft, generationId, plan: result.seed });
     } catch (err) {
       if (!(err instanceof ReviewGenerationError)) {
         console.error("generate-review v2: unexpected error", { salonId });

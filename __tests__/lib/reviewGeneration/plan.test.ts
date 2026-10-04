@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { buildMaterials, type MaterialInput } from "@/lib/reviewGeneration/materials";
 import {
-  buildCompositionPlan,
-  LENGTH_TARGETS,
-  planSignature,
-  previousPlanSchema,
-  type CompositionPlan,
+  alternativeStyleSeed,
+  buildStyleSeed,
+  previousStyleSeedSchema,
+  styleSeedSignature,
+  type StyleSeed,
 } from "@/lib/reviewGeneration/plan";
 
-/** 再現できる疑似乱数(テストで構成プランを固定するため)。 */
+/** 再現できる疑似乱数(テストで Style Seed を固定するため)。 */
 function seeded(seed: number): () => number {
   let state = seed;
   return () => {
@@ -18,6 +18,7 @@ function seeded(seed: number): () => number {
 }
 
 const VISIT: MaterialInput = { questionText: "今回のご来店は何回目ですか？", questionType: "single", selected: ["4回以上"] };
+const REASON: MaterialInput = { questionText: "今回、どのようなお悩みでご来店されましたか？", questionType: "multiple", selected: ["乾燥"] };
 const EXPERIENCE: MaterialInput = {
   questionText: "施術後のお肌について、どのように感じましたか？",
   questionType: "multiple",
@@ -28,155 +29,90 @@ const STAFF: MaterialInput = {
   questionType: "multiple",
   selected: ["説明が分かりやすかった", "落ち着いた雰囲気"],
 };
-const NEGATIVE_FREE_TEXT: MaterialInput = {
+const CASUAL_FREE_TEXT: MaterialInput = {
   questionText: "ご自由にお書きください",
   questionType: "text",
   selected: [],
-  freeText: "スタッフさんは優しかったけど、待ち時間が長かったのが残念でした。",
+  freeText: "途中寝ちゃいました笑",
 };
+const INTENT_FREE_TEXT: MaterialInput = { questionText: "ご自由にお書きください", questionType: "text", selected: [], freeText: "また来ます！" };
 
-function usedIds(plan: CompositionPlan): string[] {
-  return [...plan.mainIds, ...plan.supportIds];
+function seedsOf(inputs: MaterialInput[], count = 100): StyleSeed[] {
+  const materials = buildMaterials(inputs);
+  return Array.from({ length: count }, (_, i) => buildStyleSeed(materials, { random: seeded(i + 1) }));
 }
 
-describe("buildCompositionPlan", () => {
-  it("否定的な素材と本人の言葉は、どの乱数でも必ず使う", () => {
-    const materials = buildMaterials([VISIT, EXPERIENCE, STAFF, NEGATIVE_FREE_TEXT]);
-    const mustUse = materials.filter((m) => m.negative || m.kind !== "choice").map((m) => m.id);
-    expect(mustUse.length).toBeGreaterThan(0);
-    for (let seed = 1; seed <= 200; seed++) {
-      const plan = buildCompositionPlan(materials, { random: seeded(seed) });
-      for (const id of mustUse) {
-        expect(usedIds(plan)).toContain(id);
-        expect(plan.unusedIds).not.toContain(id);
-      }
-    }
+const valuesOf = <K extends keyof StyleSeed>(seeds: StyleSeed[], key: K) => new Set(seeds.map((s) => s[key]));
+
+describe("buildStyleSeed", () => {
+  it("書き方の傾向だけを選び、どの素材を使うかは決めない", () => {
+    const [seed] = seedsOf([VISIT, EXPERIENCE, STAFF], 1);
+    expect(Object.keys(seed).sort()).toEqual(
+      ["closing", "emotion", "exclamation", "length", "materialAmount", "opening", "tone"].sort(),
+    );
   });
 
-  it("否定的な素材だけの口コミにしない(肯定的な回答があれば1つは使う。来店回数は数えない)", () => {
-    const cases = [
-      buildMaterials([
-        { questionText: "スタッフ・サロンについて感じたことを教えてください", questionType: "multiple", selected: ["その他"], otherDetail: "部屋が少し寒かった" },
-        { questionText: "施術後、体についてどのように感じましたか？", questionType: "multiple", selected: ["体が軽くなった気がする"] },
-        VISIT,
-      ]),
-      // 「初めて」と否定的な自由記述だけを使うと、「自然な仕上がり」と答えたことが消える。
-      buildMaterials([
-        { questionText: "今回のご来店は何回目ですか？", questionType: "single", selected: ["初めて"] },
-        { questionText: "仕上がりはいかがでしたか？", questionType: "multiple", selected: ["自然な仕上がり"] },
-        { questionText: "ご自由にお書きください", questionType: "text", selected: [], freeText: "目にしみて少しヒリヒリしました" },
-      ]),
-    ];
-    for (const materials of cases) {
-      for (let seed = 1; seed <= 100; seed++) {
-        const plan = buildCompositionPlan(materials, { random: seeded(seed) });
-        const used = materials.filter((m) => usedIds(plan).includes(m.id));
-        expect(used.some((m) => !m.negative && m.role !== "visit")).toBe(true);
-      }
-    }
+  it("生成ごとに組み合わせが揺らぐ(少数のテンプレートに収束しない)", () => {
+    const signatures = new Set(seedsOf([VISIT, REASON, EXPERIENCE, STAFF]).map(styleSeedSignature));
+    expect(signatures.size).toBeGreaterThan(40);
   });
 
-  it("主役・補助・使わない素材で、すべての素材を重複なく分ける", () => {
+  it("意向の締めは、回答に意向があるときだけ選べる", () => {
+    expect(valuesOf(seedsOf([VISIT, EXPERIENCE, STAFF]), "closing")).not.toContain("short_intention_allowed");
+    expect(valuesOf(seedsOf([VISIT, EXPERIENCE, INTENT_FREE_TEXT]), "closing")).toContain("short_intention_allowed");
+  });
+
+  it("本人の文章があれば口調はその人に合わせ、無ければ「です・ます」の範囲でだけ揺らす", () => {
+    expect([...valuesOf(seedsOf([EXPERIENCE, CASUAL_FREE_TEXT]), "tone")]).toEqual(["match_voice"]);
+    expect([...valuesOf(seedsOf([EXPERIENCE, STAFF]), "tone")].sort()).toEqual(["light", "plain"]);
+  });
+
+  it("書き出しは素材にあるものだけから選ぶ", () => {
+    const openings = valuesOf(seedsOf([EXPERIENCE, STAFF]), "opening");
+    expect(openings).not.toContain("visit");
+    expect(openings).not.toContain("reason");
+    expect(openings).not.toContain("own_words");
+    expect(valuesOf(seedsOf([VISIT, REASON, EXPERIENCE, CASUAL_FREE_TEXT]), "opening")).toEqual(
+      new Set(["fact", "feeling", "own_words", "reason", "visit"]),
+    );
+  });
+
+  it("書ける内容が少なければ、やや長めは選ばない(水増しを避ける)", () => {
+    const single: MaterialInput = { ...STAFF, selected: ["落ち着いた雰囲気"] };
+    expect(valuesOf(seedsOf([VISIT, single]), "length")).not.toContain("slightly_long");
+  });
+
+  it("再生成では前回と違う組み合わせを選ぶ", () => {
     const materials = buildMaterials([VISIT, EXPERIENCE, STAFF]);
-    const plan = buildCompositionPlan(materials, { random: seeded(7) });
-    const all = [...plan.mainIds, ...plan.supportIds, ...plan.unusedIds].sort();
-    expect(all).toEqual(materials.map((m) => m.id).sort());
-    expect(new Set(all).size).toBe(all.length);
-  });
-
-  it("本人の言葉があれば主役にし、無ければ体験・スタッフの素材から選ぶ", () => {
-    const withText = buildMaterials([VISIT, EXPERIENCE, NEGATIVE_FREE_TEXT]);
-    const freeTextIds = withText.filter((m) => m.kind === "free_text").map((m) => m.id);
-    expect(buildCompositionPlan(withText, { random: seeded(3) }).mainIds).toEqual(freeTextIds.slice(0, 2));
-
-    const choicesOnly = buildMaterials([VISIT, EXPERIENCE, STAFF]);
-    for (let seed = 1; seed <= 50; seed++) {
-      const plan = buildCompositionPlan(choicesOnly, { random: seeded(seed) });
-      const mainRoles = choicesOnly.filter((m) => plan.mainIds.includes(m.id)).map((m) => m.role);
-      expect(mainRoles).not.toContain("visit");
+    for (let i = 1; i <= 30; i++) {
+      const first = buildStyleSeed(materials, { random: seeded(i) });
+      const second = buildStyleSeed(materials, { random: seeded(i), previous: first });
+      expect(styleSeedSignature(second)).not.toBe(styleSeedSignature(first));
+      expect(styleSeedSignature(alternativeStyleSeed(materials, first, seeded(i)))).not.toBe(styleSeedSignature(first));
     }
   });
 
-  it("回答をすべて使わない: 主役の1〜2個を中心にし、必ず使う素材のほかに足す補助は0〜1個(書ける内容が少ないときだけ2個)", () => {
-    const longChoices = buildMaterials([
-      { questionText: "施術後のお肌について、どのように感じましたか？", questionType: "multiple", selected: ["肌がしっとりして手触りがよくなった", "毛穴が目立ちにくくなったように感じた"] },
-      { questionText: "スタッフ・サロンについて感じたことを教えてください", questionType: "multiple", selected: ["説明が分かりやすくて安心できた", "落ち着いた雰囲気でリラックスできた"] },
-    ]);
-    const shortChoices = buildMaterials([VISIT, EXPERIENCE, STAFF]);
-    for (const [materials, maxExtras] of [[longChoices, 1], [shortChoices, 2]] as const) {
-      const required = materials.filter((m) => m.negative || m.kind !== "choice").map((m) => m.id);
-      for (let seed = 1; seed <= 100; seed++) {
-        const plan = buildCompositionPlan(materials, { random: seeded(seed) });
-        const extras = plan.supportIds.filter((id) => !required.includes(id));
-        expect(plan.mainIds.length).toBeLessThanOrEqual(2);
-        expect(extras.length).toBeLessThanOrEqual(maxExtras);
-      }
-    }
-  });
-
-  it("長さは目安で、どれも 80〜250字の範囲に収まる", () => {
-    for (const target of Object.values(LENGTH_TARGETS)) {
-      expect(target.chars.min).toBeGreaterThanOrEqual(80);
-      expect(target.chars.max).toBeLessThanOrEqual(250);
-    }
-  });
-
-  it("素材が少なければ短くする", () => {
-    const materials = buildMaterials([VISIT]);
-    expect(buildCompositionPlan(materials, { random: seeded(1) }).length).toBe("short");
-  });
-
-  it("「またお願いしたい」と思える気持ちで締めるのは、否定的な内容が無いか、回答に意向があるときだけ", () => {
-    const closingsOf = (inputs: MaterialInput[]) => {
-      const m = buildMaterials(inputs);
-      return new Set(Array.from({ length: 100 }, (_, i) => buildCompositionPlan(m, { random: seeded(i + 1) }).closing));
-    };
-    // 肯定的な回答だけなら、気持ちとしての意向で締めてよい。
-    expect(closingsOf([VISIT, EXPERIENCE, STAFF])).toContain("intent");
-    // 否定的な内容があって意向が無ければ、全体の感想や前向きな気持ちで締めない(打ち消しに見えるため)。
-    expect([...closingsOf([VISIT, EXPERIENCE, STAFF, NEGATIVE_FREE_TEXT])]).toEqual(["plain"]);
-    // 回答に意向があれば、否定的な内容があっても締めに使える。
-    expect(
-      closingsOf([NEGATIVE_FREE_TEXT, { questionText: "ご自由に", questionType: "text", selected: [], freeText: "また来ます！" }]),
-    ).toContain("intent");
-  });
-
-  it("感嘆符の使い方は生成ごとに揺らぐ。否定的な内容があれば「最後の文だけ」は選ばない", () => {
-    const stylesOf = (inputs: MaterialInput[]) => {
-      const m = buildMaterials(inputs);
-      return new Set(Array.from({ length: 100 }, (_, i) => buildCompositionPlan(m, { random: seeded(i + 1) }).exclamation));
-    };
-    expect([...stylesOf([VISIT, EXPERIENCE, STAFF])].sort()).toEqual(["inline", "last", "none"]);
-    expect([...stylesOf([VISIT, EXPERIENCE, STAFF, NEGATIVE_FREE_TEXT])].sort()).toEqual(["inline", "none"]);
-  });
-
-  it("補助の素材があるときだけ「小さな感想から入る」書き出しを選べる", () => {
-    const single = buildMaterials([STAFF]);
-    for (let seed = 1; seed <= 50; seed++) {
-      const plan = buildCompositionPlan(single, { random: seeded(seed) });
-      if (plan.supportIds.length === 0) expect(plan.opening).not.toBe("small_detail");
-    }
-  });
-
-  it("再生成では前回と違う構成を選ぶ", () => {
-    const materials = buildMaterials([VISIT, EXPERIENCE, STAFF, NEGATIVE_FREE_TEXT]);
-    for (let seed = 1; seed <= 50; seed++) {
-      const first = buildCompositionPlan(materials, { random: seeded(seed) });
-      const second = buildCompositionPlan(materials, { random: seeded(seed), previous: first });
-      expect(planSignature(second)).not.toBe(planSignature(first));
-    }
-  });
-
-  it("素材が無ければエラー", () => {
-    expect(() => buildCompositionPlan([])).toThrow();
+  it("素材が無ければ例外", () => {
+    expect(() => buildStyleSeed([])).toThrow();
   });
 });
 
-describe("previousPlanSchema", () => {
-  it("素材IDと列挙値だけを受け付ける", () => {
-    const valid = { mainIds: ["M1"], supportIds: ["M2", "M10"], length: "short", opening: "main", closing: "plain" };
-    expect(previousPlanSchema.safeParse(valid).success).toBe(true);
-    expect(previousPlanSchema.safeParse({ ...valid, mainIds: ["<script>"] }).success).toBe(false);
-    expect(previousPlanSchema.safeParse({ ...valid, opening: "anything" }).success).toBe(false);
+describe("previousStyleSeedSchema", () => {
+  it("決まった値だけを受け付ける(前の版の構成プランの形は通さない)", () => {
+    const valid = {
+      length: "short",
+      emotion: "none",
+      exclamation: "occasional",
+      opening: "fact",
+      closing: "neutral",
+      materialAmount: "few",
+      tone: "plain",
+    };
+    expect(previousStyleSeedSchema.safeParse(valid).success).toBe(true);
+    expect(previousStyleSeedSchema.safeParse({ ...valid, opening: "anything" }).success).toBe(false);
+    expect(
+      previousStyleSeedSchema.safeParse({ mainIds: ["M1"], supportIds: [], length: "short", opening: "main", closing: "plain" })
+        .success,
+    ).toBe(false);
   });
 });

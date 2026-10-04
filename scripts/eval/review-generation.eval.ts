@@ -9,21 +9,33 @@
 // 比べるもの:
 //  1. v1 と v2 の下書き(36件): 失敗率・待ち時間・文字数・Linter の指摘・否定的な素材の反映・
 //     監査モデル(既定 gpt-4.1)による意味の判定(事実・効果の捏造、極端な感情、否定の反転・弱め)と、
-//     読み手としての採点(気持ち・温度感、自然さ、アンケートの要約に見えるか、AIが綺麗にまとめた作文に見えるか)、
-//     感嘆符の数の分布
+//     読み手としての採点(自然さ、アンケートの要約に見えるか、引っかかる文、不要な感情語、本人らしさ。
+//     scripts/eval/judges.ts)、感嘆符の数の分布
+//  v2 と v3 を同じ回答で比べ、20件まとめて見るときは scripts/eval/review-corpus.eval.ts を使う。
 //  2. 意味検証モデルの候補: 正解付きの20文で、NG を見つけられた割合・誤って NG にした割合・待ち時間
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, it } from "vitest";
-import { callOpenAIJson, type CallOpenAIJsonOptions } from "@/lib/ai/openai";
 import { countExclamations, sentenceEnding, splitSentences } from "@/lib/ai/naturalJapanese/analyze";
 import { generateReviewV1 } from "@/lib/reviewGeneration/legacyV1";
 import { buildMaterials, type Material, type MaterialInput } from "@/lib/reviewGeneration/materials";
 import { lintPlainDraft, runReviewPipeline, ReviewGenerationError } from "@/lib/reviewGeneration/pipeline";
-import { verifySentences, type CallJson } from "@/lib/reviewGeneration/verify";
+import { verifySentences } from "@/lib/reviewGeneration/verify";
 import type { V1Answer } from "@/lib/reviewGeneration/validateAnswers";
 import { OTHER_OPTION_TEXT } from "@/lib/constants";
+import {
+  audit as auditDraft,
+  CallBudget,
+  countBy,
+  countingCall,
+  judgeQuality as judgeDraftQuality,
+  mapWithConcurrency,
+  percentile,
+  summarizeQuality,
+  type AuditResult,
+  type QualityScore,
+} from "./judges";
 import { REVIEW_CASES, VERIFICATION_CASES, type ReviewCase } from "./reviewCases";
 
 const RUN = process.env.EVAL_RUN === "1";
@@ -39,30 +51,10 @@ const OUT_DIR = process.env.EVAL_OUT_DIR?.trim() || ".eval-output";
 const SKIP_V1 = process.env.EVAL_SKIP_V1 === "1";
 const SKIP_VERIFIERS = process.env.EVAL_SKIP_VERIFIERS === "1";
 const REAUDIT_FILE = process.env.EVAL_REAUDIT?.trim();
-// 監査・採点の呼び出しが失敗したとき(429 など)に、間を空けてやり直す回数と間隔。
-const JUDGE_RETRIES = 2;
-const JUDGE_RETRY_DELAY_MS = 5_000;
-
-class CallBudget {
-  used = 0;
-  take(count = 1) {
-    if (this.used + count > MAX_CALLS) {
-      throw new Error(`API 呼び出しが上限(${MAX_CALLS}回)を超えるため中止しました`);
-    }
-    this.used += count;
-  }
-}
-
-const budget = new CallBudget();
-
-/** 呼び出し回数を数え、意味検証のときだけ model を差し替える呼び出し。 */
-function countingCall(verificationModel?: string): CallJson {
-  return <T>(options: CallOpenAIJsonOptions) => {
-    budget.take();
-    const model = options.task === "review_verification" && verificationModel ? verificationModel : options.model;
-    return callOpenAIJson<T>({ ...options, model });
-  };
-}
+const budget = new CallBudget(MAX_CALLS);
+const call = (verificationModel?: string) => countingCall(budget, verificationModel);
+const audit = (materials: Material[], draft: string) => auditDraft(budget, AUDIT_MODEL, materials, draft);
+const judgeQuality = (materials: Material[], draft: string) => judgeDraftQuality(budget, AUDIT_MODEL, materials, draft);
 
 function toV1Answers(inputs: readonly MaterialInput[]): V1Answer[] {
   return inputs.map((input) => {
@@ -71,147 +63,6 @@ function toV1Answers(inputs: readonly MaterialInput[]): V1Answer[] {
       v === OTHER_OPTION_TEXT && input.otherDetail ? `${OTHER_OPTION_TEXT}（${input.otherDetail}）` : v,
     );
     return { question: input.questionText, answer: input.questionType === "multiple" ? values : values[0] };
-  });
-}
-
-async function mapWithConcurrency<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const index = next++;
-      results[index] = await fn(items[index]);
-    }
-  });
-  await Promise.all(workers);
-  return results;
-}
-
-function percentile(values: number[], p: number): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)];
-}
-
-function countBy(values: readonly string[]): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const v of values) counts[v] = (counts[v] ?? 0) + 1;
-  return Object.fromEntries(Object.entries(counts).sort((a, b) => b[1] - a[1]));
-}
-
-/** 監査・採点を、失敗したら間を空けてやり直す(失敗した分を抜いて集計すると、比較が偏るため)。 */
-async function withJudgeRetry<T>(fn: () => Promise<T>): Promise<T | null> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await fn();
-    } catch {
-      if (attempt >= JUDGE_RETRIES) return null;
-      await new Promise((resolve) => setTimeout(resolve, JUDGE_RETRY_DELAY_MS * (attempt + 1)));
-    }
-  }
-}
-
-interface AuditResult {
-  sentences: number;
-  unsupported: number;
-  issues: string[];
-}
-
-/** 監査モデルで下書きの各文を、すべての素材と見比べて判定する(v1・v2 で同じ条件)。 */
-async function audit(materials: Material[], draft: string): Promise<AuditResult | null> {
-  const sentences = splitSentences(draft);
-  if (sentences.length === 0) return { sentences: 0, unsupported: 0, issues: [] };
-  const ids = materials.map((m) => m.id);
-  return withJudgeRetry(async () => {
-    const outcome = await verifySentences(countingCall(AUDIT_MODEL), {
-      materials,
-      sentences: sentences.map((text, index) => ({ index, text, sourceIds: ids })),
-      timeoutMs: 30_000,
-      temperature: 0,
-    });
-    const verdicts = [...outcome.verdicts.values()];
-    return {
-      sentences: sentences.length,
-      unsupported: verdicts.filter((v) => !v.supported).length,
-      issues: verdicts.flatMap((v) => v.issues),
-    };
-  });
-}
-
-interface QualityScore {
-  warmth: number;
-  naturalness: number;
-  surveySummary: boolean;
-  polishedEssay: boolean;
-  awkwardConnection: boolean;
-  compressed: boolean;
-  padded: boolean;
-}
-
-const QUALITY_SCHEMA = {
-  name: "review_quality",
-  schema: {
-    type: "object",
-    properties: {
-      warmth: { type: "integer" },
-      naturalness: { type: "integer" },
-      survey_summary: { type: "boolean" },
-      polished_essay: { type: "boolean" },
-      awkward_connection: { type: "boolean" },
-      compressed: { type: "boolean" },
-      padded: { type: "boolean" },
-    },
-    required: ["warmth", "naturalness", "survey_summary", "polished_essay", "awkward_connection", "compressed", "padded"],
-    additionalProperties: false,
-  },
-};
-
-const QUALITY_SYSTEM_PROMPT = `あなたは口コミの読み手として採点します。お客様のアンケート回答(素材)と、そこから作った口コミの下書きを読み、次を採点してください。事実の正しさはここでは採点しません。
-・warmth(1〜5): 書いた本人の気持ちや受け取り方、温度感が伝わるか(1 = 事実の列挙だけ、5 = 本人が体験を思い返して気持ちを込めて書いたように感じる)
-・naturalness(1〜5): 一般のお客様がスマホで書いたGoogle口コミとして自然か(1 = AI やアンケートの要約に見える、5 = 本人が書いたとしか思えない)
-  - 文章として完成されすぎていないことも自然さに含めます。少し口語的な言い方、短い文が混ざる、「！」がたまに入る、最後が単純な感想で終わる、締めの文が無い、は減点しません。
-  - 整いすぎた言い回し(嬉しく思いました、〜することができました、印象に残りました、安心感がありました など)、体験を抽象的な名詞でまとめる文(心地よい体験でした、満足のいく時間でした など)、最後だけきれいに総括する文(〜と思えるお店でした、全体的に〜 など)は減点します。
-  - 「！」を毎文のように使う、回答に対してテンションが高すぎる、も減点します。
-  - 回答を短い文に圧縮して要点を並べただけの文章、字数を埋めるための水増しは減点します。長さそのものは減点しません(自然に終わる短い口コミも、内容が豊富な長めの口コミも自然です)。
-  - 別々の回答を無理に1文につなげている、因果関係があいまいなつなぎ方をしている、「安心」「嬉しい」などの気持ちが何に対するものか分かりにくい、も減点します。
-・survey_summary: アンケートの回答を順番に要約・列挙しただけに見えるなら true
-・polished_essay: AIが口コミとして綺麗にまとめた作文に見えるなら true
-・awkward_connection: 読んでいて引っかかる文があるなら true(別々の回答を1文に詰め込んでいる、「Aしてもらえて、Bが気になっていたけどCでした」のように前後の関係があいまい、気持ちが何に対するものか分かりにくい、同じ内容を2回書いている など)
-・compressed: たくさんの回答を短い文章に詰め込み、要点をまとめただけに見えるなら true
-・padded: 字数を埋めるための水増し(同じ内容の言い換え、内容の無い文)があるなら true`;
-
-/** 読み手としての採点(評価だけで使う。本番では使わない)。 */
-async function judgeQuality(materials: Material[], draft: string): Promise<QualityScore | null> {
-  if (!draft.trim()) return null;
-  return withJudgeRetry(async () => {
-    const result = await countingCall()<{
-      warmth: number;
-      naturalness: number;
-      survey_summary: boolean;
-      polished_essay: boolean;
-      awkward_connection: boolean;
-      compressed: boolean;
-      padded: boolean;
-    }>({
-      task: "review_verification",
-      model: AUDIT_MODEL,
-      systemPrompt: QUALITY_SYSTEM_PROMPT,
-      userPrompt: `【素材】\n${materials.map((m) => `${m.id} ${m.text}`).join("\n")}\n\n【下書き】\n${draft}`,
-      schema: QUALITY_SCHEMA,
-      temperature: 0,
-      maxOutputTokens: 120,
-      timeoutMs: 30_000,
-    });
-    const clamp = (n: number) => Math.min(5, Math.max(1, Math.round(n)));
-    return {
-      warmth: clamp(result.data.warmth),
-      naturalness: clamp(result.data.naturalness),
-      surveySummary: result.data.survey_summary === true,
-      polishedEssay: result.data.polished_essay === true,
-      awkwardConnection: result.data.awkward_connection === true,
-      compressed: result.data.compressed === true,
-      padded: result.data.padded === true,
-    };
   });
 }
 
@@ -253,7 +104,7 @@ async function runV2(testCase: ReviewCase, materials: Material[]): Promise<Draft
   try {
     const result = await runReviewPipeline(
       { materials, businessType: testCase.businessType },
-      { callJson: countingCall() },
+      { callJson: call() },
     );
     return {
       ok: true,
@@ -288,22 +139,6 @@ const BLOCKING_PLAIN_CODES = new Set([
   "extreme_emotional_exaggeration:extreme",
   "negative_not_reflected",
 ]);
-
-function summarizeQuality(scores: QualityScore[]) {
-  if (scores.length === 0) return null;
-  const avg = (f: (q: QualityScore) => number) =>
-    Math.round((scores.reduce((sum, q) => sum + f(q), 0) / scores.length) * 100) / 100;
-  return {
-    judged: scores.length,
-    warmthAvg: avg((q) => q.warmth),
-    naturalnessAvg: avg((q) => q.naturalness),
-    surveySummary: scores.filter((q) => q.surveySummary).length,
-    polishedEssay: scores.filter((q) => q.polishedEssay).length,
-    awkwardConnection: scores.filter((q) => q.awkwardConnection).length,
-    compressed: scores.filter((q) => q.compressed).length,
-    padded: scores.filter((q) => q.padded).length,
-  };
-}
 
 function summarizeDrafts(results: DraftResult[], cases: readonly ReviewCase[]) {
   const ok = results.filter((r) => r.ok);
@@ -358,7 +193,7 @@ async function compareVerifiers() {
       const materials = buildMaterials(testCase.answers);
       const startedAt = Date.now();
       try {
-        const result = await verifySentences(countingCall(model), {
+        const result = await verifySentences(call(model), {
           materials,
           sentences: [{ index: 0, text: testCase.sentence, sourceIds: materials.map((m) => m.id) }],
           timeoutMs: 20_000,

@@ -49,11 +49,11 @@ describe("buildGenerateRequestBody", () => {
       answers: { [QUESTIONS[0].id]: "初めて" },
       otherDetails: {},
       previousReview: "前回の下書き",
-      previousPlan: { mainIds: ["M1"], supportIds: [], length: "short", opening: "main", closing: "plain" },
+      previousPlan: { length: "short", emotion: "none", exclamation: "occasional", opening: "fact", closing: "neutral", materialAmount: "few", tone: "plain" },
     });
     const parsed = parseGenerateRequest(JSON.parse(JSON.stringify(body)));
     expect(parsed?.legacy).toBe(false);
-    expect(parsed?.previousPlan?.mainIds).toEqual(["M1"]);
+    expect(parsed?.previousPlan?.opening).toBe("fact");
     expect(parsed?.previousReview).toBe("前回の下書き");
   });
 });

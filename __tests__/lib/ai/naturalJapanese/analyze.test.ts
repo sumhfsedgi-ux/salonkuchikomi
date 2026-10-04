@@ -7,10 +7,8 @@ import {
   foldSpelling,
   hasPerception,
   isPurposeLike,
-  limitExclamations,
   normalize,
   sentenceEnding,
-  simplifyPolishedPhrases,
   splitSentences,
   stripDecorations,
 } from "@/lib/ai/naturalJapanese/analyze";
@@ -122,46 +120,8 @@ describe("stripDecorations / countChars", () => {
   });
 });
 
-describe("simplifyPolishedPhrases", () => {
-  it("整いすぎた言い回しを、意味を変えずに直接的な言い方にする", () => {
-    expect(simplifyPolishedPhrases("仕上がりが自然で嬉しく思いました。")).toBe("仕上がりが自然で嬉しかったです。");
-    expect(simplifyPolishedPhrases("説明が丁寧でうれしく思います。")).toBe("説明が丁寧でうれしいです。");
-    expect(simplifyPolishedPhrases("最後まで安心することができました。")).toBe("最後まで安心できました。");
-    expect(simplifyPolishedPhrases("ゆっくりリラックスすることができて、")).toBe("ゆっくりリラックスできて、");
-    expect(simplifyPolishedPhrases("肌が柔らかくなったと感じることができました。")).toBe("肌が柔らかくなったと感じました。");
-    expect(simplifyPolishedPhrases("落ち着いて過ごすことができました。")).toBe("落ち着いて過ごせました。");
-    expect(simplifyPolishedPhrases("不安なく施術を受けることができました。")).toBe("不安なく施術を受けられました。");
-  });
-
-  it("お客様が自分で書いた言い回しはそのまま残す", () => {
-    expect(simplifyPolishedPhrases("気配りを嬉しく思いました。", "スタッフさんの気配りを嬉しく思いました")).toBe(
-      "気配りを嬉しく思いました。",
-    );
-  });
-
-  it("当てはまらない文は変えない", () => {
-    expect(simplifyPolishedPhrases("話しやすくて嬉しかったです！")).toBe("話しやすくて嬉しかったです！");
-  });
-});
-
-describe("countExclamations / limitExclamations", () => {
+describe("countExclamations", () => {
   it("全角・半角の感嘆符を数える", () => {
     expect(countExclamations("よかったです！また行きます!")).toBe(2);
-  });
-
-  it("上限までなら変えない", () => {
-    expect(limitExclamations(["よかったです！", "説明も丁寧でした。", "またお願いしたいです！"], 2)).toEqual([
-      "よかったです！",
-      "説明も丁寧でした。",
-      "またお願いしたいです！",
-    ]);
-  });
-
-  it("続けて付いたものは1つにし、多すぎれば前の文の文末から句点に戻す", () => {
-    expect(limitExclamations(["よかったです！！", "嬉しかったです！", "またお願いしたいです！"], 2)).toEqual([
-      "よかったです。",
-      "嬉しかったです！",
-      "またお願いしたいです！",
-    ]);
   });
 });

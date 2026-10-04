@@ -177,6 +177,12 @@ export const REVIEW_CASES: ReviewCase[] = [
   },
   { id: "el-mixed", businessType: "まつげエクステ", note: "自由記述に良い点と受付への不満", negative: true, answers: [multiple(STAFF, ["落ち着いた雰囲気"]), free("仕上がりは理想通り。ただ受付の対応がそっけなくて残念")] },
   { id: "el-recommend", businessType: "まつげエクステ", note: "本人の言葉に推奨", negative: false, answers: [multiple(LASH_FINISH, ["自然な仕上がり"]), free("友達にもすすめたいです")] },
+
+  // ── 本人の声(Voice Anchor)。口語・「笑」・「！」・常体を、綺麗に言い換えずに残す ──
+  { id: "hp-voice-casual", businessType: "ハーブピーリング", note: "「笑」と口語を残す", negative: false, answers: [single(VISIT, "初めて"), multiple(SKIN_FEEL, ["肌がしっとりした"]), free("途中寝ちゃいました笑 思ってたよりピリピリしなかった！")] },
+  { id: "nail-voice-excited", businessType: "ネイルサロン", note: "テンションと「！」を残す・回答にある意向", negative: false, answers: [multiple(NAIL_FINISH, ["デザインが気に入った"]), free("かわいすぎる！！また行きます")] },
+  { id: "ma-voice-plain", businessType: "マッサージ", note: "常体の短い言い方を残す", negative: false, answers: [multiple(MASSAGE_FEEL, ["体が軽くなった気がする"]), free("強めが好きなのでちょうどよかった。")] },
+  { id: "hair-voice-neg", businessType: "ヘアサロン", note: "常体の否定(回答にある数値)を残す", negative: true, answers: [multiple(HAIR_MENU, ["カット"]), free("仕上がりは好き。でも予約の時間から15分くらい待たされた")] },
 ];
 
 /**

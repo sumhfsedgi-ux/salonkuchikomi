@@ -3,8 +3,9 @@
 // 判定はすべてコードで行い、LLM には判断させない。
 
 import { OTHER_OPTION_TEXT } from "@/lib/constants";
-import { findNegativeMarkers, hasPerception, isPurposeLike } from "@/lib/ai/naturalJapanese/analyze";
+import { findNegativeMarkers, findPhrases, hasPerception, isPurposeLike } from "@/lib/ai/naturalJapanese/analyze";
 import type { LintSource } from "@/lib/ai/naturalJapanese/lint";
+import { INTENT_PHRASES } from "@/lib/ai/naturalJapanese/phrases";
 
 /** 質問の役割。質問文のキーワードで判定する(テンプレートに役割の列は無い)。 */
 export type QuestionRole = "visit" | "reason" | "menu" | "experience" | "staff_shop" | "free_text" | "other";
@@ -34,6 +35,8 @@ export interface Material {
   negative: boolean;
   perception: boolean;
   purposeLike: boolean;
+  /** 再来店・推奨の意向(「また来たい」「おすすめ」など)。これがあるときだけ、口コミに意向を書いてよい。 */
+  intent: boolean;
 }
 
 export const MAX_MATERIALS = 20;
@@ -142,6 +145,7 @@ export function buildMaterials(inputs: readonly MaterialInput[]): Material[] {
     negative: findNegativeMarkers(candidate.text).length > 0,
     perception: hasPerception(candidate.text),
     purposeLike: candidate.role === "reason" || isPurposeLike(candidate.text),
+    intent: findPhrases(candidate.text, INTENT_PHRASES).length > 0,
   }));
 
   // 本人の言葉(自由記述・「その他」の詳細)と否定的な素材は削らない。
@@ -158,6 +162,20 @@ export function buildMaterials(inputs: readonly MaterialInput[]): Material[] {
     id: `M${index + 1}`,
     ...candidate,
   }));
+}
+
+/**
+ * 本人の文章(自由記述・「その他」の記入)。書き手の声の見本(Voice Anchor)として、分ける前の
+ * 言い回しのまま LLM に渡す(素材は否定的な部分を追えるように分けてあるため、つなぎ直す)。
+ */
+export function voiceSamples(materials: readonly Material[]): string[] {
+  const byQuestion = new Map<string, string[]>();
+  for (const m of materials) {
+    if (m.kind === "choice") continue;
+    const key = `${m.kind}:${m.questionText}`;
+    byQuestion.set(key, [...(byQuestion.get(key) ?? []), m.text]);
+  }
+  return [...byQuestion.values()].map((parts) => parts.join(""));
 }
 
 /** Linter に渡す形にする。 */

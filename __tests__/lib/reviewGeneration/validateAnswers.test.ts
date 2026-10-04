@@ -35,9 +35,19 @@ describe("parseGenerateRequest", () => {
     const request = parseGenerateRequest({
       salonId: SALON_ID,
       answers: [{ questionId: Q_VISIT, values: ["初めて"] }],
+      previousPlan: { length: "short", emotion: "none", exclamation: "occasional", opening: "fact", closing: "neutral", materialAmount: "few", tone: "plain" },
+    });
+    expect(request).toMatchObject({ salonId: SALON_ID, legacy: false, previousPlan: { opening: "fact" } });
+  });
+
+  it("開いたままの古いページが前の形式(構成プラン)を送ってきても、エラーにせず無視する", () => {
+    const request = parseGenerateRequest({
+      salonId: SALON_ID,
+      answers: [{ questionId: Q_VISIT, values: ["初めて"] }],
       previousPlan: { mainIds: ["M1"], supportIds: [], length: "short", opening: "main", closing: "plain" },
     });
-    expect(request).toMatchObject({ salonId: SALON_ID, legacy: false, previousPlan: { mainIds: ["M1"] } });
+    expect(request).toMatchObject({ salonId: SALON_ID, legacy: false });
+    expect(request?.previousPlan).toBeUndefined();
   });
 
   it("旧形式(質問文と回答の文字列)も読み、「その他（詳細）」を分ける", () => {

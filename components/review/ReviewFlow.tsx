@@ -9,7 +9,7 @@ import GeneratedReview from "@/components/review/GeneratedReview";
 import Toast from "@/components/Toast";
 import { copyToClipboard } from "@/lib/copyToClipboard";
 import { buildGenerateRequestBody } from "@/lib/reviewGeneration/requestBody";
-import type { PreviousPlan } from "@/lib/reviewGeneration/plan";
+import type { PreviousStyleSeed } from "@/lib/reviewGeneration/plan";
 
 interface Props {
   salon: { id: string; name: string; googleReviewUrl: string; businessType: string | null };
@@ -39,7 +39,7 @@ export default function ReviewFlow({ salon, questions }: Props) {
   const [otherDetails, setOtherDetails] = useState<Record<string, string>>({});
   const [generatedReview, setGeneratedReview] = useState("");
   // v2 の再生成で「前回と違う構成」を選ぶための前回のプラン(素材の本文は含まない)。
-  const [previousPlan, setPreviousPlan] = useState<PreviousPlan | null>(null);
+  const [previousPlan, setPreviousPlan] = useState<PreviousStyleSeed | null>(null);
   // CTA のクリックを記録するための ID(本文は送らない)。
   const [generationId, setGenerationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

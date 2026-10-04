@@ -10,7 +10,7 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { OTHER_DETAIL_MAX_LENGTH, OTHER_OPTION_TEXT, TEXT_ANSWER_MAX_LENGTH } from "@/lib/constants";
 import type { MaterialInput } from "@/lib/reviewGeneration/materials";
-import { previousPlanSchema, type PreviousPlan } from "@/lib/reviewGeneration/plan";
+import { previousStyleSeedSchema, type PreviousStyleSeed } from "@/lib/reviewGeneration/plan";
 
 // 複数選択の上限が DB に無いときの既定値(お客様ページと同じ)。
 const DEFAULT_MAX_SELECTIONS = 3;
@@ -28,8 +28,11 @@ const requestSchema = z.object({
   answers: z.array(answerSchema).max(20),
   /** v1 の再生成用(v1 を使っている間だけ)。 */
   previousReview: z.string().trim().max(1000).optional(),
-  /** v2 の再生成用(素材の本文は含まない)。 */
-  previousPlan: previousPlanSchema.optional(),
+  /**
+   * v2 の再生成用の前回の Style Seed(素材の本文は含まない)。開いたままの古いページが前の形式
+   * (構成プラン)を送ってきても、エラーにせず無視する。
+   */
+  previousPlan: previousStyleSeedSchema.optional().catch(undefined),
 });
 
 // このリリースより前のお客様ページが送る形式。開いたままのページのために、
@@ -63,7 +66,7 @@ export interface GenerateRequest {
   salonId: string;
   answers: RawAnswer[];
   previousReview?: string;
-  previousPlan?: PreviousPlan;
+  previousPlan?: PreviousStyleSeed;
   legacy: boolean;
 }
 

@@ -19,15 +19,15 @@ const STAFF = source("M3", "説明が分かりやすかった");
 const WAIT = source("M4", "待ち時間が長かった", { negative: true, ownWords: true });
 const PURPOSE = source("M5", "肌質を改善したい", { purposeLike: true });
 
-function codesOf(sentences: LintSentence[], sources: LintSource[], options = {}) {
-  return lintCodes(lintDraft(sentences, sources, options));
+function codesOf(sentences: LintSentence[], sources: LintSource[]) {
+  return lintCodes(lintDraft(sentences, sources));
 }
 
 function nonStyle(sentences: LintSentence[], sources: LintSource[]) {
   return lintDraft(sentences, sources).issues.filter((i) => i.severity !== "style");
 }
 
-describe("lintDraft: 気持ちの補完は指摘しない(2026-10-04 の方針)", () => {
+describe("lintDraft: 気持ちの言葉は、あっても無くても指摘しない(review-v3.0)", () => {
   it("回答と矛盾しない自然な気持ち・主観的な反応は、回答の文言に無くても指摘しない", () => {
     const result = lintDraft(
       [
@@ -38,21 +38,42 @@ describe("lintDraft: 気持ちの補完は指摘しない(2026-10-04 の方針)"
       [VISIT, FEELING, STAFF, WAIT],
     );
     expect(result.issues.filter((i) => i.severity !== "style")).toEqual([]);
-    expect(lintCodes(result)).not.toContain("low_emotional_texture");
     expect(result.traits[2].citesNegative).toBe(true);
   });
 
-  it("「よかった」「ありがたかった」「またお願いしたいと思える」も事実の面では指摘しない(言い回しは style で見る)", () => {
+  it("「よかった」「ありがたかった」も事実の面では指摘しない", () => {
     expect(
       nonStyle(
         [
           { text: "説明が分かりやすくて本当によかったです。", sourceIds: ["M3"] },
           { text: "丁寧だと感じて、ありがたかったです。", sourceIds: ["M3"] },
-          { text: "またお願いしたいと思えるお店でした。", sourceIds: ["M3"] },
         ],
         [STAFF],
       ),
     ).toEqual([]);
+  });
+
+  it("評価の言葉が付かない、ただの事実の文だけでも指摘しない", () => {
+    expect(
+      lintDraft(
+        [
+          { text: "初めての来店でした。", sourceIds: ["M1"] },
+          { text: "施術の説明は丁寧でした。", sourceIds: ["M3"] },
+        ],
+        [VISIT, STAFF],
+      ).issues,
+    ).toEqual([]);
+  });
+});
+
+describe("lintDraft: 意向(また来たい・おすすめ など)", () => {
+  it("回答に無い意向は事実の捏造として block、回答にあれば指摘しない", () => {
+    const withoutIntent = lintDraft([{ text: "またお願いしたいです！", sourceIds: ["M3"] }], [STAFF]);
+    expect(lintCodes(withoutIntent)).toContain("factual_invention:intent");
+    expect(blockedSentenceIndexes(withoutIntent)).toEqual([0]);
+
+    const revisit = source("M6", "また来たいです", { ownWords: true });
+    expect(codesOf([{ text: "また来たいです！", sourceIds: ["M6"] }], [STAFF, revisit])).not.toContain("factual_invention:intent");
   });
 });
 
@@ -205,7 +226,7 @@ describe("lintDraft: 否定的な内容", () => {
   });
 });
 
-describe("lintDraft: 人間らしさ", () => {
+describe("lintDraft: 構造(STRUCTURE)", () => {
   const LIGHT = source("M1", "軽い付け心地");
   const DESIGN = source("M2", "デザインの相談がしやすい");
   const CARING = source("M3", "親身に相談に乗ってくれた");
@@ -234,38 +255,36 @@ describe("lintDraft: 人間らしさ", () => {
       [LIGHT, DESIGN, CARING],
     );
     expect(codes).not.toContain("robotic_survey_summary");
-    expect(codes).not.toContain("low_emotional_texture");
   });
 
-  it("事実の列挙だけなら low_emotional_texture", () => {
+  it("3文以上がすべて同じ語尾なら uniform_sentence_structure。語尾の一部が同じ程度や、長さがそろうだけでは指摘しない", () => {
     expect(
       codesOf(
         [
-          { text: "初めての来店でした。", sourceIds: ["M1"] },
+          { text: "初めてでした。", sourceIds: ["M1"] },
           { text: "説明は丁寧でした。", sourceIds: ["M3"] },
+          { text: "店内も静かでした。", sourceIds: ["M3"] },
         ],
         [VISIT, STAFF],
       ),
-    ).toContain("low_emotional_texture");
+    ).toContain("uniform_sentence_structure");
+    expect(
+      codesOf(
+        [
+          { text: "初めてでした。", sourceIds: ["M1"] },
+          { text: "説明がありました。", sourceIds: ["M3"] },
+          { text: "丁寧に対応していただきました。", sourceIds: ["M3"] },
+        ],
+        [VISIT, STAFF],
+      ),
+    ).not.toContain("uniform_sentence_structure");
   });
 
-  it("語尾・文の長さが均一なら uniform_sentence_structure。定型句・文字数も見る", () => {
-    const codes = codesOf(
-      [
-        { text: "初めてでした。", sourceIds: ["M1"] },
-        { text: "説明がありました。", sourceIds: ["M3"] },
-        { text: "丁寧に対応していただきました。", sourceIds: ["M3"] },
-      ],
-      [VISIT, STAFF],
-      { targetChars: { min: 80, max: 150 } },
-    );
-    expect(codes).toEqual(expect.arrayContaining(["uniform_sentence_structure", "template_phrase", "length_out_of_range"]));
-  });
-
-  it("主役の素材を使っていない・本人の言葉を言い換えすぎている", () => {
+  it("本人の言葉を言い換えすぎていれば記録する(own_words_paraphrased)", () => {
     const own = source("M9", "ヘッドスパが気持ちよくて寝そうになりました", { ownWords: true });
-    const codes = codesOf([{ text: "頭のケアで心地よく過ごせた。", sourceIds: ["M9"] }], [VISIT, own], { mainSourceIds: ["M1"] });
-    expect(codes).toEqual(expect.arrayContaining(["main_not_used", "own_words_paraphrased"]));
+    expect(codesOf([{ text: "頭のケアで心地よく過ごせた。", sourceIds: ["M9"] }], [VISIT, own])).toContain(
+      "own_words_paraphrased",
+    );
   });
 });
 
@@ -300,7 +319,7 @@ describe("lintDraft: 文として成り立っているか", () => {
   });
 });
 
-describe("lintDraft: 綺麗な作文にしない(abstract_ai_summary・整いすぎた言い回し)", () => {
+describe("lintDraft: 明らかな抽象総括(abstract_ai_summary)", () => {
   const keysOf = (texts: string[], sources: LintSource[] = [STAFF]) =>
     codesOf(
       texts.map((text) => ({ text, sourceIds: [sources[0].id] })),
@@ -343,36 +362,24 @@ describe("lintDraft: 綺麗な作文にしない(abstract_ai_summary・整いす
     expect(codes.filter((c) => c.startsWith("abstract_ai_summary") || c.startsWith("template_phrase"))).toEqual([]);
   });
 
-  it("整いすぎた言い回しは template_phrase:polished。お客様が自分で書いた言い回しなら指摘しない", () => {
-    for (const text of ["説明が丁寧で嬉しく思いました。", "安心感がありました。", "説明の分かりやすさが印象に残りました。"]) {
-      expect(keysOf([text])).toContain("template_phrase:polished");
-    }
-    const own = source("M8", "スタッフさんの気配りを嬉しく思いました", { ownWords: true });
-    expect(keysOf(["スタッフさんの気配りを嬉しく思いました。"], [own])).not.toContain("template_phrase:polished");
-  });
-
   it("回答の言葉そのものなら抽象的なまとめとみなさない", () => {
     const own = source("M8", "心地よい体験でした", { ownWords: true });
     expect(keysOf(["本当に心地よい体験でした。"], [own])).not.toContain("abstract_ai_summary:abstract_noun");
   });
 });
 
-describe("lintDraft: 感嘆符(exclamation_overuse)", () => {
-  const exclamationIssue = (texts: string[]) =>
-    codesOf(
-      texts.map((text) => ({ text, sourceIds: ["M3"] })),
-      [STAFF],
-    ).includes("exclamation_overuse");
-
-  it("感嘆符があるだけでは指摘しない(なし・最後だけ1つ・文中に1〜2個)", () => {
-    expect(exclamationIssue(["説明が分かりやすかったです。", "また行きたいです。"])).toBe(false);
-    expect(exclamationIssue(["説明が分かりやすかったです。", "また行きたいです！"])).toBe(false);
-    expect(exclamationIssue(["説明が分かりやすくて嬉しかったです！", "丁寧でした。", "また行きたいです！"])).toBe(false);
-  });
-
-  it("毎文に付ける・3つ以上・続けて付けるのは指摘する", () => {
-    expect(exclamationIssue(["説明が分かりやすかったです！", "丁寧でした！", "また行きたいです！"])).toBe(true);
-    expect(exclamationIssue(["説明が分かりやすかったです！！"])).toBe(true);
+describe("lintDraft: 感嘆符と短い文", () => {
+  it("感嘆符は数にかかわらず指摘しない", () => {
+    expect(
+      lintDraft(
+        [
+          { text: "説明が分かりやすかったです！", sourceIds: ["M3"] },
+          { text: "丁寧でした！", sourceIds: ["M3"] },
+          { text: "嬉しかったです！", sourceIds: ["M3"] },
+        ],
+        [STAFF],
+      ).issues.filter((i) => i.severity !== "style"),
+    ).toEqual([]);
   });
 
   it("気持ちを言い切った短い文は断片にしない(感嘆符だけでは気持ちとみなさない)", () => {
@@ -388,7 +395,7 @@ describe("lintDraft: 感嘆符(exclamation_overuse)", () => {
   });
 });
 
-describe("lintDraft: 1文への詰め込み・関係のあいまいなつなぎ", () => {
+describe("lintDraft: 関係のあいまいなつなぎ(weak_connection = BROKEN_CAUSALITY)", () => {
   const PORES = source("M1", "毛穴の開き");
   const PROPOSAL = source("M2", "自分の肌に合った提案をしてもらえた");
   const CONSULT = source("M3", "相談しやすい");
@@ -408,21 +415,10 @@ describe("lintDraft: 1文への詰め込み・関係のあいまいなつなぎ"
       ["肌の状態に合わせて提案してもらえて、相談もしやすかったです。", ["M2", "M3"]],
       ["毛穴のことを相談したところ、肌の状態に合わせて提案してもらえたのがよかったです。", ["M1", "M2"]],
     ] as const) {
-      const codes = codesFor(text, [...ids]);
-      expect(codes).not.toContain("weak_connection");
-      expect(codes).not.toContain("overloaded_sentence");
+      expect(codesFor(text, [...ids])).not.toContain("weak_connection");
     }
   });
 
-  it("別々の回答を3つ以上、または2つを読点2つ以上でつなぐと overloaded_sentence(来店回数は数えない)", () => {
-    expect(codesFor("毛穴の開きが気になっていて、提案も肌に合っていて、相談しやすかったです。", ["M1", "M2", "M3"])).toContain(
-      "overloaded_sentence",
-    );
-    expect(codesFor("毛穴が気になっていて、肌に合った提案をしてもらえて、嬉しかったです。", ["M1", "M2"])).toContain(
-      "overloaded_sentence",
-    );
-    expect(codesFor("初めてでしたが、相談しやすくて、気負わずに過ごせました。", ["M4", "M3"])).not.toContain("overloaded_sentence");
-  });
 });
 
 describe("lintDraft: 同じ内容の繰り返し(repeated_content)", () => {

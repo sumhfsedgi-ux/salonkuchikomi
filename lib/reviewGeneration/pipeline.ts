@@ -1,9 +1,9 @@
-// 口コミ生成 v2 のパイプライン(docs/plans/reviews-465-plan.md §7-1・§13-2)。
-//   構成プラン(コード) → 作文(LLM 1回) → Linter(コード)
+// 口コミ生成のパイプライン(docs/plans/reviews-465-plan.md §14)。
+//   Style Seed(コード) → 作文(LLM 1回) → Single Review Lint(コード)
+//   → 最後の文が抽象的な総括なら削る
+//   → 構造の問題(要約・均一・繰り返し・あいまいなつなぎ・抽象総括)は、Style Seed を変えて全文を1回だけ作り直す
 //   → 危険な文だけ同期で意味検証(LLM。NG・タイムアウトはその文を削除 = fail-closed)
-//   → 削除で足りなければ1回だけ部分修正 → 最後の文が抽象的な総括なら削る
-//   → 整いすぎ・事実の列挙だけなら1回だけ書き直す → それでも否定的な素材が消えるなら本人の原文を残す
-// 「嬉しく思いました」のように意味を変えずに直せる言い回しは、LLM の出力ごとにコードで直す。
+//   → 否定的な素材が消えた・下書きが空なら、事実違反の文だけ1回部分修正 → それでも消えるなら本人の原文を残す
 // 回答・素材・下書きの本文はログに出さない。返すメタデータにも本文は含めない。
 
 import {
@@ -18,9 +18,7 @@ import {
   countChars,
   findNegativeMarkers,
   foldSpelling,
-  limitExclamations,
   normalize,
-  simplifyPolishedPhrases,
   splitSentences,
   stripDecorations,
 } from "@/lib/ai/naturalJapanese/analyze";
@@ -30,20 +28,18 @@ import {
   issueKey,
   lintCodes,
   lintDraft,
-  MAX_EXCLAMATIONS,
   riskySentenceIndexes,
-  TEXTURE_CODES,
+  structureIssueCount,
   type LintResult,
   type LintSentence,
 } from "@/lib/ai/naturalJapanese/lint";
 import { toLintSources, type Material } from "@/lib/reviewGeneration/materials";
 import {
-  buildCompositionPlan,
-  LENGTH_TARGETS,
-  MIN_DRAFT_CHARS,
-  SOFT_LENGTH_RANGE,
-  type CompositionPlan,
-  type PreviousPlan,
+  alternativeStyleSeed,
+  buildStyleSeed,
+  styleSeedSignature,
+  type PreviousStyleSeed,
+  type StyleSeed,
 } from "@/lib/reviewGeneration/plan";
 import {
   buildGenerationUserPrompt,
@@ -62,7 +58,7 @@ export interface DraftSentence {
 }
 
 /** 下書きに対して行った対応(強いもの優先で1つ記録する)。 */
-export type RepairAction = "none" | "removed" | "regenerated" | "polished" | "repaired" | "own_words_fallback";
+export type RepairAction = "none" | "removed" | "regenerated" | "repaired" | "own_words_fallback";
 export type VerifyMode = "none" | "sync";
 
 /** 生成イベントに記録するメタデータ(本文は含めない)。 */
@@ -78,11 +74,14 @@ export interface PipelineMetadata {
   verifyMode: VerifyMode;
   verifyFlags: string[];
   repairAction: RepairAction;
+  /** 最終的に使った Style Seed(書き方の傾向。本文は含まない)。 */
+  styleSeed: string;
 }
 
 export interface PipelineResult {
   draft: string;
-  plan: CompositionPlan;
+  /** 最終的に使った Style Seed(再生成のときにクライアントから返してもらう)。 */
+  seed: StyleSeed;
   sentences: DraftSentence[];
   metadata: PipelineMetadata;
 }
@@ -112,7 +111,7 @@ export interface PipelineDeps {
 export interface PipelineInput {
   materials: Material[];
   businessType: string | null;
-  previousPlan?: PreviousPlan;
+  previousSeed?: PreviousStyleSeed;
 }
 
 // お客様がスマホで待つ時間の上限。各呼び出しはこの残り時間の範囲で行う。
@@ -122,12 +121,12 @@ const VERIFICATION_TIMEOUT_MS = 6_000;
 const REPAIR_TIMEOUT_MS = 10_000;
 // 残り時間がこれ未満なら、その呼び出しは行わない(意味検証なら NG 扱い)。
 const MIN_CALL_BUDGET_MS = 2_500;
+// 締めの総括を削ったあとに、これより短くなるなら削らない。
+const MIN_DRAFT_CHARS = 20;
 
 const GENERATION_TEMPERATURE = 0.9;
 const VERIFICATION_TEMPERATURE = 0;
 const REPAIR_TEMPERATURE = 0.3;
-// 書き直し(気持ちや受け取り方を補う)は、言い回しに幅を持たせる。
-const POLISH_TEMPERATURE = 0.7;
 // 推論系のモデルは既定以外の temperature を受け付けないので送らない。
 const REASONING_MODEL = /^(o\d|gpt-5)/i;
 
@@ -135,9 +134,8 @@ const REPAIR_ACTION_RANK: Record<RepairAction, number> = {
   none: 0,
   removed: 1,
   regenerated: 2,
-  polished: 3,
-  repaired: 4,
-  own_words_fallback: 5,
+  repaired: 3,
+  own_words_fallback: 4,
 };
 
 function temperatureFor(model: string | null, value: number): number | undefined {
@@ -155,6 +153,8 @@ const TRAILING_COMMA = /[、,，]$/u;
 const TRAILING_CONJUNCTION = /(?:けれども|けれど|けど|のに|ものの|が)?[、,，]$/u;
 // 修正の依頼の書式(出典・番号・指摘)を、LLM が本文にそのまま写してしまうことがあるので取り除く。
 const ECHOED_LABEL = /\[(?:出典|source)[^\]]*\]\s*|^\s*(?:S?\d+[.:：)]|[-・])\s*|\s*←\s*直す.*$/giu;
+// 「！！」のような連続した感嘆符は1つにする(数そのものは Style Seed の傾向に任せる)。
+const REPEATED_EXCLAMATION = /([！!])[！!]+/gu;
 
 /**
  * LLM の出力を整える(装飾・文中の改行を除き、文末の句点を補う)。
@@ -166,6 +166,7 @@ export function cleanSentences(raw: RawDraft | null | undefined): DraftSentence[
       text: stripDecorations(String(s.text ?? ""))
         .replace(/[\r\n]+/g, "")
         .replace(ECHOED_LABEL, "")
+        .replace(REPEATED_EXCLAMATION, "$1")
         .trim(),
       sourceIds: Array.isArray(s.source_ids) ? s.source_ids : [],
       breakAfter: s.break_after === true,
@@ -218,19 +219,6 @@ function verificationTargets(result: LintResult): number[] {
   return [...targets].sort((a, b) => a - b);
 }
 
-/** 人間らしさの指摘を、文ごとの指摘と下書き全体への指摘に分ける(書き直しの依頼に使う)。 */
-function textureProblems(result: LintResult) {
-  const bySentence = new Map<number, string[]>();
-  const document: string[] = [];
-  for (const i of result.issues) {
-    if (!TEXTURE_CODES.has(i.code)) continue;
-    if (i.sentenceIndex === null) document.push(i.code);
-    else bySentence.set(i.sentenceIndex, [...(bySentence.get(i.sentenceIndex) ?? []), issueKey(i)]);
-  }
-  const count = result.issues.filter((i) => TEXTURE_CODES.has(i.code)).length;
-  return { bySentence, document: [...new Set(document)], count };
-}
-
 function issueCodesBySentence(result: LintResult, severities: ReadonlyArray<"block" | "risk">): Map<number, string[]> {
   const map = new Map<number, string[]>();
   for (const i of result.issues) {
@@ -249,6 +237,7 @@ class MetadataRecorder {
   private verifyFlags = new Set<string>();
   private repairAction: RepairAction = "none";
   verifyMode: VerifyMode = "none";
+  styleSeed = "";
 
   constructor(
     private readonly startedAt: number,
@@ -288,6 +277,7 @@ class MetadataRecorder {
       verifyMode: this.verifyMode,
       verifyFlags: [...this.verifyFlags],
       repairAction: this.repairAction,
+      styleSeed: this.styleSeed,
     };
   }
 }
@@ -296,6 +286,7 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
   const callJson = deps.callJson ?? callOpenAIJson;
   const resolveModel = deps.resolveModel ?? resolveOpenAIModel;
   const now = deps.now ?? Date.now;
+  const random = deps.random ?? Math.random;
   const startedAt = now();
   const remaining = () => startedAt + budgetMs - now();
   const meta = new MetadataRecorder(startedAt, now);
@@ -303,38 +294,50 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
   const { materials, businessType } = input;
   if (materials.length === 0) throw new ReviewGenerationError("素材がありません", "no_materials");
 
-  const plan = buildCompositionPlan(materials, { random: deps.random, previous: input.previousPlan });
+  let seed = buildStyleSeed(materials, { random, previous: input.previousSeed });
+  meta.styleSeed = styleSeedSignature(seed);
   const sources = toLintSources(materials);
   const materialById = new Map(materials.map((m) => [m.id, m]));
-  const lint = (sentences: readonly LintSentence[]) =>
-    lintDraft(sentences, sources, { mainSourceIds: plan.mainIds, targetChars: SOFT_LENGTH_RANGE });
-  // LLM の出力を整え、整いすぎた言い回しを直す(お客様が自分で書いた言い回しは残す)。
-  const materialText = materials.map((m) => m.text).join("\n");
-  const tidy = (raw: RawDraft | null | undefined): DraftSentence[] =>
-    cleanSentences(raw).map((s) => ({ ...s, text: simplifyPolishedPhrases(s.text, materialText) }));
+  const lint = (sentences: readonly LintSentence[]) => lintDraft(sentences, sources);
+  const usable = (draft: readonly DraftSentence[]) => draft.length > blockedSentenceIndexes(lint(draft)).length;
 
-  // ── 1. 作文(使える文が1つも無ければ1回だけ作り直す) ──
-  async function generateOnce(): Promise<DraftSentence[]> {
+  async function generateOnce(styleSeed: StyleSeed): Promise<DraftSentence[]> {
     const result = await callJson<RawDraft>({
       task: "review_generation",
       systemPrompt: GENERATION_SYSTEM_PROMPT,
-      userPrompt: buildGenerationUserPrompt(materials, plan, businessType),
+      userPrompt: buildGenerationUserPrompt(materials, styleSeed, businessType),
       schema: draftSchema(materials.map((m) => m.id)),
       temperature: temperatureFor(resolveModel("review_generation"), GENERATION_TEMPERATURE),
       maxOutputTokens: 700,
       timeoutMs: Math.min(GENERATION_TIMEOUT_MS, remaining()),
     });
     meta.record("generation", result);
-    return tidy(result.data);
+    return cleanSentences(result.data);
   }
 
+  /** 最後の文が抽象的な総括で、その素材がほかの文にも使われていれば削る(締めの文は無くてよい)。 */
+  function dropSummaryClosing(draft: DraftSentence[]): DraftSentence[] {
+    if (draft.length < 2) return draft;
+    const last = draft.length - 1;
+    const summary = lint(draft).issues.some((i) => i.code === "abstract_ai_summary" && i.sentenceIndex === last);
+    if (!summary) return draft;
+    const rest = draft.slice(0, last);
+    const restIds = new Set(rest.flatMap((s) => s.sourceIds));
+    if (!draft[last].sourceIds.every((id) => restIds.has(id)) || countChars(assembleDraft(rest)) < MIN_DRAFT_CHARS) {
+      return draft;
+    }
+    meta.flag("closing_dropped");
+    return rest;
+  }
+
+  // ── 1. 作文(使える文が1つも無ければ1回だけ作り直す) ──
   let sentences: DraftSentence[] | null = null;
   let failureKind: string | undefined;
   for (let attempt = 1; attempt <= 2 && !sentences; attempt++) {
     if (attempt > 1 && remaining() < MIN_CALL_BUDGET_MS * 2) break;
     try {
-      const candidate = await generateOnce();
-      if (candidate.length > blockedSentenceIndexes(lint(candidate)).length) {
+      const candidate = await generateOnce(seed);
+      if (usable(candidate)) {
         sentences = candidate;
         if (attempt > 1) meta.action("regenerated");
       } else {
@@ -357,8 +360,31 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
   if (!sentences) {
     throw new ReviewGenerationError("口コミの作成に失敗しました", "generation_failed", meta.snapshot([]), failureKind);
   }
+  sentences = dropSummaryClosing(sentences);
 
-  // ── 2. 意味検証(同期) ──
+  // ── 2. 構造の問題は、部分修正ではなく Style Seed を変えて全文を1回だけ作り直す ──
+  const structureProblems = structureIssueCount(lint(sentences));
+  if (structureProblems > 0 && remaining() >= MIN_CALL_BUDGET_MS * 2) {
+    const nextSeed = alternativeStyleSeed(materials, seed, random);
+    try {
+      const candidate = dropSummaryClosing(await generateOnce(nextSeed));
+      if (usable(candidate) && structureIssueCount(lint(candidate)) < structureProblems) {
+        sentences = candidate;
+        seed = nextSeed;
+        meta.styleSeed = styleSeedSignature(seed);
+        meta.action("regenerated");
+        meta.flag("structure_regenerated");
+      } else {
+        meta.flag("structure_regen_rejected");
+      }
+    } catch (err) {
+      if (!(err instanceof OpenAICallError)) throw err;
+      meta.countFailedCall();
+      meta.flag("structure_regen_failed");
+    }
+  }
+
+  // ── 3. 意味検証(同期) ──
   async function verify(targets: readonly number[], draft: readonly DraftSentence[]) {
     meta.verifyMode = "sync";
     if (remaining() < MIN_CALL_BUDGET_MS) {
@@ -406,21 +432,8 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
   let kept = sentences.filter((_, i) => !rejected.has(i));
   if (rejected.size > 0) meta.action("removed");
 
-  // ── 3. 削除で足りなければ1回だけ部分修正 ──
-  // 否定的な素材が反映されていない・下書きが空のとき、または NG の削除で主役が消えたり
-  // 長さの目安の半分を下回ったりしたとき(肯定的な回答が消えて、否定だけが残るのを防ぐ)に直す。
-  // 長さは目安なので、目安を少し下回っただけでは直さない。
-  const mainNotUsed = (draft: readonly DraftSentence[]) =>
-    lint(draft).issues.some((i) => i.code === "main_not_used");
-  const mainLostByRemoval = rejected.size > 0 && !mainNotUsed(sentences) && mainNotUsed(kept);
-  const tooShortAfterRemoval =
-    rejected.size > 0 &&
-    countChars(assembleDraft(kept)) < Math.max(MIN_DRAFT_CHARS, LENGTH_TARGETS[plan.length].chars.min / 2);
-  const needsRepair = documentBlockIssues(lint(kept)).length > 0 || mainLostByRemoval || tooShortAfterRemoval;
-
-  let repairAttempted = false;
-  if (needsRepair && remaining() >= MIN_CALL_BUDGET_MS) {
-    repairAttempted = true;
+  // ── 4. 否定的な素材が反映されていない・下書きが空なら、事実違反の文だけを1回部分修正する ──
+  if (documentBlockIssues(lint(kept)).length > 0 && remaining() >= MIN_CALL_BUDGET_MS) {
     const missingNegativeIds = documentBlockIssues(lint(kept))
       .filter((i) => i.code === "negative_not_reflected" && i.sourceId)
       .map((i) => i.sourceId as string);
@@ -434,7 +447,7 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
         temperature: temperatureFor(resolveModel("review_repair"), REPAIR_TEMPERATURE),
       });
       meta.record("repair", repaired);
-      const repairedSentences = tidy(repaired.raw);
+      const repairedSentences = cleanSentences(repaired.raw);
       // 合格済みで変わっていない文は、もう一度検証しない。
       const accepted = new Set(kept.map((s) => normalize(s.text)));
       const repairedRejected = await reject(repairedSentences, accepted);
@@ -449,66 +462,7 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
     }
   }
 
-  // ── 4. 最後の文が「〜な体験でした」「全体的に〜」のような総括なら、削る ──
-  // (締めの文は無くてよい。その文の素材が他の文にも使われていて、短くなりすぎないときだけ。)
-  const last = kept.length - 1;
-  const closingIsSummary =
-    kept.length >= 2 && lint(kept).issues.some((i) => i.code === "abstract_ai_summary" && i.sentenceIndex === last);
-  if (closingIsSummary) {
-    const rest = kept.slice(0, last);
-    const restIds = new Set(rest.flatMap((s) => s.sourceIds));
-    const covered = kept[last].sourceIds.every((id) => restIds.has(id));
-    if (covered && countChars(assembleDraft(rest)) >= MIN_DRAFT_CHARS) {
-      kept = rest;
-      meta.flag("closing_dropped");
-    }
-  }
-
-  // ── 5. 整いすぎ・事実の列挙だけ・アンケートの要約だけになっていたら、1回だけ書き直す ──
-  // (2026-10-04 の方針: 事実は作らず、体験者の気持ちや受け取り方を補う。修正をしたときはしない。)
-  const texture = textureProblems(lint(kept));
-  if (texture.count > 0 && !repairAttempted && remaining() >= MIN_CALL_BUDGET_MS) {
-    try {
-      const polished = await repairDraft(callJson, {
-        materials,
-        sentences: kept.map((s, i) => ({ text: s.text, sourceIds: s.sourceIds, problems: texture.bySentence.get(i) ?? [] })),
-        missingNegativeIds: [],
-        documentProblems: texture.document,
-        businessType,
-        timeoutMs: Math.min(REPAIR_TIMEOUT_MS, remaining()),
-        temperature: temperatureFor(resolveModel("review_repair"), POLISH_TEMPERATURE),
-      });
-      meta.record("repair", polished);
-      const polishedSentences = tidy(polished.raw);
-      const accepted = new Set(kept.map((s) => normalize(s.text)));
-      const polishedRejected = await reject(polishedSentences, accepted);
-      const candidate = polishedSentences.filter((_, i) => !polishedRejected.has(i));
-      // 否定的な素材の反映が消えたり、かえって悪くなったりしたら、書き直す前の下書きを使う。
-      const candidateLint = lint(candidate);
-      const improved =
-        candidate.length > 0 &&
-        documentBlockIssues(candidateLint).length === 0 &&
-        textureProblems(candidateLint).count < texture.count;
-      if (improved) {
-        kept = candidate;
-        meta.action("polished");
-      } else {
-        meta.flag("polish_rejected");
-      }
-    } catch {
-      meta.countFailedCall();
-      meta.flag("polish_failed");
-    }
-  }
-
-  // 感嘆符が多すぎれば減らす(次の手順で足す本人の原文は対象にしない)。
-  const limited = limitExclamations(kept.map((s) => s.text), MAX_EXCLAMATIONS);
-  if (limited.some((text, i) => text !== kept[i].text)) {
-    kept = kept.map((s, i) => ({ ...s, text: limited[i] }));
-    meta.flag("exclamations_limited");
-  }
-
-  // ── 6. それでも反映されていない否定的な素材は、本人の原文をそのまま残す ──
+  // ── 5. それでも反映されていない否定的な素材は、本人の原文をそのまま残す ──
   for (const issue of documentBlockIssues(lint(kept))) {
     if (issue.code !== "negative_not_reflected" || !issue.sourceId) continue;
     const material = materialById.get(issue.sourceId);
@@ -523,32 +477,28 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
 
   return {
     draft: assembleDraft(kept),
-    plan,
+    seed,
     sentences: kept,
     metadata: meta.snapshot(lintCodes(lint(kept))),
   };
 }
 
-// 出典の対応が無くても判定できる指摘だけ(v1 と v2 で比べられるもの)。
+// 出典の対応が無くても判定できる指摘だけ(v1・v2・v3 で比べられるもの)。
 const PLAIN_DRAFT_CODES = new Set<string>([
   "factual_invention:situation",
   "factual_invention:number",
   "factual_invention:comparison",
   "factual_invention:visit_count",
   "factual_invention:off_topic",
+  "factual_invention:intent",
   "promotional_callout",
   "unsupported_effect:medical",
   "extreme_emotional_exaggeration:extreme",
   "extreme_emotional_exaggeration:strong",
-  "low_emotional_texture",
-  "uniform_sentence_structure",
-  "template_phrase",
-  "template_phrase:polished",
   "abstract_ai_summary:abstract_noun",
   "abstract_ai_summary:thinkable_noun",
   "abstract_ai_summary:closing_summary",
-  "exclamation_overuse",
-  "honorific_inflation",
+  "uniform_sentence_structure",
 ]);
 
 /**

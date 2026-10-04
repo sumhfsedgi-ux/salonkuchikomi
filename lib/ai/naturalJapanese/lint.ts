@@ -1,34 +1,28 @@
-// 口コミの下書きを素材(お客様の回答)と突き合わせて検査する決定的な Linter
-// (docs/plans/reviews-465-plan.md §7-1・§13)。
+// 口コミの下書き1件を、素材(お客様の回答)と突き合わせて検査する決定的な Linter
+// (Single Review Lint。docs/plans/reviews-465-plan.md §14-6)。
 //
-// 2026-10-04 の方針: 事実は作らない。ただし感情・温度感・主観的な反応は、回答と矛盾しない
-// 範囲で補ってよい。そのため「回答より感情が強いか」は判定せず、次を判定する:
-//   factual_invention               … 回答に無い具体的な事実(状況・数値・期間・金額・他店比較・来店回数 など)
-//   unsupported_effect              … 回答に無い効果・改善、「感じた」の断定、来店理由を結果にする、医療的な表現
-//   extreme_emotional_exaggeration  … 回答に対して極端すぎる感情(大感動・人生が変わった・絶対おすすめ など)
-//   robotic_survey_summary          … アンケートを質問の順に要約しただけ
-//   low_emotional_texture           … 事実の列挙だけで、体験者の主観がほとんど無い
-//   uniform_sentence_structure      … 文型・語尾・文の長さが均一
-//   abstract_ai_summary             … 「〜な体験でした」「〜と思える〜でした」のように、体験を抽象的な名詞で
-//                                     まとめる・最後の文だけきれいに総括する(AIが綺麗にまとめた作文に見える)
-//   exclamation_overuse             … 感嘆符の使いすぎ(感嘆符があるだけでは指摘しない)
-//   overloaded_sentence             … 1文に別々の回答を詰め込みすぎている
-//   weak_connection                 … 「Aしてもらえて、Bが気になっていたけどCでした」のような、関係のあいまいなつなぎ
-//   repeated_content                … 同じ回答の内容を、別の文でもう一度書いている
-// 軽い感情の補完(嬉しかった・よかった・話しやすかった など)は指摘しない。口語的な言い方、短い文、
-// たまに入る「！」、締めの文が無いことも指摘しない(一般のお客様の口コミとして自然なため)。
+// review-v3.0 で、重大なものだけに絞った。指摘コードと分類の対応:
+//   FACTUAL_INVENTION   … factual_invention(状況・数値・比較・業種外・来店回数・観点・結果・出来事・回答に無い意向)
+//   UNSUPPORTED_EFFECT  … unsupported_effect(医療・効果の断定・「感じた」の断定・来店理由を結果にする)
+//   NEGATIVE_REVERSAL   … negative_not_reflected / polarity_flip / softened_negative
+//   EXTREME / PROMOTION … extreme_emotional_exaggeration / promotional_callout
+//   BROKEN_CAUSALITY    … weak_connection(「Aしてもらえて、Bが気になっていたけどCでした」型のあいまいなつなぎ)
+//   ABSTRACT_SUMMARY    … abstract_ai_summary(〜な体験でした・〜と思える〜でした・最後の「全体的に」。明らかなものだけ)
+//   STRUCTURE           … robotic_survey_summary / uniform_sentence_structure / repeated_content
+//   技術的不備          … empty_draft / no_source / unknown_source / fragment / ungrammatical
+// 単語リストによる禁止、感情が無いことの指摘、特定の語の回数、文字数は見ない(書き方のばらつきは
+// 20件単位の Corpus Lint で見る)。own_words_paraphrased は、本人の言葉(Voice Anchor)が残っているかの記録用。
 //
 // 各文の sourceIds(どの素材をもとに書いたか)は LLM の自己申告でしかなく、意味が正しいことは
 // 保証しない。そこで、語彙で判定できる範囲を次の3段階で返す:
 //   block … そのままでは表示しない(文を削除するか、修正する)
 //   risk  … 同期の意味検証(LLM)にかける。NG・タイムアウトなら block と同じ扱い
-//   style … 品質の判定。表示は止めない(全体の質が低ければ、パイプラインが1回だけ書き直す)
+//   style … 構造の問題。表示は止めない(パイプラインが Style Seed を変えて1回だけ作り直す)
 
 import {
   bigramOverlap,
   containsPhrase,
   countChars,
-  countExclamations,
   findPhrases,
   hasPerception,
   normalize,
@@ -43,13 +37,12 @@ import {
   EXTREME_EMOTION_PHRASES,
   FIRST_VISIT_PHRASES,
   FLIP_PHRASES,
-  HONORIFIC_INFLATION_PHRASES,
+  INTENT_PHRASES,
   INVENTED_DETAIL_PHRASES,
   MEDICAL_PHRASES,
   OFF_TOPIC_PHRASES,
   OUTCOME_PHRASES,
   OVERALL_POSITIVE_PHRASES,
-  POLISHED_PHRASES,
   REPEAT_VISIT_PATTERN,
   SATISFACTION_PHRASES,
   SITUATION_PHRASES,
@@ -57,7 +50,6 @@ import {
   STRONG_EMOTION_PHRASES,
   SUBJECTIVE_MARKERS,
   SUMMARY_MARKERS,
-  TEMPLATE_PHRASES,
   THINKABLE_NOUN_PATTERN,
   VISIT_FACT_PHRASES,
 } from "@/lib/ai/naturalJapanese/phrases";
@@ -73,7 +65,7 @@ export interface LintSource {
   purposeLike: boolean;
   /** 自由記述・「その他」の詳細(本人の言葉なので言い回しを残す)。 */
   ownWords: boolean;
-  /** 来店回数(「初めてでしたが」のような前置きなので、1文に入れた内容の数に数えない)。 */
+  /** 来店回数(「初めてでしたが」のような前置きなので、つなぎの判定で内容の数に数えない)。 */
   visitCount?: boolean;
 }
 
@@ -82,23 +74,16 @@ export interface LintSentence {
   sourceIds: string[];
 }
 
-export interface LintOptions {
-  /** 構成プランで主役にした素材。どれも使われていなければ style の指摘にする。 */
-  mainSourceIds?: readonly string[];
-  /** 全体の文字数の目安。外れたら style の指摘にする。 */
-  targetChars?: { min: number; max: number };
-}
-
 export type LintSeverity = "block" | "risk" | "style";
 
 export type LintCode =
-  // 文として成り立っているか
+  // 技術的不備
   | "empty_draft"
   | "no_source"
   | "unknown_source"
   | "fragment"
   | "ungrammatical"
-  // 事実・効果・感情の強さ
+  // 事実・効果・感情の強さ・宣伝
   | "factual_invention"
   | "unsupported_effect"
   | "extreme_emotional_exaggeration"
@@ -107,20 +92,14 @@ export type LintCode =
   | "negative_not_reflected"
   | "polarity_flip"
   | "softened_negative"
-  // 人間らしさ・品質
-  | "robotic_survey_summary"
-  | "low_emotional_texture"
-  | "uniform_sentence_structure"
-  | "abstract_ai_summary"
-  | "exclamation_overuse"
-  | "overloaded_sentence"
+  // つなぎ・抽象総括・構造
   | "weak_connection"
+  | "abstract_ai_summary"
+  | "robotic_survey_summary"
+  | "uniform_sentence_structure"
   | "repeated_content"
-  | "main_not_used"
-  | "own_words_paraphrased"
-  | "template_phrase"
-  | "honorific_inflation"
-  | "length_out_of_range";
+  // 記録用(本人の言葉が残っているか)
+  | "own_words_paraphrased";
 
 /** 指摘の細目(記録・修正の依頼に使う)。 */
 export type LintDetail =
@@ -132,6 +111,7 @@ export type LintDetail =
   | "aspect"
   | "outcome"
   | "detail"
+  | "intent"
   | "medical"
   | "medical_term"
   | "change_claim"
@@ -139,7 +119,6 @@ export type LintDetail =
   | "purpose_as_result"
   | "extreme"
   | "strong"
-  | "polished"
   | "abstract_noun"
   | "thinkable_noun"
   | "closing_summary";
@@ -167,27 +146,17 @@ export interface LintResult {
   traits: SentenceTraits[];
 }
 
-// 本人の言い回しがこの割合より残っていなければ、言い換えすぎとみなす。
+// 本人の言い回しがこの割合より残っていなければ、言い換えすぎとして記録する。
 const OWN_WORDS_MIN_OVERLAP = 0.3;
 // 回答の言葉がこの割合以上入っている文が2つあれば、同じ内容の繰り返しとみなす。
-// (主役の体験をふくらませる文は、回答の言葉を一部しか使わないので数えない。)
 const REPEAT_MIN_OVERLAP = 0.5;
-// 同じ語尾がこの数だけ続いたら均一とみなす。
-const MONOTONE_RUN = 3;
-// 文の長さのばらつき(変動係数)がこれ未満なら均一とみなす(3文以上のとき)。
-const MIN_LENGTH_VARIATION = 0.15;
+// この数以上の文がすべて同じ語尾なら均一とみなす。
+const MONOTONE_MIN_SENTENCES = 3;
 // 選択肢の言葉とこの割合以上重なる文は、選択肢をそのまま写した文とみなす。
 const COPIED_CHOICE_OVERLAP = 0.7;
-// 丁寧語のインフレは、この数以上で指摘する(1回なら普通の口コミにもある)。
-const HONORIFIC_MIN_COUNT = 2;
 // 句読点を除いてこれより短い文は、文になっていない断片とみなす(「ニキビ。」など)。
 // ただし気持ちを言い切った短い文(「嬉しい！」など)は、口コミとして自然なので断片にしない。
 const MIN_SENTENCE_CHARS = 5;
-/** 下書き全体の感嘆符はこの数まで(「最後だけ1つ」「文中に1〜2個」まで)。超えたら使いすぎ。 */
-export const MAX_EXCLAMATIONS = 2;
-// 1文に入れてよい別々の回答の数(来店回数は数えない)。これを超えるか、2つを読点2つ以上でつなぐと詰め込み。
-const MAX_TOPICS_PER_SENTENCE = 2;
-const CLAUSE_BREAK = /[、,]/gu;
 // 「〜て、」「〜で、」でつないだあとに逆接を重ねる(「提案してもらえて、毛穴が気になっていたけど安心できました」)。
 const WEAK_LINK_PATTERN = /[てで]、[^。]*?(?:けど|けれど|のに|ですが|ましたが|でしたが)/u;
 // 明らかな文法の崩れ(「見えたです」「でしたです」など。「良かったです」は正しいので除く)。
@@ -216,13 +185,6 @@ function unsupportedNumbers(sentence: string, supportText: string): string[] {
   return matches.filter((n) => !containsPhrase(supportText, n));
 }
 
-// 気持ちの言葉(感嘆符は除く。「ニキビ！」を気持ちを言い切った文とみなさないため)。
-const FEELING_MARKERS = SUBJECTIVE_MARKERS.filter((marker) => marker !== "！" && marker !== "!");
-
-function hasSubjectiveMarker(text: string): boolean {
-  return findPhrases(text, SUBJECTIVE_MARKERS).length > 0;
-}
-
 /** 回答に無い、抽象的なまとめの言い回し(回答の言葉そのものなら除く)。 */
 function unsupportedMatch(text: string, pattern: RegExp, supportText: string): boolean {
   const match = normalize(text).match(pattern);
@@ -233,11 +195,7 @@ function materialNumber(id: string): number {
   return Number.parseInt(id.replace(/^M/, ""), 10);
 }
 
-export function lintDraft(
-  sentences: readonly LintSentence[],
-  sources: readonly LintSource[],
-  options: LintOptions = {},
-): LintResult {
+export function lintDraft(sentences: readonly LintSentence[], sources: readonly LintSource[]): LintResult {
   const issues: LintIssue[] = [];
   const traits: SentenceTraits[] = [];
   const sourceById = new Map(sources.map((s) => [s.id, s]));
@@ -259,15 +217,15 @@ export function lintDraft(
     const citesNegative = cited.some((s) => s.negative);
     const text = sentence.text;
 
-    // ── 文として成り立っているか(block) ──
+    // ── 技術的不備(block) ──
     if (sentence.sourceIds.length === 0) issues.push(issue("no_source", "block", index));
     if (cited.length < sentence.sourceIds.length) issues.push(issue("unknown_source", "block", index));
-    if ([...text.replace(PUNCTUATION, "")].length < MIN_SENTENCE_CHARS && findPhrases(text, FEELING_MARKERS).length === 0) {
+    if ([...text.replace(PUNCTUATION, "")].length < MIN_SENTENCE_CHARS && findPhrases(text, SUBJECTIVE_MARKERS).length === 0) {
       issues.push(issue("fragment", "block", index));
     }
     if (UNGRAMMATICAL_PATTERN.test(text)) issues.push(issue("ungrammatical", "block", index));
 
-    // ── 回答に無い具体的な事実(block。来店回数が分からないときだけ risk) ──
+    // ── 回答に無い具体的な事実(block。言い換えとして正しいこともあるものは risk) ──
     if (unsupportedPhrases(text, SITUATION_PHRASES, allSourceText).length > 0) {
       issues.push(issue("factual_invention", "block", index, { detail: "situation" }));
     }
@@ -288,15 +246,18 @@ export function lintDraft(
     if (!firstVisit && findPhrases(text, FIRST_VISIT_PHRASES).length > 0) {
       issues.push(issue("factual_invention", repeatVisit ? "block" : "risk", index, { detail: "visit_count" }));
     }
-    // 回答に無い観点(雰囲気・スタッフ・料金 など)や仕上がりの評価は、気持ちの補完に見えて事実の捏造に
-    // なりやすい。言い換えとして正しいこともあるので、意味検証で回答と比べる。
+    // 「また来たい」「おすすめ」などの意向は、回答に意向があるときだけ書いてよい。
+    if (unsupportedPhrases(text, INTENT_PHRASES, allSourceText).length > 0) {
+      issues.push(issue("factual_invention", "block", index, { detail: "intent" }));
+    }
+    // 回答に無い観点(雰囲気・スタッフ・料金 など)、仕上がりの評価、出来事・行動・生活での変化・お店の
+    // 事情の推測。言い換えとして正しいこともあるので、意味検証で回答と比べる。
     if (unsupportedPhrases(text, ASPECT_PHRASES, allSourceText).length > 0) {
       issues.push(issue("factual_invention", "risk", index, { detail: "aspect" }));
     }
     if (unsupportedPhrases(text, OUTCOME_PHRASES, allSourceText).length > 0) {
       issues.push(issue("factual_invention", "risk", index, { detail: "outcome" }));
     }
-    // 体験をふくらませるときに足されやすい、回答に無い出来事・行動・生活での変化・お店の事情の推測。
     if (unsupportedPhrases(text, INVENTED_DETAIL_PHRASES, allSourceText).length > 0) {
       issues.push(issue("factual_invention", "risk", index, { detail: "detail" }));
     }
@@ -348,12 +309,13 @@ export function lintDraft(
       issues.push(issue("softened_negative", "risk", index));
     }
 
-    if (findPhrases(text, TEMPLATE_PHRASES).length > 0) issues.push(issue("template_phrase", "style", index));
-    if (unsupportedPhrases(text, POLISHED_PHRASES, allSourceText).length > 0) {
-      issues.push(issue("template_phrase", "style", index, { detail: "polished" }));
+    // ── 関係のあいまいなつなぎ(来店回数の前置きは内容の数に数えない) ──
+    const topics = cited.filter((s) => !s.visitCount).length;
+    if (topics >= 2 && WEAK_LINK_PATTERN.test(normalize(text))) {
+      issues.push(issue("weak_connection", "style", index));
     }
 
-    // ── 抽象的なまとめ(AIが綺麗にまとめた作文に見える) ──
+    // ── 明らかな抽象総括 ──
     if (unsupportedMatch(text, ABSTRACT_NOUN_PATTERN, allSourceText)) {
       issues.push(issue("abstract_ai_summary", "style", index, { detail: "abstract_noun" }));
     }
@@ -366,16 +328,6 @@ export function lintDraft(
       issues.push(issue("abstract_ai_summary", "style", index, { detail: "closing_summary" }));
     }
 
-    // ── 1文への詰め込み・関係のあいまいなつなぎ(読んだときに引っかかる文) ──
-    const topics = cited.filter((s) => !s.visitCount).length;
-    const clauseBreaks = normalize(text).match(CLAUSE_BREAK)?.length ?? 0;
-    if (topics > MAX_TOPICS_PER_SENTENCE || (topics === MAX_TOPICS_PER_SENTENCE && clauseBreaks >= 2)) {
-      issues.push(issue("overloaded_sentence", "style", index));
-    }
-    if (topics >= 2 && WEAK_LINK_PATTERN.test(normalize(text))) {
-      issues.push(issue("weak_connection", "style", index));
-    }
-
     traits.push({ citesNegative, hasClaimVocabulary: claims.length > 0 || medical.length > 0 });
   });
 
@@ -385,11 +337,6 @@ export function lintDraft(
     if (source.negative && !citedIds.has(source.id)) {
       issues.push(issue("negative_not_reflected", "block", null, { sourceId: source.id }));
     }
-  }
-
-  const mainIds = options.mainSourceIds ?? [];
-  if (mainIds.length > 0 && !mainIds.some((id) => citedIds.has(id))) {
-    issues.push(issue("main_not_used", "style", null));
   }
 
   for (const source of sources) {
@@ -404,7 +351,7 @@ export function lintDraft(
   }
 
   // 同じ回答の言葉を、別の文でもう一度書いている(2回目以降の文を指摘する)。出典にしただけで
-  // 回答の言葉を使っていない文(「またお願いしたいです！」の出典など)は数えない。
+  // 回答の言葉を使っていない文は数えない。
   for (const source of sources) {
     if (countChars(source.text) < 2) continue;
     const repeating = sentences
@@ -415,13 +362,7 @@ export function lintDraft(
     }
   }
 
-  // 体験者の主観が表れている文の割合。1文も無い、または3文以上で3分の1未満なら、事実の列挙だけ。
-  const subjectiveCount = sentences.filter((s) => hasSubjectiveMarker(s.text)).length;
-  const lowTexture =
-    subjectiveCount === 0 || (sentences.length >= 3 && subjectiveCount / sentences.length < 1 / 3);
-  if (lowTexture) issues.push(issue("low_emotional_texture", "style", null));
-
-  // 質問の順に、1文に1つずつ、選択肢をほぼそのまま写して並べただけ。
+  // 質問の順に、1文に1つずつ、選択肢をほぼそのまま写して並べただけ(アンケートの要約)。
   if (sentences.length >= 3) {
     const oneEach = sentences.every((s) => s.sourceIds.length === 1);
     const ids = sentences.map((s) => materialNumber(s.sourceIds[0] ?? "M0"));
@@ -430,41 +371,16 @@ export function lintDraft(
       const source = sourceById.get(s.sourceIds[0] ?? "");
       return source !== undefined && !source.ownWords && bigramOverlap(source.text, s.text) >= COPIED_CHOICE_OVERLAP;
     }).length;
-    if (oneEach && inSurveyOrder && (copied / sentences.length >= 0.5 || lowTexture)) {
+    if (oneEach && inSurveyOrder && copied / sentences.length >= 0.5) {
       issues.push(issue("robotic_survey_summary", "style", null));
     }
   }
 
-  // 語尾が3回続けて同じ、または文の長さがそろいすぎている。
-  let run = 1;
-  let monotone = false;
-  for (let i = 1; i < sentences.length; i++) {
-    run = sentenceEnding(sentences[i].text) === sentenceEnding(sentences[i - 1].text) ? run + 1 : 1;
-    if (run >= MONOTONE_RUN) monotone = true;
-  }
-  let uniformLength = false;
-  if (sentences.length >= 3) {
-    const lengths = sentences.map((s) => countChars(s.text));
-    const mean = lengths.reduce((a, b) => a + b, 0) / lengths.length;
-    const sd = Math.sqrt(lengths.reduce((a, b) => a + (b - mean) ** 2, 0) / lengths.length);
-    uniformLength = mean > 0 && sd / mean < MIN_LENGTH_VARIATION;
-  }
-  if (monotone || uniformLength) issues.push(issue("uniform_sentence_structure", "style", null));
-
-  const draftText = sentences.map((s) => s.text).join("");
-  // 感嘆符は、続けて付ける(「！！」)か、数が多すぎるときだけ指摘する(毎文に付けると3つ以上になる)。
-  if (countExclamations(draftText) > MAX_EXCLAMATIONS || /[!?]{2,}/u.test(normalize(draftText))) {
-    issues.push(issue("exclamation_overuse", "style", null));
-  }
-  if (findPhrases(draftText, HONORIFIC_INFLATION_PHRASES).length >= HONORIFIC_MIN_COUNT) {
-    issues.push(issue("honorific_inflation", "style", null));
-  }
-
-  if (options.targetChars) {
-    const chars = countChars(draftText);
-    if (chars < options.targetChars.min || chars > options.targetChars.max) {
-      issues.push(issue("length_out_of_range", "style", null));
-    }
+  // 3文以上が、すべて同じ語尾(3字)で終わる(「〜でした。〜でした。〜でした。」)。
+  // 作り直しにつながるので、語尾の一部が同じ程度(「です」が続く など)では指摘しない。
+  if (sentences.length >= MONOTONE_MIN_SENTENCES) {
+    const endings = new Set(sentences.map((s) => sentenceEnding(s.text, 3)));
+    if (endings.size === 1) issues.push(issue("uniform_sentence_structure", "style", null));
   }
 
   return { issues, traits };
@@ -493,16 +409,22 @@ export function documentBlockIssues(result: LintResult): LintIssue[] {
   return result.issues.filter((i) => i.severity === "block" && i.sentenceIndex === null);
 }
 
-/** 人間らしさに関する指摘(残っていれば、パイプラインが1回だけ書き直す)。 */
-export const TEXTURE_CODES: ReadonlySet<LintCode> = new Set<LintCode>([
-  "robotic_survey_summary",
-  "low_emotional_texture",
-  "abstract_ai_summary",
-  "template_phrase",
-  "overloaded_sentence",
+/**
+ * 構造の問題(BROKEN_CAUSALITY・ABSTRACT_SUMMARY・STRUCTURE)。部分修正ではなく、パイプラインが
+ * Style Seed を変えて全文を1回だけ作り直す。
+ */
+export const STRUCTURE_CODES: ReadonlySet<LintCode> = new Set<LintCode>([
   "weak_connection",
+  "abstract_ai_summary",
+  "robotic_survey_summary",
+  "uniform_sentence_structure",
   "repeated_content",
 ]);
+
+/** 構造の問題の数。 */
+export function structureIssueCount(result: LintResult): number {
+  return result.issues.filter((i) => STRUCTURE_CODES.has(i.code)).length;
+}
 
 /** 指摘の名前(細目があれば「code:detail」)。修正の依頼と記録に使う。文や素材の内容は含めない。 */
 export function issueKey(issue: LintIssue): string {
