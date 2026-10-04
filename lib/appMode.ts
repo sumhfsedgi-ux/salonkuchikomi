@@ -10,11 +10,24 @@
 // 持って同期がズレるリスクを負うより、NEXT_PUBLIC_APP_MODEひとつに統一する。
 
 export type AppMode = "salonpack" | "reviews";
-export type Feature = "reviews" | "blog" | "notifications" | "settings";
+export type Feature =
+  | "reviews"
+  | "blog"
+  // 予約通知(Gmail監視 -> LINE)。SalonPackのみ。
+  | "notifications"
+  | "settings"
+  // 口コミ465の次期機能(docs/plans/reviews-465-plan.md)。口コミ465単体版から
+  // SalonPackへ移っても同じ機能・同じ接続をそのまま使えるよう、両モードに含める。
+  // Google連携系はさらに Gate(G1/G2)の確認が取れるまで機能フラグで止める。
+  | "review_replies"
+  | "google_reviews"
+  | "review_notifications";
+
+const REVIEW_SUITE_FEATURES: Feature[] = ["review_replies", "google_reviews", "review_notifications"];
 
 const MODE_FEATURES: Record<AppMode, Feature[]> = {
-  reviews: ["reviews", "settings"],
-  salonpack: ["reviews", "blog", "notifications", "settings"],
+  reviews: ["reviews", "settings", ...REVIEW_SUITE_FEATURES],
+  salonpack: ["reviews", "blog", "notifications", "settings", ...REVIEW_SUITE_FEATURES],
 };
 
 export function getAppMode(): AppMode {

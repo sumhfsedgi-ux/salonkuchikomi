@@ -47,7 +47,7 @@ export default async function DashboardHomePage({
     );
   }
 
-  // オンボーディング完了後、reviewsモード(口コミ365)のデプロイでは常に
+  // オンボーディング完了後、reviewsモード(APP_MODE=reviews)のデプロイでは常に
   // 口コミ管理画面へ直接転送する -- 3カードのホームグリッドは見せない。
   // ログイン後遷移の合流点はここ1箇所のみで、LoginForm/loginページ側の
   // redirect("/dashboard")は変更不要(PLAN参照)。

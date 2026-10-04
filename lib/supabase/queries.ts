@@ -1,7 +1,24 @@
 import { cache } from "react";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import type { OwnerSalon } from "@/lib/types";
+import type { SalonPlan } from "@/lib/access/plan";
 import type { QuestionData } from "@/components/admin/QuestionEditor";
+import { pickPrimarySalon, toRowArray } from "@/lib/supabase/primarySalon";
+
+// The salons columns getCurrentSalon selects, in their raw (snake_case) shape.
+interface OwnerSalonRow {
+  id: string;
+  owner_id: string;
+  name: string;
+  slug: string;
+  google_review_url: string | null;
+  description: string | null;
+  business_type: string | null;
+  onboarding_completed: boolean;
+  plan: SalonPlan;
+  created_at: string;
+  updated_at: string;
+}
 
 /**
  * The currently-authenticated user, memoized per request (same `supabase`
@@ -37,10 +54,14 @@ export const getCurrentSalon = cache(async (
   if (!user) return null;
 
   // profiles->salons in one round trip via embedding, instead of two
-  // sequential queries. salons has no unique constraint on owner_id, so
-  // PostgREST returns it as an array even though the app only ever expects
-  // one salon per owner (same assumption the rest of the codebase already
-  // makes — see OnboardingWizard.tsx).
+  // sequential queries. salons has no unique constraint on owner_id (on
+  // purpose -- see lib/supabase/primarySalon.ts), so PostgREST returns it as
+  // an array; toRowArray also accepts an object in case that ever changes.
+  // The app's current product rule is one salon per owner (enforced in
+  // createSalonAction), but embedding order isn't guaranteed, so the salon is
+  // picked deterministically instead of taking whatever row comes first.
+  // Any future "currently selected salon" logic should live here too, so
+  // every caller keeps resolving the salon through this one function.
   const { data: profile } = await supabase
     .from("profiles")
     .select(
@@ -50,7 +71,14 @@ export const getCurrentSalon = cache(async (
     .maybeSingle();
   if (!profile) return null;
 
-  const salon = profile.salons?.[0];
+  const salons = toRowArray<OwnerSalonRow>(profile.salons);
+  if (salons.length > 1) {
+    console.warn("getCurrentSalon: multiple salons found for one owner; using the oldest one", {
+      profileId: profile.id,
+      salonCount: salons.length,
+    });
+  }
+  const salon = pickPrimarySalon(salons);
   if (!salon) return null;
 
   return {

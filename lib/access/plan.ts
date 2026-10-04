@@ -11,9 +11,14 @@ import type { Feature } from "@/lib/appMode";
 
 export type SalonPlan = "reviews" | "salonpack";
 
+// 口コミ465の次期機能は両プランに含める。reviews -> salonpack へのアップグレードで
+// 使えなくなったり、口コミ通知LINE・Google連携の再連携が必要になったりしないようにする
+// (docs/plans/reviews-465-plan.md §4-2)。
+const REVIEW_SUITE_FEATURES: Feature[] = ["review_replies", "google_reviews", "review_notifications"];
+
 const PLAN_FEATURES: Record<SalonPlan, Feature[]> = {
-  reviews: ["reviews", "settings"],
-  salonpack: ["reviews", "blog", "notifications", "settings"],
+  reviews: ["reviews", "settings", ...REVIEW_SUITE_FEATURES],
+  salonpack: ["reviews", "blog", "notifications", "settings", ...REVIEW_SUITE_FEATURES],
 };
 
 export function isFeatureEnabledForPlan(plan: SalonPlan, feature: Feature): boolean {
