@@ -11,7 +11,7 @@ const bodySchema = z.object({
   salonId: z.string().uuid(),
 });
 
-// お客様ページの CTA(内容を確認してGoogleに投稿する)のクリックを記録する(本文は受け取らない)。
+// お客様ページの CTA(この内容をコピーしてGoogleへ進む)のクリックを記録する(本文は受け取らない)。
 // その店舗の生成として記録済みの generation_id だけを受け付け、同じ生成の2回目以降は無視する。
 // 記録の成否はお客様に関係ないので、受け付けたら結果にかかわらず 204 を返す。
 export async function POST(request: Request) {

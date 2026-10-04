@@ -30,7 +30,9 @@ export default function GeneratedReview({
           口コミの下書きができました
         </h2>
         <p className="mt-2 text-balance text-sm text-stone-500">
-          アンケートの回答をもとにした下書きです。内容を確認して、実際の体験と異なる部分があれば編集してください。
+          アンケートをもとに口コミ文を作成しました。
+          <br />
+          内容を確認して、必要に応じて自由に編集してください。
         </p>
       </div>
 
@@ -62,10 +64,12 @@ export default function GeneratedReview({
         onClick={onCopy}
         className="btn-primary block text-center"
       >
-        内容を確認してGoogleに投稿する
+        この内容をコピーしてGoogleへ進む
       </a>
       <p className="text-center text-xs text-stone-400">
-        口コミ文をコピーして、Googleの投稿画面を開きます
+        Googleの口コミ投稿画面が開きます。
+        <br />
+        自動で投稿されることはありません。
       </p>
     </div>
   );

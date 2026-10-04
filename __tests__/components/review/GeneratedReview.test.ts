@@ -24,13 +24,14 @@ describe("GeneratedReview の Google口コミへの導線", () => {
     ["空の下書き", ""],
   ])("%sでも同じ CTA を表示する", (_label, review) => {
     const html = render(review);
-    expect(html).toContain("内容を確認してGoogleに投稿する");
+    expect(html).toContain("この内容をコピーしてGoogleへ進む");
     expect(html).toContain(`href="${GOOGLE_URL}"`);
   });
 
-  it("投稿前に本人が確認・編集する案内を表示する(チェックボックスは無い)", () => {
+  it("投稿前に本人が確認・編集する案内と、自動で投稿されないことを表示する(チェックボックスは無い)", () => {
     const html = render("下書き");
-    expect(html).toContain("実際の体験と異なる部分があれば編集してください");
+    expect(html).toContain("内容を確認して、必要に応じて自由に編集してください。");
+    expect(html).toContain("自動で投稿されることはありません。");
     expect(html).not.toContain('type="checkbox"');
   });
 });

@@ -109,8 +109,8 @@ export default function ReviewFlow({ salon, questions }: Props) {
   // Reads `generatedReview` fresh on every render, so this always copies
   // whatever is currently in the (editable) textarea -- including any edits
   // the customer made after generation -- never the original AI output.
-  // Deliberately never blocks navigation on the result: the "内容を確認して
-  // Googleに投稿する" link's default action (opening googleReviewUrl) always proceeds
+  // Deliberately never blocks navigation on the result: the "この内容をコピーして
+  // Googleへ進む" link's default action (opening googleReviewUrl) always proceeds
   // regardless of whether the copy succeeds, so a Clipboard API failure
   // never strands the customer -- they can still select and copy the
   // textarea manually once they land on Google's page.
