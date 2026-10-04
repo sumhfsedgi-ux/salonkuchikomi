@@ -29,7 +29,8 @@ describe("lintDraft: 問題の無い下書き", () => {
       [
         { text: "初めてでしたが、説明が分かりやすかったです。", sourceIds: ["M1", "M3"] },
         { text: "施術のあとは肌がなめらかになったように感じました。", sourceIds: ["M2"] },
-        { text: "待ち時間が長かったのは残念でした。", sourceIds: ["M4"] },
+        // 「残念」は素材に無い感情なので足さない(足すと unsupported_evaluation になる)。
+        { text: "待ち時間が長かったです。", sourceIds: ["M4"] },
       ],
       [VISIT, FEELING, STAFF, WAIT],
     );
@@ -96,6 +97,20 @@ describe("lintDraft: 回答に根拠が無い内容(block)", () => {
     ]);
   });
 
+  it("文になっていない断片・明らかな文法の崩れ", () => {
+    const result = lintDraft(
+      [
+        { text: "ニキビ。", sourceIds: ["M1"] },
+        { text: "肌が明るく見えたです。", sourceIds: ["M2"] },
+        { text: "説明が分かりやすかったです。", sourceIds: ["M3"] },
+      ],
+      [VISIT, FEELING, STAFF],
+    );
+    expect(result.issues.filter((i) => i.code === "fragment").map((i) => i.sentenceIndex)).toEqual([0]);
+    expect(result.issues.filter((i) => i.code === "ungrammatical").map((i) => i.sentenceIndex)).toEqual([1]);
+    expect(blockedSentenceIndexes(result)).toEqual([0, 1]);
+  });
+
   it("下書きが空", () => {
     expect(codesOf([], [STAFF])).toEqual(["empty_draft"]);
   });
@@ -135,6 +150,15 @@ describe("lintDraft: 意味が強くなっている・変わっている疑い(r
     expect(codesOf([{ text: "待ち時間が少し長かったです。", sourceIds: ["M7"] }], [own])).not.toContain(
       "softened_negative",
     );
+  });
+
+  it("回答に無い評価・感情は意味検証の対象にする(回答にあれば対象にしない)", () => {
+    const result = lintDraft([{ text: "説明が分かりやすくて、リラックスできました。", sourceIds: ["M3"] }], [STAFF]);
+    expect(lintCodes(result)).toContain("unsupported_evaluation");
+    expect(riskySentenceIndexes(result)).toEqual([0]);
+    expect(
+      codesOf([{ text: "リラックスできました。", sourceIds: ["M9"] }], [source("M9", "リラックスできた")]),
+    ).not.toContain("unsupported_evaluation");
   });
 
   it("回答に無い強い強調", () => {

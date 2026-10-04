@@ -134,7 +134,10 @@ function candidatePlan(materials: readonly Material[], random: Random): Composit
     materials.filter((m) => !mainIds.has(m.id) && !requiredIds.has(m.id)),
     random,
   );
-  const extraCount = Math.min(pool.length, Math.floor(random() * 3));
+  // 回答が多いのに1〜2個しか使わないと、答えた内容が口コミにほとんど残らない。
+  // 素材が4つ以上あるときは、補助を少なくとも1つ足す(0〜2個 → 1〜3個)。
+  const minExtra = materials.length >= 4 ? 1 : 0;
+  const extraCount = Math.min(pool.length, minExtra + Math.floor(random() * 3));
   const support = [...required, ...pool.slice(0, extraCount)];
   const supportIds = new Set(support.map((m) => m.id));
 

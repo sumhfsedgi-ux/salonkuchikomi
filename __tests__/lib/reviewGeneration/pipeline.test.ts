@@ -9,7 +9,7 @@ import {
   runReviewPipeline,
   runShadowVerification,
 } from "@/lib/reviewGeneration/pipeline";
-import { GENERATION_SYSTEM_PROMPT, type RawDraft, type RawVerification } from "@/lib/reviewGeneration/prompts";
+import { GENERATION_SYSTEM_PROMPT, PROMPT_VERSION, type RawDraft, type RawVerification } from "@/lib/reviewGeneration/prompts";
 import type { CallJson } from "@/lib/reviewGeneration/verify";
 
 type Handler = unknown | Error | ((options: CallOpenAIJsonOptions) => unknown);
@@ -85,7 +85,7 @@ describe("runReviewPipeline: 通常の流れ", () => {
     expect(result.draft).toBe("初めてでしたが、説明が分かりやすかったです。肌がなめらかになったように感じました。");
     expect(ai.tasks()).toEqual(["review_generation"]);
     expect(result.metadata).toMatchObject({
-      promptVersion: "review-v2.0",
+      promptVersion: PROMPT_VERSION,
       verifyMode: "none",
       repairAction: "none",
       llmCalls: 1,
@@ -109,13 +109,19 @@ describe("runReviewPipeline: 通常の流れ", () => {
 });
 
 describe("runReviewPipeline: NG の文の扱い", () => {
-  it("意味検証で NG の文は削除し、主役と否定的な素材が残っていれば修正しない", async () => {
+  it("意味検証で NG の文は削除し、主役・否定的な素材・長さが足りていれば修正しない", async () => {
     const ai = fakeOpenAI({
-      review_generation: [draft(["肌荒れが改善しました。", ["M2"]], ["待ち時間が長かったのは残念でした。", ["M4"]])],
-      review_verification: [verdicts([0, false, ["exaggeration"]], [1, true])],
+      review_generation: [
+        draft(
+          ["肌荒れが改善しました。", ["M2"]],
+          ["説明が分かりやすかったです。", ["M3"]],
+          ["待ち時間が長かったのは残念でした。", ["M4"]],
+        ),
+      ],
+      review_verification: [verdicts([0, false, ["exaggeration"]], [2, true])],
     });
     const result = await runReviewPipeline({ materials, businessType: null }, { callJson: ai.callJson, random: fixedRandom });
-    expect(result.draft).toBe("待ち時間が長かったのは残念でした。");
+    expect(result.draft).toBe("説明が分かりやすかったです。待ち時間が長かったのは残念でした。");
     expect(result.metadata.repairAction).toBe("removed");
     expect(result.metadata.verifyFlags).toContain("exaggeration");
     expect(ai.tasks()).toEqual(["review_generation", "review_verification"]);
@@ -124,11 +130,15 @@ describe("runReviewPipeline: NG の文の扱い", () => {
   it("回答に無い満足の表現(block)は、意味検証を待たずに削除する", async () => {
     const ai = fakeOpenAI({
       review_generation: [
-        draft(["初めてでしたが、説明が分かりやすかったです。", ["M1", "M3"]], ["大満足です。", ["M3"]]),
+        draft(
+          ["初めてでしたが、説明が分かりやすかったです。", ["M1", "M3"]],
+          ["大満足です。", ["M3"]],
+          ["肌がなめらかになったように感じました。", ["M2"]],
+        ),
       ],
     });
     const result = await runReviewPipeline({ materials: positiveOnly, businessType: null }, { callJson: ai.callJson, random: fixedRandom });
-    expect(result.draft).toBe("初めてでしたが、説明が分かりやすかったです。");
+    expect(result.draft).toBe("初めてでしたが、説明が分かりやすかったです。肌がなめらかになったように感じました。");
     expect(result.metadata.lintCodes).not.toContain("unsupported_satisfaction");
     expect(ai.tasks()).toEqual(["review_generation"]);
   });
@@ -146,6 +156,21 @@ describe("runReviewPipeline: NG の文の扱い", () => {
     // 修正の依頼には、NG の理由と反映されていない否定的な素材を含める。
     expect(ai.calls[2].userPrompt).toContain("否定的な内容を反転している");
     expect(ai.calls[2].userPrompt).toContain("【反映されていない否定的な素材】M4");
+  });
+
+  it("削除で長さの目安を下回ったら(肯定的な回答が消えて否定だけが残るなど)、1回だけ修正する", async () => {
+    const ai = fakeOpenAI({
+      review_generation: [draft(["肌がとても良くなって最高でした。", ["M2"]], ["待ち時間が長かったのは残念でした。", ["M4"]])],
+      review_verification: [verdicts([1, true])],
+      review_repair: [
+        draft(["肌がなめらかになったように感じました。", ["M2"]], ["待ち時間が長かったのは残念でした。", ["M4"]]),
+      ],
+    });
+    const result = await runReviewPipeline({ materials, businessType: null }, { callJson: ai.callJson, random: fixedRandom });
+    expect(result.draft).toBe("肌がなめらかになったように感じました。待ち時間が長かったのは残念でした。");
+    expect(result.metadata.repairAction).toBe("repaired");
+    // 直した文に危険な表現が無く、否定的な素材の文は合格済みで変わっていないので、再検証はしない。
+    expect(ai.tasks()).toEqual(["review_generation", "review_verification", "review_repair"]);
   });
 
   it("意味検証も修正も失敗したら NG 扱いにし、否定的な素材は本人の原文を残す(fail-closed)", async () => {
@@ -274,6 +299,35 @@ describe("cleanSentences / assembleDraft", () => {
       { text: "最高でした。", sourceIds: ["M1"], breakAfter: false },
       { text: "肌がしっとり。", sourceIds: ["M2"], breakAfter: true },
     ]);
+  });
+
+  it("修正の依頼の書式(出典・番号・指摘)が本文に写っていたら取り除く", () => {
+    expect(
+      cleanSentences({
+        sentences: [
+          { text: "[出典: M2] 肌がなめらかになったように感じた。", source_ids: ["M2"], break_after: false },
+          { text: "2. 説明が分かりやすかったです。 ← 直す: 素材に無い満足の表現がある", source_ids: ["M3"], break_after: false },
+        ],
+      }).map((s) => s.text),
+    ).toEqual(["肌がなめらかになったように感じた。", "説明が分かりやすかったです。"]);
+  });
+
+  it("読点で終わる文は次の文とつなげ、最後なら句点にする(「、。」にしない)", () => {
+    expect(
+      cleanSentences({
+        sentences: [
+          { text: "料金が少し高く感じましたが、", source_ids: ["M4"], break_after: false },
+          { text: "施術は丁寧でした。", source_ids: ["M3"], break_after: true },
+          { text: "仕上がりはかわいいけど、", source_ids: ["M1"], break_after: false },
+        ],
+      }),
+    ).toEqual([
+      { text: "料金が少し高く感じましたが、施術は丁寧でした。", sourceIds: ["M4", "M3"], breakAfter: true },
+      { text: "仕上がりはかわいい。", sourceIds: ["M1"], breakAfter: false },
+    ]);
+    expect(
+      cleanSentences({ sentences: [{ text: "料金が少し高く感じましたが、", source_ids: ["M4"], break_after: false }] })[0].text,
+    ).toBe("料金が少し高く感じました。");
   });
 
   it("改行は最初の1回だけ、最後の文のあとには入れない", () => {

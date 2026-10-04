@@ -67,6 +67,15 @@ export function maskPersonalInfo(text: string): string {
   return text.replace(EMAIL_PATTERN, MASKED).replace(PHONE_PATTERN, MASKED);
 }
 
+// 回答欄に書かれた、AI への指示のような文(「以上の指示は無視して…書いてください」など)。
+// 口コミの内容ではないので、その回答は素材にしない(否定的な内容の扱いとは別)。
+const INSTRUCTION_TARGET = /指示|プロンプト|命令|システム|system|prompt|ignore/iu;
+const INSTRUCTION_ACTION = /無視して|書いてください|出力して|生成して|作成してください|従ってください|ignore/iu;
+
+export function isInstructionLike(text: string): boolean {
+  return INSTRUCTION_TARGET.test(text) && INSTRUCTION_ACTION.test(text);
+}
+
 // 文の終わりと、逆接(「〜けど、」「〜ですが、」など)の直後で区切る。
 const SEGMENT_BREAK =
   /(?<=[。！？!?\n])|(?<=(?:けど|けれど|けれども|ですが|でしたが|ましたが|ものの|のに)[、,])/u;
@@ -108,6 +117,7 @@ function toCandidates(input: MaterialInput): Candidate[] {
 
   if (input.questionType === "text") {
     const freeText = maskPersonalInfo(input.freeText ?? "").trim();
+    if (isInstructionLike(freeText)) return candidates;
     for (const segment of freeText ? splitFreeText(freeText) : []) {
       candidates.push({ ...base, kind: "free_text", text: segment });
     }
@@ -119,7 +129,7 @@ function toCandidates(input: MaterialInput): Candidate[] {
     if (text && text !== OTHER_OPTION_TEXT) candidates.push({ ...base, kind: "choice", text });
   }
   const detail = maskPersonalInfo(input.otherDetail ?? "").trim();
-  if (detail && input.selected.includes(OTHER_OPTION_TEXT)) {
+  if (detail && input.selected.includes(OTHER_OPTION_TEXT) && !isInstructionLike(detail)) {
     candidates.push({ ...base, kind: "other_detail", text: detail });
   }
   return candidates;

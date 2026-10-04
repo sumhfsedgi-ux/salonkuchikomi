@@ -218,7 +218,9 @@ export function validateAnswers(survey: ActiveSurvey, answers: readonly RawAnswe
       const max = question.type === "single" ? 1 : (question.maxSelections ?? DEFAULT_MAX_SELECTIONS);
       if (values.length > max) return { ok: false, reason: "invalid" };
       // 選択肢に無い値は、オーナーが選択肢を変えた可能性が高い(ページの再読み込みで直る)。
-      if (values.some((v) => !question.options.includes(v))) return { ok: false, reason: "stale" };
+      // 回答は前後の空白を除いているので、選択肢も同じように比べる。
+      const options = new Set(question.options.map((o) => o.trim()));
+      if (values.some((v) => !options.has(v))) return { ok: false, reason: "stale" };
     }
 
     const otherDetail =

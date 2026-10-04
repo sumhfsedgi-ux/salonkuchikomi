@@ -40,6 +40,8 @@ export interface JsonSchemaSpec {
 
 export interface CallOpenAIJsonOptions {
   task: OpenAITask;
+  /** 省略するとタスクのモデル(OPENAI_MODEL_<TASK> → OPENAI_MODEL)を使う。評価でモデルを比べるときだけ指定する。 */
+  model?: string;
   systemPrompt: string;
   userPrompt: string;
   schema: JsonSchemaSpec;
@@ -248,7 +250,7 @@ function sleep(ms: number): Promise<void> {
  */
 export async function callOpenAIJson<T>(options: CallOpenAIJsonOptions): Promise<OpenAIJsonResult<T>> {
   const apiKey = process.env.OPENAI_API_KEY;
-  const model = resolveOpenAIModel(options.task);
+  const model = options.model?.trim() || resolveOpenAIModel(options.task);
   if (!apiKey || !model) {
     throw new OpenAICallError("OPENAI_API_KEY / OPENAI_MODEL が設定されていません。", "config");
   }

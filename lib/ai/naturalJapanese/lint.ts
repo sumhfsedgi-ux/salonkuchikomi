@@ -18,6 +18,7 @@ import {
 } from "@/lib/ai/naturalJapanese/analyze";
 import {
   CHANGE_CLAIM_PHRASES,
+  EVALUATION_PHRASES,
   FLIP_PHRASES,
   HONORIFIC_INFLATION_PHRASES,
   MEDICAL_PHRASES,
@@ -70,6 +71,8 @@ export type LintCode =
   | "medical_claim"
   | "off_topic"
   | "negative_not_reflected"
+  | "fragment"
+  | "ungrammatical"
   // risk
   | "change_claim"
   | "purpose_as_result"
@@ -78,6 +81,7 @@ export type LintCode =
   | "polarity_flip"
   | "softened_negative"
   | "strong_intensifier"
+  | "unsupported_evaluation"
   // style
   | "main_not_used"
   | "own_words_paraphrased"
@@ -97,6 +101,8 @@ const SEVERITY: Record<LintCode, LintSeverity> = {
   medical_claim: "block",
   off_topic: "block",
   negative_not_reflected: "block",
+  fragment: "block",
+  ungrammatical: "block",
   change_claim: "risk",
   purpose_as_result: "risk",
   medical_term: "risk",
@@ -104,6 +110,7 @@ const SEVERITY: Record<LintCode, LintSeverity> = {
   polarity_flip: "risk",
   softened_negative: "risk",
   strong_intensifier: "risk",
+  unsupported_evaluation: "risk",
   main_not_used: "style",
   own_words_paraphrased: "style",
   template_phrase: "style",
@@ -140,6 +147,11 @@ const OWN_WORDS_MIN_OVERLAP = 0.3;
 const MONOTONE_RUN = 3;
 // 丁寧語のインフレは、この数以上で指摘する(1回なら普通の口コミにもある)。
 const HONORIFIC_MIN_COUNT = 2;
+// 句読点を除いてこれより短い文は、文になっていない断片とみなす(「ニキビ。」など)。
+const MIN_SENTENCE_CHARS = 5;
+// 明らかな文法の崩れ(「見えたです」「でしたです」など。「良かったです」は正しいので除く)。
+const UNGRAMMATICAL_PATTERN = /[^っ]たです|ですです|ますです/u;
+const PUNCTUATION = /[。．、,！？!?「」『』（）()…・〜~ー\s]/gu;
 
 function issue(code: LintCode, sentenceIndex: number | null, sourceId?: string): LintIssue {
   return sourceId === undefined
@@ -177,6 +189,8 @@ export function lintDraft(
 
     if (sentence.sourceIds.length === 0) issues.push(issue("no_source", index));
     if (cited.length < sentence.sourceIds.length) issues.push(issue("unknown_source", index));
+    if ([...text.replace(PUNCTUATION, "")].length < MIN_SENTENCE_CHARS) issues.push(issue("fragment", index));
+    if (UNGRAMMATICAL_PATTERN.test(text)) issues.push(issue("ungrammatical", index));
 
     // ── 回答に根拠が無いのに足された内容(block) ──
     if (unsupportedPhrases(text, SATISFACTION_PHRASES, allSourceText).length > 0) {
@@ -215,6 +229,9 @@ export function lintDraft(
     }
     if (unsupportedPhrases(text, STRONG_INTENSIFIERS, allSourceText).length > 0) {
       issues.push(issue("strong_intensifier", index));
+    }
+    if (unsupportedPhrases(text, EVALUATION_PHRASES, allSourceText).length > 0) {
+      issues.push(issue("unsupported_evaluation", index));
     }
 
     for (const source of cited.filter((s) => s.negative)) {

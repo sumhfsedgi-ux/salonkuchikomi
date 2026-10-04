@@ -47,7 +47,19 @@ describe("findNegativeMarkers", () => {
     expect(findNegativeMarkers("説明が少し分かりにくかったです")).toEqual(["分かりにく"]);
   });
 
+  it("料金・持ち・仕上がり・痛みの不満も拾う", () => {
+    expect(findNegativeMarkers("料金が少し高く感じましたが、施術は丁寧でした")).toEqual(["高く感じ"]);
+    expect(findNegativeMarkers("2日で一本欠けてしまいました")).toEqual(["欠け"]);
+    expect(findNegativeMarkers("前髪が思ったより短くなってしまった")).toEqual(["短くなってしま"]);
+    expect(findNegativeMarkers("力が強すぎて翌日少し痛みが残りました")).toEqual(
+      expect.arrayContaining(["痛みが残", "強すぎ"]),
+    );
+  });
+
   it("直後で打ち消されている目印は否定とみなさない", () => {
+    expect(findNegativeMarkers("強すぎず弱すぎず、ちょうどいい力加減でした")).toEqual([]);
+    expect(findNegativeMarkers("痛みが残らず快適でした")).toEqual([]);
+    expect(findNegativeMarkers("思っていたよりピリピリしなかったです")).toEqual([]);
     expect(findNegativeMarkers("強引な勧誘もなく安心でした")).toEqual([]);
     expect(findNegativeMarkers("待たされることもなく案内してもらえた")).toEqual([]);
     expect(findNegativeMarkers("気になった点はなかったです")).toEqual([]);

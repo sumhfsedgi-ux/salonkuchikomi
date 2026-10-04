@@ -13,6 +13,7 @@ import {
 } from "@/lib/ai/openai";
 import {
   containsPhrase,
+  countChars,
   findNegativeMarkers,
   normalize,
   splitSentences,
@@ -136,20 +137,48 @@ function ensureSentenceEnd(text: string): string {
   return SENTENCE_END.test(text) ? text : `${text}。`;
 }
 
-/** LLM の出力を整える(装飾・文中の改行を除き、文末の句点を補う)。 */
+const TRAILING_COMMA = /[、,，]$/u;
+// 最後に残った「〜ましたが、」「〜けど、」は、逆接を外して文を閉じる(「〜が。」にしない)。
+const TRAILING_CONJUNCTION = /(?:けれども|けれど|けど|のに|ものの|が)?[、,，]$/u;
+// 修正の依頼の書式(出典・番号・指摘)を、LLM が本文にそのまま写してしまうことがあるので取り除く。
+const ECHOED_LABEL = /\[(?:出典|source)[^\]]*\]\s*|^\s*(?:S?\d+[.:：)]|[-・])\s*|\s*←\s*直す.*$/giu;
+
+/**
+ * LLM の出力を整える(装飾・文中の改行を除き、文末の句点を補う)。
+ * 読点で終わる文(「〜けど、」など)は次の文とつなげ、「、。」にならないようにする。
+ */
 export function cleanSentences(raw: RawDraft | null | undefined): DraftSentence[] {
-  return (raw?.sentences ?? [])
-    .map((s) => {
-      const text = stripDecorations(String(s.text ?? ""))
+  const parts = (raw?.sentences ?? [])
+    .map((s) => ({
+      text: stripDecorations(String(s.text ?? ""))
         .replace(/[\r\n]+/g, "")
-        .trim();
-      return {
-        text: text ? ensureSentenceEnd(text) : "",
-        sourceIds: [...new Set(Array.isArray(s.source_ids) ? s.source_ids : [])],
-        breakAfter: s.break_after === true,
-      };
-    })
+        .replace(ECHOED_LABEL, "")
+        .trim(),
+      sourceIds: Array.isArray(s.source_ids) ? s.source_ids : [],
+      breakAfter: s.break_after === true,
+    }))
     .filter((s) => s.text.length > 0);
+
+  const sentences: DraftSentence[] = [];
+  let pending: { text: string; sourceIds: string[] } | null = null;
+  for (const part of parts) {
+    const text: string = pending ? pending.text + part.text : part.text;
+    const sourceIds: string[] = pending ? [...pending.sourceIds, ...part.sourceIds] : part.sourceIds;
+    if (TRAILING_COMMA.test(text)) {
+      pending = { text, sourceIds };
+      continue;
+    }
+    pending = null;
+    sentences.push({ text: ensureSentenceEnd(text), sourceIds: [...new Set(sourceIds)], breakAfter: part.breakAfter });
+  }
+  if (pending) {
+    sentences.push({
+      text: pending.text.replace(TRAILING_CONJUNCTION, "。"),
+      sourceIds: [...new Set(pending.sourceIds)],
+      breakAfter: false,
+    });
+  }
+  return sentences;
 }
 
 /** 文をつなげて下書きにする。改行は最初の1回だけ使う。 */
@@ -348,11 +377,14 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
   if (rejected.size > 0) meta.action("removed");
 
   // ── 3. 削除で足りなければ1回だけ部分修正 ──
-  // 否定的な素材が反映されていない・下書きが空、または NG の削除で主役が消えたときに直す。
+  // 否定的な素材が反映されていない・下書きが空のとき、または NG の削除で主役が消えたり
+  // 長さの目安を下回ったりしたとき(肯定的な回答が消えて、否定だけが残るのを防ぐ)に直す。
   const mainNotUsed = (draft: readonly DraftSentence[]) =>
     lint(draft).issues.some((i) => i.code === "main_not_used");
   const mainLostByRemoval = rejected.size > 0 && !mainNotUsed(sentences) && mainNotUsed(kept);
-  const needsRepair = documentBlockIssues(lint(kept)).length > 0 || mainLostByRemoval;
+  const tooShortAfterRemoval =
+    rejected.size > 0 && countChars(assembleDraft(kept)) < LENGTH_TARGETS[plan.length].chars.min;
+  const needsRepair = documentBlockIssues(lint(kept)).length > 0 || mainLostByRemoval || tooShortAfterRemoval;
 
   if (needsRepair && remaining() >= MIN_CALL_BUDGET_MS) {
     const missingNegativeIds = documentBlockIssues(lint(kept))
@@ -413,6 +445,7 @@ const PLAIN_DRAFT_CODES = new Set<string>([
   "medical_claim",
   "off_topic",
   "strong_intensifier",
+  "unsupported_evaluation",
   "template_phrase",
   "honorific_inflation",
   "monotone_endings",

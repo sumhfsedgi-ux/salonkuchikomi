@@ -102,6 +102,15 @@ describe("validateAnswers", () => {
     expect(validateAnswers(SURVEY, [{ questionId: Q_VISIT, values: ["5回目"] }])).toEqual({ ok: false, reason: "stale" });
   });
 
+  it("選択肢の前後に空白があっても照合できる", () => {
+    const survey: ActiveSurvey = {
+      ...SURVEY,
+      questions: [{ ...SURVEY.questions[0], options: ["初めて ", " 2〜3回目"] }],
+    };
+    expect(validateAnswers(survey, [{ questionId: Q_VISIT, values: ["初めて "] }]).ok).toBe(true);
+    expect(validateAnswers(survey, [{ questionId: Q_VISIT, values: ["2〜3回目"] }]).ok).toBe(true);
+  });
+
   it("もう無い質問への空の回答は無視する", () => {
     const result = validateAnswers(SURVEY, [
       { questionId: UNKNOWN, question: "消えた質問", values: [] },
