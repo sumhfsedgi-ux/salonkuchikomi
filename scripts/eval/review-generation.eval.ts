@@ -2,6 +2,7 @@
 //   npm run eval:review                … 件数と API 呼び出し回数の見込みだけを表示する(呼び出さない)
 //   EVAL_RUN=1 npm run eval:review     … 実行する(.env.local の OPENAI_API_KEY を使う)
 //   EVAL_SKIP_V1=1 / EVAL_SKIP_VERIFIERS=1 … v1 / 意味検証モデルの比較を省く(2回目以降の評価用)
+//   EVAL_RUN=1 EVAL_REAUDIT=<結果のJSON> … 保存済みの下書きを作り直さず、監査と採点だけをやり直す
 // 架空の回答(scripts/eval/reviewCases.ts)だけを使う。結果は EVAL_OUT_DIR(既定 .eval-output/、
 // git の管理外)に保存する。呼び出しが EVAL_MAX_CALLS を超えそうになったら中止する。
 //
@@ -11,7 +12,7 @@
 //     読み手としての採点(気持ち・温度感、自然さ、アンケートの要約に見えるか)
 //  2. 意味検証モデルの候補: 正解付きの20文で、NG を見つけられた割合・誤って NG にした割合・待ち時間
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, it } from "vitest";
 import { callOpenAIJson, type CallOpenAIJsonOptions } from "@/lib/ai/openai";
@@ -36,6 +37,10 @@ const OUT_DIR = process.env.EVAL_OUT_DIR?.trim() || ".eval-output";
 // 2回目以降の評価で、v1 や意味検証モデルの比較を省くとき(前回の結果を使う)。
 const SKIP_V1 = process.env.EVAL_SKIP_V1 === "1";
 const SKIP_VERIFIERS = process.env.EVAL_SKIP_VERIFIERS === "1";
+const REAUDIT_FILE = process.env.EVAL_REAUDIT?.trim();
+// 監査・採点の呼び出しが失敗したとき(429 など)に、間を空けてやり直す回数と間隔。
+const JUDGE_RETRIES = 2;
+const JUDGE_RETRY_DELAY_MS = 5_000;
 
 class CallBudget {
   used = 0;
@@ -93,6 +98,18 @@ function countBy(values: readonly string[]): Record<string, number> {
   return Object.fromEntries(Object.entries(counts).sort((a, b) => b[1] - a[1]));
 }
 
+/** 監査・採点を、失敗したら間を空けてやり直す(失敗した分を抜いて集計すると、比較が偏るため)。 */
+async function withJudgeRetry<T>(fn: () => Promise<T>): Promise<T | null> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch {
+      if (attempt >= JUDGE_RETRIES) return null;
+      await new Promise((resolve) => setTimeout(resolve, JUDGE_RETRY_DELAY_MS * (attempt + 1)));
+    }
+  }
+}
+
 interface AuditResult {
   sentences: number;
   unsupported: number;
@@ -104,7 +121,7 @@ async function audit(materials: Material[], draft: string): Promise<AuditResult 
   const sentences = splitSentences(draft);
   if (sentences.length === 0) return { sentences: 0, unsupported: 0, issues: [] };
   const ids = materials.map((m) => m.id);
-  try {
+  return withJudgeRetry(async () => {
     const outcome = await verifySentences(countingCall(AUDIT_MODEL), {
       materials,
       sentences: sentences.map((text, index) => ({ index, text, sourceIds: ids })),
@@ -117,9 +134,7 @@ async function audit(materials: Material[], draft: string): Promise<AuditResult 
       unsupported: verdicts.filter((v) => !v.supported).length,
       issues: verdicts.flatMap((v) => v.issues),
     };
-  } catch {
-    return null;
-  }
+  });
 }
 
 interface QualityScore {
@@ -150,7 +165,7 @@ const QUALITY_SYSTEM_PROMPT = `あなたは口コミの読み手として採点�
 /** 読み手としての採点(評価だけで使う。本番では使わない)。 */
 async function judgeQuality(materials: Material[], draft: string): Promise<QualityScore | null> {
   if (!draft.trim()) return null;
-  try {
+  return withJudgeRetry(async () => {
     const result = await countingCall()<{ warmth: number; naturalness: number; survey_summary: boolean }>({
       task: "review_verification",
       model: AUDIT_MODEL,
@@ -167,9 +182,7 @@ async function judgeQuality(materials: Material[], draft: string): Promise<Quali
       naturalness: clamp(result.data.naturalness),
       surveySummary: result.data.survey_summary === true,
     };
-  } catch {
-    return null;
-  }
+  });
 }
 
 interface DraftResult {
@@ -287,6 +300,9 @@ function summarizeDrafts(results: DraftResult[], cases: readonly ReviewCase[]) {
     quality: summarizeQuality(ok.map((r) => r.quality).filter((q): q is QualityScore => q !== null)),
     negativeCases: negativeIndexes.length,
     negativeReflected,
+    // 監査・採点ができなかった下書きの数(0 でなければ、その分だけ比較の母数が減っている)。
+    auditMissing: ok.length - audits.length,
+    qualityMissing: ok.filter((r) => r.quality === null).length,
     auditSentences: sentenceCount,
     auditUnsupported: unsupported,
     auditDraftsWithIssue: audits.filter((a) => a.unsupported > 0).length,
@@ -360,8 +376,78 @@ function estimateCalls() {
   };
 }
 
+interface SavedSample {
+  id: string;
+  v1: string | null;
+  v2: string;
+}
+
+/** 保存済みの下書きを、作り直さずに監査・採点し直す(待ち時間や内部の指摘は元の結果を見る)。 */
+async function reauditSavedDrafts(file: string) {
+  const saved = JSON.parse(await readFile(file, "utf8")) as { samples: SavedSample[]; [key: string]: unknown };
+  const judge = async (testCase: ReviewCase, draft: string | null | undefined): Promise<DraftResult | null> => {
+    if (draft == null) return null;
+    if (draft.startsWith("(失敗")) return { ok: false, latencyMs: 0, errorKind: draft, lint: [], audit: null, quality: null };
+    const materials = buildMaterials(testCase.answers);
+    return {
+      ok: true,
+      draft,
+      latencyMs: 0,
+      lint: lintPlainDraft(draft, materials),
+      audit: await audit(materials, draft),
+      quality: await judgeQuality(materials, draft),
+    };
+  };
+  const cases = REVIEW_CASES.filter((c) => saved.samples.some((s) => s.id === c.id));
+  const perCase = await mapWithConcurrency(cases, CONCURRENCY, async (testCase) => {
+    const sample = saved.samples.find((s) => s.id === testCase.id) as SavedSample;
+    return { testCase, sample, v1: await judge(testCase, sample.v1), v2: await judge(testCase, sample.v2) };
+  });
+  const withoutLatency = (results: (DraftResult | null)[]) => {
+    if (results.some((r) => r === null)) return null;
+    const { latencyP50, latencyP95, ...rest } = summarizeDrafts(results as DraftResult[], cases);
+    void latencyP50;
+    void latencyP95;
+    return rest;
+  };
+  return {
+    reauditedAt: new Date().toISOString(),
+    source: file,
+    auditModel: AUDIT_MODEL,
+    apiCalls: budget.used,
+    generationModel: saved.generationModel,
+    v1: withoutLatency(perCase.map((r) => r.v1)),
+    v2: withoutLatency(perCase.map((r) => r.v2)),
+    samples: perCase.map(({ testCase, sample, v1, v2 }) => ({
+      id: testCase.id,
+      negative: testCase.negative,
+      v1: sample.v1,
+      v1Lint: v1?.lint ?? null,
+      v1Audit: v1?.audit?.issues ?? null,
+      v1Quality: v1?.quality ?? null,
+      v2: sample.v2,
+      v2Lint: v2?.lint ?? null,
+      v2Audit: v2?.audit?.issues ?? null,
+      v2Quality: v2?.quality ?? null,
+    })),
+  };
+}
+
 describe("口コミ生成のオフライン評価", () => {
   it("v1 と v2、意味検証モデルを比べる", async () => {
+    if (REAUDIT_FILE) {
+      console.log("保存済みの下書きを監査・採点し直します", { file: REAUDIT_FILE, auditModel: AUDIT_MODEL });
+      if (!RUN) {
+        console.log("EVAL_RUN=1 を付けると実行します(下書き1件につき監査と採点の2回、API を呼び出します)。");
+        return;
+      }
+      const report = await reauditSavedDrafts(REAUDIT_FILE);
+      await mkdir(OUT_DIR, { recursive: true });
+      const out = path.join(OUT_DIR, `review-reaudit-${report.reauditedAt.replace(/[:.]/g, "-")}.json`);
+      await writeFile(out, JSON.stringify(report, null, 2), "utf8");
+      console.log(JSON.stringify({ ...report, samples: `${report.samples.length}件(${out})` }, null, 2));
+      return;
+    }
     const estimate = estimateCalls();
     console.log("評価の見込み", estimate);
     if (!RUN) {
@@ -385,7 +471,7 @@ describe("口コミ生成のオフライン評価", () => {
       generatedAt: new Date().toISOString(),
       elapsedSec: Math.round((Date.now() - startedAt) / 1000),
       apiCalls: budget.used,
-      generationModel: process.env.OPENAI_MODEL,
+      generationModel: process.env.OPENAI_MODEL_REVIEW_GENERATION || process.env.OPENAI_MODEL,
       verificationModelInV2: process.env.OPENAI_MODEL_REVIEW_VERIFICATION || process.env.OPENAI_MODEL,
       auditModel: AUDIT_MODEL,
       v1: SKIP_V1 ? null : summarizeDrafts(perCase.map((r) => r.v1 as DraftResult), REVIEW_CASES),

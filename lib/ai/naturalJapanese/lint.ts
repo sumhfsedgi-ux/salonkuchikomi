@@ -39,6 +39,7 @@ import {
   OFF_TOPIC_PHRASES,
   OUTCOME_PHRASES,
   OVERALL_POSITIVE_PHRASES,
+  REPEAT_VISIT_PATTERN,
   SATISFACTION_PHRASES,
   SITUATION_PHRASES,
   SOFTENER_PHRASES,
@@ -197,6 +198,7 @@ export function lintDraft(
   const sourceById = new Map(sources.map((s) => [s.id, s]));
   const allSourceText = sources.map((s) => s.text).join("\n");
   const firstVisit = findPhrases(allSourceText, FIRST_VISIT_PHRASES).length > 0;
+  const repeatVisit = REPEAT_VISIT_PATTERN.test(normalize(allSourceText));
   const hasNegative = sources.some((s) => s.negative);
 
   if (sentences.length === 0) {
@@ -234,6 +236,10 @@ export function lintDraft(
     if (unsupportedPhrases(text, VISIT_FACT_PHRASES, allSourceText).length > 0) {
       // 初めての来店と答えているのに「何度も」「いつも」などは矛盾。回数が分からなければ意味検証に任せる。
       issues.push(issue("factual_invention", firstVisit ? "block" : "risk", index, { detail: "visit_count" }));
+    }
+    // 逆に、回答に無い「初めて」も来店回数の捏造。2回目以降と答えていれば矛盾(block)。
+    if (!firstVisit && findPhrases(text, FIRST_VISIT_PHRASES).length > 0) {
+      issues.push(issue("factual_invention", repeatVisit ? "block" : "risk", index, { detail: "visit_count" }));
     }
     // 回答に無い観点(雰囲気・スタッフ・料金 など)や仕上がりの評価は、気持ちの補完に見えて事実の捏造に
     // なりやすい。言い換えとして正しいこともあるので、意味検証で回答と比べる。

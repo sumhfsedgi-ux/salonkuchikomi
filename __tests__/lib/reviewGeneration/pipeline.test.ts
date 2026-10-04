@@ -383,6 +383,16 @@ describe("lintPlainDraft(v1 の下書きの計測用)", () => {
     expect(lintPlainDraft("説明が分かりやすかったです。", materials)).toContain("negative_not_reflected");
     expect(lintPlainDraft("待ち時間が長かったのは残念でした。", materials)).not.toContain("negative_not_reflected");
   });
+
+  it("漢字とかなの表記ゆれ(「分かりにくい」と「わかりにくい」)は、反映されているとみなす", () => {
+    const mixed = buildMaterials([
+      { questionText: "ご自由にお書きください", questionType: "text", selected: [], freeText: "説明が早口で少し分かりにくかった" },
+    ]);
+    expect(mixed.some((m) => m.negative)).toBe(true);
+    expect(lintPlainDraft("説明が少し早口で、内容がわかりにくかったのが残念でした。", mixed)).not.toContain(
+      "negative_not_reflected",
+    );
+  });
 });
 
 describe("runShadowVerification", () => {

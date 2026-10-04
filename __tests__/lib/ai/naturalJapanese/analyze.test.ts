@@ -3,6 +3,7 @@ import {
   bigramOverlap,
   countChars,
   findNegativeMarkers,
+  foldSpelling,
   hasPerception,
   isPurposeLike,
   normalize,
@@ -14,6 +15,15 @@ import {
 describe("normalize", () => {
   it("全角英数を半角にし、空白と改行を除く", () => {
     expect(normalize("ＳＮＳ で 見て\n来ました")).toBe("SNSで見て来ました");
+  });
+});
+
+describe("foldSpelling", () => {
+  it("漢字とかなの表記ゆれをかなに揃える(難しい・良心などはそのまま)", () => {
+    expect(foldSpelling("分かりにくかった")).toBe(foldSpelling("わかりにくかった"));
+    expect(foldSpelling("良かったです。出来上がりも良い")).toBe("よかったです。でき上がりもよい");
+    expect(foldSpelling("難しい説明")).toBe("難しい説明");
+    expect(foldSpelling("良心的")).toBe("良心的");
   });
 });
 

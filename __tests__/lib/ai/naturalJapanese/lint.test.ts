@@ -90,6 +90,19 @@ describe("lintDraft: 事実の捏造(factual_invention)", () => {
     expect(unknown.issues).toContainEqual(expect.objectContaining({ code: "factual_invention", detail: "visit_count", severity: "risk" }));
   });
 
+  it("2回目以降と答えているのに「初めて」と書くのは block、回数が分からなければ risk", () => {
+    const repeat = source("M6", "2〜3回目");
+    const blocked = lintDraft([{ text: "初めてでもリラックスできました。", sourceIds: ["M3"] }], [repeat, STAFF]);
+    expect(blocked.issues).toContainEqual(expect.objectContaining({ code: "factual_invention", detail: "visit_count", severity: "block" }));
+    const unknown = lintDraft([{ text: "初めて伺いましたが、説明が分かりやすかったです。", sourceIds: ["M3"] }], [STAFF]);
+    expect(unknown.issues).toContainEqual(expect.objectContaining({ code: "factual_invention", detail: "visit_count", severity: "risk" }));
+    // 「1回目」と答えていれば「初めて」は回答どおり。
+    const first = source("M6", "1回目");
+    expect(lintDraft([{ text: "初めてでもリラックスできました。", sourceIds: ["M3"] }], [first, STAFF]).issues).not.toContainEqual(
+      expect.objectContaining({ detail: "visit_count" }),
+    );
+  });
+
   it("回答に無い観点(雰囲気・スタッフなど)や仕上がりの評価は、意味検証にかける", () => {
     const cut = source("M6", "カット");
     const aspect = lintDraft([{ text: "お店の雰囲気も良くて、心地よかったです。", sourceIds: ["M6"] }], [cut]);

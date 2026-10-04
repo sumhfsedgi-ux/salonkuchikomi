@@ -15,6 +15,7 @@ import {
   containsPhrase,
   countChars,
   findNegativeMarkers,
+  foldSpelling,
   normalize,
   splitSentences,
   stripDecorations,
@@ -508,7 +509,9 @@ export function lintPlainDraft(text: string, materials: readonly Material[]): st
   const sentences = splitSentences(text).map((sentence) => ({ text: sentence, sourceIds: ids }));
   const codes = lintCodes(lintDraft(sentences, toLintSources(materials))).filter((code) => PLAIN_DRAFT_CODES.has(code));
   const negativeDropped = materials.some(
-    (m) => m.negative && !findNegativeMarkers(m.text).some((marker) => containsPhrase(text, marker)),
+    (m) =>
+      m.negative &&
+      !findNegativeMarkers(m.text).some((marker) => containsPhrase(foldSpelling(text), foldSpelling(marker))),
   );
   return negativeDropped ? [...codes, "negative_not_reflected"] : codes;
 }

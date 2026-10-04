@@ -23,6 +23,23 @@ export function containsPhrase(text: string, phrase: string): boolean {
   return normalize(text).includes(normalize(phrase));
 }
 
+// 漢字とかなの表記ゆれ(「分かりにくい」と「わかりにくい」、「良かった」と「よかった」など)。
+const SPELLING_VARIANTS: readonly (readonly [RegExp, string])[] = [
+  [/分か/gu, "わか"],
+  [/出来/gu, "でき"],
+  [/下さ/gu, "くださ"],
+  [/頂/gu, "いただ"],
+  [/良(?=[いかくけさ])/gu, "よ"],
+  [/無(?=[いかくけさ])/gu, "な"],
+  [/易(?=[いかくけ])/gu, "やす"],
+  [/難(?=[いかくけ])/gu, "にく"],
+];
+
+/** 表記ゆれをかなに揃える(照合の前に、比べる両方へかける)。 */
+export function foldSpelling(text: string): string {
+  return SPELLING_VARIANTS.reduce((folded, [pattern, kana]) => folded.replace(pattern, kana), normalize(text));
+}
+
 const SENTENCE_TERMINATORS = new Set(["。", "．", "！", "？", "!", "?"]);
 
 /** 文に分ける。句点・感嘆符・疑問符・改行で区切り、区切りの記号は前の文に残す。 */
