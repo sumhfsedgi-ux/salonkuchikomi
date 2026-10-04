@@ -40,6 +40,8 @@ export default function ReviewFlow({ salon, questions }: Props) {
   const [generatedReview, setGeneratedReview] = useState("");
   // v2 の再生成で「前回と違う構成」を選ぶための前回のプラン(素材の本文は含まない)。
   const [previousPlan, setPreviousPlan] = useState<PreviousPlan | null>(null);
+  // CTA のクリックを記録するための ID(本文は送らない)。
+  const [generationId, setGenerationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -93,6 +95,7 @@ export default function ReviewFlow({ salon, questions }: Props) {
       }
       setGeneratedReview(data.review);
       setPreviousPlan(data.plan ?? null);
+      setGenerationId(typeof data.generationId === "string" ? data.generationId : null);
       setResultVersion((v) => v + 1);
     } catch {
       setError(
@@ -112,8 +115,29 @@ export default function ReviewFlow({ salon, questions }: Props) {
   // never strands the customer -- they can still select and copy the
   // textarea manually once they land on Google's page.
   async function handleCopy() {
+    recordCtaClick();
     const ok = await copyToClipboard(generatedReview);
     setToastMessage(ok ? "コピーしました" : "コピーできませんでした。テキストを選択してコピーしてください");
+  }
+
+  // 記録は失敗しても構わない(Google の投稿画面へ進むのを妨げない)。sendBeacon は
+  // ページを離れても送られる。使えないブラウザでは keepalive の fetch で送る。
+  function recordCtaClick() {
+    if (!generationId) return;
+    const payload = JSON.stringify({ generationId, salonId: salon.id });
+    try {
+      const sent = navigator.sendBeacon?.("/api/review-events", new Blob([payload], { type: "application/json" }));
+      if (!sent) {
+        void fetch("/api/review-events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+          keepalive: true,
+        }).catch(() => {});
+      }
+    } catch {
+      // 記録できなくても何もしない。
+    }
   }
 
   const showResult = loading || generatedReview !== "" || error !== null;

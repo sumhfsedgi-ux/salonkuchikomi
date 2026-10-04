@@ -11,7 +11,13 @@ import {
   type OpenAITask,
   type OpenAIUsage,
 } from "@/lib/ai/openai";
-import { normalize, stripDecorations } from "@/lib/ai/naturalJapanese/analyze";
+import {
+  containsPhrase,
+  findNegativeMarkers,
+  normalize,
+  splitSentences,
+  stripDecorations,
+} from "@/lib/ai/naturalJapanese/analyze";
 import {
   blockedSentenceIndexes,
   documentBlockIssues,
@@ -396,6 +402,34 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
     sentences: kept,
     metadata: meta.snapshot(lintCodes(lint(kept))),
   };
+}
+
+// 出典の対応が無くても判定できる指摘だけ(v1 と v2 で比べられるもの)。
+const PLAIN_DRAFT_CODES = new Set<string>([
+  "unsupported_satisfaction",
+  "unsupported_revisit",
+  "unsupported_recommend",
+  "fabricated_situation",
+  "medical_claim",
+  "off_topic",
+  "strong_intensifier",
+  "template_phrase",
+  "honorific_inflation",
+  "monotone_endings",
+]);
+
+/**
+ * 出典の無い下書き(v1 の出力など)を計測用に検査し、指摘コードを返す。
+ * 否定的な素材は、その目印の語が下書きに残っていなければ negative_not_reflected とする(目安)。
+ */
+export function lintPlainDraft(text: string, materials: readonly Material[]): string[] {
+  const ids = materials.map((m) => m.id);
+  const sentences = splitSentences(text).map((sentence) => ({ text: sentence, sourceIds: ids }));
+  const codes = lintCodes(lintDraft(sentences, toLintSources(materials))).filter((code) => PLAIN_DRAFT_CODES.has(code));
+  const negativeDropped = materials.some(
+    (m) => m.negative && !findNegativeMarkers(m.text).some((marker) => containsPhrase(text, marker)),
+  );
+  return negativeDropped ? [...codes, "negative_not_reflected"] : codes;
 }
 
 export interface ShadowVerificationResult {

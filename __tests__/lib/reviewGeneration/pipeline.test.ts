@@ -4,6 +4,7 @@ import { buildMaterials, type MaterialInput } from "@/lib/reviewGeneration/mater
 import {
   assembleDraft,
   cleanSentences,
+  lintPlainDraft,
   ReviewGenerationError,
   runReviewPipeline,
   runShadowVerification,
@@ -283,6 +284,20 @@ describe("cleanSentences / assembleDraft", () => {
         { text: "三。", sourceIds: [], breakAfter: true },
       ]),
     ).toBe("一。\n二。三。");
+  });
+});
+
+describe("lintPlainDraft(v1 の下書きの計測用)", () => {
+  it("出典が無くても判定できる指摘だけを返す", () => {
+    const codes = lintPlainDraft("仕事帰りに寄りました。肌がなめらかになりました。大満足です。", materials);
+    expect(codes).toEqual(expect.arrayContaining(["fabricated_situation", "unsupported_satisfaction"]));
+    // 出典の対応が必要な指摘(知覚表現の消失など)は返さない。
+    expect(codes).not.toContain("perception_dropped");
+  });
+
+  it("否定的な素材の目印が下書きに残っていなければ negative_not_reflected", () => {
+    expect(lintPlainDraft("説明が分かりやすかったです。", materials)).toContain("negative_not_reflected");
+    expect(lintPlainDraft("待ち時間が長かったのは残念でした。", materials)).not.toContain("negative_not_reflected");
   });
 });
 
