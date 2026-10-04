@@ -142,7 +142,8 @@ function temperatureFor(model: string | null, value: number): number | undefined
   return model && !REASONING_MODEL.test(model) ? value : undefined;
 }
 
-const SENTENCE_END = /[。．！？!?」』）)]$/u;
+// 「〜笑」で終わる文は、本人の言い回しのまま終わらせる(「笑。」にしない)。
+const SENTENCE_END = /[。．！？!?」』）)笑]$/u;
 
 function ensureSentenceEnd(text: string): string {
   return SENTENCE_END.test(text) ? text : `${text}。`;

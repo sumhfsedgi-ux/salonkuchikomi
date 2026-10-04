@@ -74,8 +74,9 @@ function candidateSeed(materials: readonly Material[], random: Random): StyleSee
         : [["short", 3], ["medium", 4], ["slightly_long", 2]],
       random,
     ),
-    emotion: pickWeighted([["none", 3], ["low", 4], ["medium", 2]], random),
-    exclamation: pickWeighted([["none", 4], ["occasional", 4], ["expressive", 1]], random),
+    // 気持ちは回答と同じ方向に少し強めてよい(review-v3.1)。控えめな書き方も残す。
+    emotion: pickWeighted([["none", 2], ["low", 4], ["medium", 3]], random),
+    exclamation: pickWeighted([["none", 3], ["occasional", 4], ["expressive", 2]], random),
     opening: openings[Math.min(openings.length - 1, Math.floor(random() * openings.length))],
     // 意向(「また来たい」など)の締めは、回答に意向があるときだけ選べる。選んでも必ず使う必要はない。
     closing: pickWeighted(

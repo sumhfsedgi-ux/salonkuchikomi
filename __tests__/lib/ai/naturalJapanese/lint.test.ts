@@ -471,6 +471,26 @@ describe("lintDraft: ふくらませるときに足されやすい出来事・�
   });
 });
 
+describe("lintDraft: 回答に無い翌日以降の変化・待ち時間・設備(review-v3.1)", () => {
+  it("回答に無ければ意味検証にかけ、回答にあれば指摘しない", () => {
+    const soft = source("M1", "肌がしっとりした");
+    for (const text of ["翌日も肌がしっとりしていました。", "待ち時間もなく施術してもらえました。", "個室でゆっくりできました。"]) {
+      expect(riskySentenceIndexes(lintDraft([{ text, sourceIds: ["M1"] }], [soft]))).toEqual([0]);
+    }
+    const pain = source("M2", "力が強すぎて翌日少し痛みが残りました", { negative: true, ownWords: true });
+    expect(lintCodes(lintDraft([{ text: "力が強すぎて、翌日少し痛みが残りました。", sourceIds: ["M2"] }], [pain]))).not.toContain(
+      "factual_invention:detail",
+    );
+  });
+
+  it("気持ちを回答と同じ方向に少し強めるだけなら指摘しない", () => {
+    const glad = source("M1", "満足");
+    expect(
+      lintDraft([{ text: "すごく満足でした！", sourceIds: ["M1"] }], [glad]).issues.filter((i) => i.severity !== "style"),
+    ).toEqual([]);
+  });
+});
+
 describe("lintDraft: 来店理由を結果にする言い換え", () => {
   it("「疲れを取りたい」を「疲れを取ってもらえて、ラクになった」にするのは意味検証にかける", () => {
     const tired = source("M1", "疲れを取りたい", { purposeLike: true });

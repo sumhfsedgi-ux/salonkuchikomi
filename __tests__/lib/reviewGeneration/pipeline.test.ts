@@ -349,7 +349,9 @@ describe("runReviewPipeline: 呼び出しの内容", () => {
     // system は固定の文面(素材を混ぜない)。
     expect(ai.calls[0].systemPrompt).toBe(GENERATION_SYSTEM_PROMPT);
     expect(ai.calls[0].userPrompt).toContain("M3 [スタッフ・お店] 説明が分かりやすかった");
-    expect(ai.calls[0].userPrompt).toContain("【業種】ネイル");
+    // 店舗情報はお客様の体験とは分けて渡す。
+    expect(ai.calls[0].userPrompt).toContain("【店舗情報】(お店が登録した情報で、お客様の体験ではない。");
+    expect(ai.calls[0].userPrompt).toContain("業種: ネイル");
   });
 
   it("回答や下書きの本文をログに出さない", async () => {
@@ -369,6 +371,10 @@ describe("runReviewPipeline: 呼び出しの内容", () => {
 });
 
 describe("cleanSentences / assembleDraft", () => {
+  it("「笑」で終わる文には句点を足さない(本人の言い回しのまま)", () => {
+    expect(cleanSentences(draft(["途中寝ちゃいました笑", ["M1"]])).map((s) => s.text)).toEqual(["途中寝ちゃいました笑"]);
+  });
+
   it("装飾と文中の改行を除き、句点を補う", () => {
     expect(
       cleanSentences({
