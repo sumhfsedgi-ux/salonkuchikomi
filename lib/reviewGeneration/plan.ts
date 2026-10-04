@@ -140,6 +140,14 @@ function candidatePlan(materials: readonly Material[], random: Random): Composit
   const minExtra = materials.length >= 4 ? 1 : 0;
   const extraCount = Math.min(pool.length, minExtra + Math.floor(random() * 3));
   const support = [...required, ...pool.slice(0, extraCount)];
+  // 否定的な素材だけの口コミにしない。お客様が肯定的にも答えていれば、そのうち1つは必ず使う
+  // (否定だけが残ると、回答全体より厳しい口コミになるため)。
+  if ([...main, ...support].every((m) => m.negative)) {
+    const positive = pool
+      .filter((m) => !m.negative && !support.includes(m))
+      .sort((a, b) => ROLE_PRIORITY[a.role] - ROLE_PRIORITY[b.role])[0];
+    if (positive) support.push(positive);
+  }
   const supportIds = new Set(support.map((m) => m.id));
 
   const used = materials.filter((m) => mainIds.has(m.id) || supportIds.has(m.id));

@@ -52,6 +52,19 @@ describe("buildCompositionPlan", () => {
     }
   });
 
+  it("否定的な素材だけの口コミにしない(肯定的な回答があれば1つは使う)", () => {
+    const materials = buildMaterials([
+      { questionText: "スタッフ・サロンについて感じたことを教えてください", questionType: "multiple", selected: ["その他"], otherDetail: "部屋が少し寒かった" },
+      { questionText: "施術後、体についてどのように感じましたか？", questionType: "multiple", selected: ["体が軽くなった気がする"] },
+      VISIT,
+    ]);
+    for (let seed = 1; seed <= 100; seed++) {
+      const plan = buildCompositionPlan(materials, { random: seeded(seed) });
+      const used = materials.filter((m) => usedIds(plan).includes(m.id));
+      expect(used.some((m) => !m.negative)).toBe(true);
+    }
+  });
+
   it("主役・補助・使わない素材で、すべての素材を重複なく分ける", () => {
     const materials = buildMaterials([VISIT, EXPERIENCE, STAFF]);
     const plan = buildCompositionPlan(materials, { random: seeded(7) });
