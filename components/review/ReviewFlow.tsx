@@ -8,7 +8,8 @@ import ResultSkeleton from "@/components/review/ResultSkeleton";
 import GeneratedReview from "@/components/review/GeneratedReview";
 import Toast from "@/components/Toast";
 import { copyToClipboard } from "@/lib/copyToClipboard";
-import { OTHER_OPTION_TEXT } from "@/lib/constants";
+import { buildGenerateRequestBody } from "@/lib/reviewGeneration/requestBody";
+import type { PreviousPlan } from "@/lib/reviewGeneration/plan";
 
 interface Props {
   salon: { id: string; name: string; googleReviewUrl: string; businessType: string | null };
@@ -37,6 +38,8 @@ export default function ReviewFlow({ salon, questions }: Props) {
   // into the outgoing payload below, right before it's sent to the API.
   const [otherDetails, setOtherDetails] = useState<Record<string, string>>({});
   const [generatedReview, setGeneratedReview] = useState("");
+  // v2 の再生成で「前回と違う構成」を選ぶための前回のプラン(素材の本文は含まない)。
+  const [previousPlan, setPreviousPlan] = useState<PreviousPlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -72,22 +75,16 @@ export default function ReviewFlow({ salon, questions }: Props) {
       const res = await fetch("/api/generate-review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          salonId: salon.id,
-          salonName: salon.name,
-          businessType: salon.businessType ?? undefined,
-          previousReview: generatedReview || undefined,
-          answers: questions.map((question) => {
-            const raw = currentAnswers[question.id];
-            const detail = otherDetails[question.id]?.trim();
-            const withDetail = (value: string) =>
-              value === OTHER_OPTION_TEXT && detail
-                ? `${OTHER_OPTION_TEXT}（${detail}）`
-                : value;
-            const answer = Array.isArray(raw) ? raw.map(withDetail) : withDetail(raw);
-            return { question: question.question, answer };
+        body: JSON.stringify(
+          buildGenerateRequestBody({
+            salonId: salon.id,
+            questions,
+            answers: currentAnswers,
+            otherDetails,
+            previousReview: generatedReview,
+            previousPlan,
           }),
-        }),
+        ),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -95,6 +92,7 @@ export default function ReviewFlow({ salon, questions }: Props) {
         return;
       }
       setGeneratedReview(data.review);
+      setPreviousPlan(data.plan ?? null);
       setResultVersion((v) => v + 1);
     } catch {
       setError(
@@ -108,8 +106,8 @@ export default function ReviewFlow({ salon, questions }: Props) {
   // Reads `generatedReview` fresh on every render, so this always copies
   // whatever is currently in the (editable) textarea -- including any edits
   // the customer made after generation -- never the original AI output.
-  // Deliberately never blocks navigation on the result: the "Google口コミを
-  // 書く" link's default action (opening googleReviewUrl) always proceeds
+  // Deliberately never blocks navigation on the result: the "内容を確認して
+  // Googleに投稿する" link's default action (opening googleReviewUrl) always proceeds
   // regardless of whether the copy succeeds, so a Clipboard API failure
   // never strands the customer -- they can still select and copy the
   // textarea manually once they land on Google's page.
