@@ -44,6 +44,7 @@ import {
   FIRST_VISIT_PHRASES,
   FLIP_PHRASES,
   HONORIFIC_INFLATION_PHRASES,
+  INVENTED_DETAIL_PHRASES,
   MEDICAL_PHRASES,
   OFF_TOPIC_PHRASES,
   OUTCOME_PHRASES,
@@ -130,6 +131,7 @@ export type LintDetail =
   | "off_topic"
   | "aspect"
   | "outcome"
+  | "detail"
   | "medical"
   | "medical_term"
   | "change_claim"
@@ -168,7 +170,8 @@ export interface LintResult {
 // 本人の言い回しがこの割合より残っていなければ、言い換えすぎとみなす。
 const OWN_WORDS_MIN_OVERLAP = 0.3;
 // 回答の言葉がこの割合以上入っている文が2つあれば、同じ内容の繰り返しとみなす。
-const REPEAT_MIN_OVERLAP = 0.3;
+// (主役の体験をふくらませる文は、回答の言葉を一部しか使わないので数えない。)
+const REPEAT_MIN_OVERLAP = 0.5;
 // 同じ語尾がこの数だけ続いたら均一とみなす。
 const MONOTONE_RUN = 3;
 // 文の長さのばらつき(変動係数)がこれ未満なら均一とみなす(3文以上のとき)。
@@ -292,6 +295,10 @@ export function lintDraft(
     }
     if (unsupportedPhrases(text, OUTCOME_PHRASES, allSourceText).length > 0) {
       issues.push(issue("factual_invention", "risk", index, { detail: "outcome" }));
+    }
+    // 体験をふくらませるときに足されやすい、回答に無い出来事・行動・生活での変化・お店の事情の推測。
+    if (unsupportedPhrases(text, INVENTED_DETAIL_PHRASES, allSourceText).length > 0) {
+      issues.push(issue("factual_invention", "risk", index, { detail: "detail" }));
     }
     if (unsupportedPhrases(text, CALLOUT_PHRASES, allSourceText).length > 0) {
       issues.push(issue("promotional_callout", "block", index));

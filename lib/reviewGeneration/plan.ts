@@ -31,12 +31,25 @@ export interface CompositionPlan {
   exclamation: ExclamationStyle;
 }
 
-/** 文の数と文字数の目安(LLM への指示と、Linter の style 判定に使う)。 */
-export const LENGTH_TARGETS: Record<DraftLength, { sentences: string; chars: { min: number; max: number } }> = {
-  short: { sentences: "2〜3文", chars: { min: 30, max: 100 } },
-  medium: { sentences: "3〜4文", chars: { min: 80, max: 160 } },
-  long: { sentences: "4〜5文", chars: { min: 130, max: 220 } },
+/**
+ * 文字数の目安(soft target。LLM への指示に使う)。全体で 80〜250字くらい。
+ * 2026-10-04: 厳密な制約にすると、回答を短い文に圧縮して要点を並べただけの口コミになるため、
+ * 目安にした。自然に終わるなら短くてよく、内容が豊富なら超えてよい。水増しも詰め込みもしない。
+ */
+export const LENGTH_TARGETS: Record<DraftLength, { chars: { min: number; max: number } }> = {
+  short: { chars: { min: 80, max: 130 } },
+  medium: { chars: { min: 120, max: 190 } },
+  long: { chars: { min: 170, max: 250 } },
 };
+
+/** これを大きく外れたときだけ、Linter が長さを指摘する(style。表示は止めない)。 */
+export const SOFT_LENGTH_RANGE = { min: 40, max: 300 };
+
+/** NG の文を削ったあとの下書きがこれより短ければ、口コミとして成り立たないので直す。 */
+export const MIN_DRAFT_CHARS = 30;
+
+// 使う内容(来店回数を除く)の合計がこれより短ければ、補助を1つ足す。
+const THIN_CONTENT_CHARS = 20;
 
 const MATERIAL_ID = z.string().regex(/^M\d{1,2}$/);
 
@@ -98,13 +111,16 @@ function chooseMain(materials: readonly Material[], random: Random): Material[] 
   return [...top, ...others].slice(0, count);
 }
 
-function chooseLength(usedCount: number, usedChars: number, random: Random): DraftLength {
+// 長さの目安は、書ける体験の量で決める(来店回数は前置きなので数えない)。体験が少ないのに長めを
+// 選ぶと水増しになるので、短めにする。本人の言葉が長いときは長めも選べる。
+function chooseLength(used: readonly Material[], random: Random): DraftLength {
+  const content = used.filter((m) => m.role !== "visit");
+  const contentChars = content.reduce((sum, m) => sum + [...m.text].length, 0);
   let options: DraftLength[];
-  if (usedCount <= 2) options = ["short"];
-  else if (usedCount === 3) options = ["short", "medium"];
-  else if (usedCount === 4) options = ["medium"];
+  if (content.length <= 1) options = ["short"];
+  else if (content.length === 2) options = ["short", "medium"];
   else options = ["medium", "long"];
-  if (usedChars > 120 && !options.includes("long")) options = [...options, "long"];
+  if (contentChars > 120 && !options.includes("long")) options = [...options, "long"];
   return pickOne(options, random);
 }
 
@@ -146,10 +162,9 @@ function candidatePlan(materials: readonly Material[], random: Random): Composit
     materials.filter((m) => !mainIds.has(m.id) && !requiredIds.has(m.id)),
     random,
   );
-  // 回答が多いのに1〜2個しか使わないと、答えた内容が口コミにほとんど残らない。
-  // 素材が4つ以上あるときは、補助を少なくとも1つ足す(0〜2個 → 1〜3個)。
-  const minExtra = materials.length >= 4 ? 1 : 0;
-  const extraCount = Math.min(pool.length, minExtra + Math.floor(random() * 3));
+  // 回答をすべて口コミに入れる必要はない(2026-10-04)。主役の1〜2個の体験を中心にし、
+  // ほかの補助は0〜1個だけ足す(否定的な素材と本人の言葉は、上の required で必ず使う)。
+  const extraCount = Math.min(pool.length, Math.floor(random() * 2));
   const support = [...required, ...pool.slice(0, extraCount)];
   // 否定的な素材だけの口コミにしない。お客様が肯定的にも答えていれば、そのうち1つは必ず使う
   // (否定だけが残ると、回答全体より厳しい口コミになるため)。来店回数は肯定的な内容に数えない。
@@ -160,16 +175,25 @@ function candidatePlan(materials: readonly Material[], random: Random): Composit
       .sort((a, b) => ROLE_PRIORITY[a.role] - ROLE_PRIORITY[b.role])[0];
     if (positive) support.push(positive);
   }
+  // 書ける内容が少なすぎると、一言で終わる口コミになる(「友達にもすすめたいです！」だけ など)。
+  // 使う内容(来店回数を除く)が短ければ、肯定的な補助を1つ足す。
+  const contentChars = (list: readonly Material[]) =>
+    list.filter((m) => m.role !== "visit").reduce((sum, m) => sum + [...m.text].length, 0);
+  if (contentChars([...main, ...support]) < THIN_CONTENT_CHARS) {
+    const extra = pool
+      .filter((m) => isPositive(m) && !support.includes(m))
+      .sort((a, b) => ROLE_PRIORITY[a.role] - ROLE_PRIORITY[b.role])[0];
+    if (extra) support.push(extra);
+  }
   const supportIds = new Set(support.map((m) => m.id));
 
   const used = materials.filter((m) => mainIds.has(m.id) || supportIds.has(m.id));
-  const usedChars = used.reduce((sum, m) => sum + [...m.text].length, 0);
 
   return {
     mainIds: main.map((m) => m.id),
     supportIds: materials.filter((m) => supportIds.has(m.id)).map((m) => m.id),
     unusedIds: materials.filter((m) => !mainIds.has(m.id) && !supportIds.has(m.id)).map((m) => m.id),
-    length: chooseLength(used.length, usedChars, random),
+    length: chooseLength(used, random),
     opening: pickOne(allowedOpenings(used, support.length), random),
     closing: pickOne(allowedClosings(used), random),
     exclamation: pickOne(allowedExclamations(used), random),

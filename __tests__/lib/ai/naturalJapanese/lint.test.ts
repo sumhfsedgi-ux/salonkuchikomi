@@ -453,3 +453,33 @@ describe("lintDraft: 同じ内容の繰り返し(repeated_content)", () => {
     ).not.toContain("repeated_content");
   });
 });
+
+describe("lintDraft: ふくらませるときに足されやすい出来事・行動(factual_invention:detail)", () => {
+  const SMOOTH = source("M1", "髪が扱いやすくなった気がする", { perception: true });
+
+  it("回答に無い出来事・生活での変化・お店の事情の推測は、意味検証にかける", () => {
+    for (const text of [
+      "髪が扱いやすくなった気がして、毎日のセットも楽になりました。",
+      "鏡を見るたびに嬉しくなりました。",
+      "仕上がりに時間をかけてくれたのかもしれません。",
+    ]) {
+      const result = lintDraft([{ text, sourceIds: ["M1"] }], [SMOOTH]);
+      expect(lintCodes(result)).toContain("factual_invention:detail");
+      expect(riskySentenceIndexes(result)).toEqual([0]);
+    }
+  });
+
+  it("気持ち・受け取り方だけなら指摘しない", () => {
+    const codes = codesOf([{ text: "髪が扱いやすくなった気がして、気分が上がりました。", sourceIds: ["M1"] }], [SMOOTH]);
+    expect(codes).not.toContain("factual_invention:detail");
+  });
+});
+
+describe("lintDraft: 来店理由を結果にする言い換え", () => {
+  it("「疲れを取りたい」を「疲れを取ってもらえて、ラクになった」にするのは意味検証にかける", () => {
+    const tired = source("M1", "疲れを取りたい", { purposeLike: true });
+    const result = lintDraft([{ text: "疲れを取ってもらえて、体が少しラクになったのがうれしかったです。", sourceIds: ["M1"] }], [tired]);
+    expect(lintCodes(result)).toEqual(expect.arrayContaining(["unsupported_effect:change_claim", "unsupported_effect:purpose_as_result"]));
+    expect(riskySentenceIndexes(result)).toEqual([0]);
+  });
+});

@@ -114,14 +114,14 @@ describe("runReviewPipeline: NG の文の扱い", () => {
       review_generation: [
         draft(
           ["肌荒れが改善しました。", ["M2"]],
-          ["説明が分かりやすかったです。", ["M3"]],
+          ["説明がすごく分かりやすくて、安心して受けられました。", ["M3"]],
           ["待ち時間が長かったのは残念でした。", ["M4"]],
         ),
       ],
       review_verification: [verdicts([0, false, ["unsupported_effect"]], [2, true])],
     });
     const result = await runReviewPipeline({ materials, businessType: null }, { callJson: ai.callJson, random: fixedRandom });
-    expect(result.draft).toBe("説明が分かりやすかったです。待ち時間が長かったのは残念でした。");
+    expect(result.draft).toBe("説明がすごく分かりやすくて、安心して受けられました。待ち時間が長かったのは残念でした。");
     expect(result.metadata.repairAction).toBe("removed");
     expect(result.metadata.verifyFlags).toContain("unsupported_effect");
     expect(ai.tasks()).toEqual(["review_generation", "review_verification"]);

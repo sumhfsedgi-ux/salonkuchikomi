@@ -40,6 +40,8 @@ import { toLintSources, type Material } from "@/lib/reviewGeneration/materials";
 import {
   buildCompositionPlan,
   LENGTH_TARGETS,
+  MIN_DRAFT_CHARS,
+  SOFT_LENGTH_RANGE,
   type CompositionPlan,
   type PreviousPlan,
 } from "@/lib/reviewGeneration/plan";
@@ -305,7 +307,7 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
   const sources = toLintSources(materials);
   const materialById = new Map(materials.map((m) => [m.id, m]));
   const lint = (sentences: readonly LintSentence[]) =>
-    lintDraft(sentences, sources, { mainSourceIds: plan.mainIds, targetChars: LENGTH_TARGETS[plan.length].chars });
+    lintDraft(sentences, sources, { mainSourceIds: plan.mainIds, targetChars: SOFT_LENGTH_RANGE });
   // LLM の出力を整え、整いすぎた言い回しを直す(お客様が自分で書いた言い回しは残す)。
   const materialText = materials.map((m) => m.text).join("\n");
   const tidy = (raw: RawDraft | null | undefined): DraftSentence[] =>
@@ -406,12 +408,14 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
 
   // ── 3. 削除で足りなければ1回だけ部分修正 ──
   // 否定的な素材が反映されていない・下書きが空のとき、または NG の削除で主役が消えたり
-  // 長さの目安を下回ったりしたとき(肯定的な回答が消えて、否定だけが残るのを防ぐ)に直す。
+  // 長さの目安の半分を下回ったりしたとき(肯定的な回答が消えて、否定だけが残るのを防ぐ)に直す。
+  // 長さは目安なので、目安を少し下回っただけでは直さない。
   const mainNotUsed = (draft: readonly DraftSentence[]) =>
     lint(draft).issues.some((i) => i.code === "main_not_used");
   const mainLostByRemoval = rejected.size > 0 && !mainNotUsed(sentences) && mainNotUsed(kept);
   const tooShortAfterRemoval =
-    rejected.size > 0 && countChars(assembleDraft(kept)) < LENGTH_TARGETS[plan.length].chars.min;
+    rejected.size > 0 &&
+    countChars(assembleDraft(kept)) < Math.max(MIN_DRAFT_CHARS, LENGTH_TARGETS[plan.length].chars.min / 2);
   const needsRepair = documentBlockIssues(lint(kept)).length > 0 || mainLostByRemoval || tooShortAfterRemoval;
 
   let repairAttempted = false;
@@ -454,7 +458,7 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
     const rest = kept.slice(0, last);
     const restIds = new Set(rest.flatMap((s) => s.sourceIds));
     const covered = kept[last].sourceIds.every((id) => restIds.has(id));
-    if (covered && countChars(assembleDraft(rest)) >= LENGTH_TARGETS.short.chars.min) {
+    if (covered && countChars(assembleDraft(rest)) >= MIN_DRAFT_CHARS) {
       kept = rest;
       meta.flag("closing_dropped");
     }

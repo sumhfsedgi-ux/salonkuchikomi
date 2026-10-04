@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildMaterials, type MaterialInput } from "@/lib/reviewGeneration/materials";
 import {
   buildCompositionPlan,
+  LENGTH_TARGETS,
   planSignature,
   previousPlanSchema,
   type CompositionPlan,
@@ -93,6 +94,30 @@ describe("buildCompositionPlan", () => {
       const plan = buildCompositionPlan(choicesOnly, { random: seeded(seed) });
       const mainRoles = choicesOnly.filter((m) => plan.mainIds.includes(m.id)).map((m) => m.role);
       expect(mainRoles).not.toContain("visit");
+    }
+  });
+
+  it("回答をすべて使わない: 主役の1〜2個を中心にし、必ず使う素材のほかに足す補助は0〜1個(書ける内容が少ないときだけ2個)", () => {
+    const longChoices = buildMaterials([
+      { questionText: "施術後のお肌について、どのように感じましたか？", questionType: "multiple", selected: ["肌がしっとりして手触りがよくなった", "毛穴が目立ちにくくなったように感じた"] },
+      { questionText: "スタッフ・サロンについて感じたことを教えてください", questionType: "multiple", selected: ["説明が分かりやすくて安心できた", "落ち着いた雰囲気でリラックスできた"] },
+    ]);
+    const shortChoices = buildMaterials([VISIT, EXPERIENCE, STAFF]);
+    for (const [materials, maxExtras] of [[longChoices, 1], [shortChoices, 2]] as const) {
+      const required = materials.filter((m) => m.negative || m.kind !== "choice").map((m) => m.id);
+      for (let seed = 1; seed <= 100; seed++) {
+        const plan = buildCompositionPlan(materials, { random: seeded(seed) });
+        const extras = plan.supportIds.filter((id) => !required.includes(id));
+        expect(plan.mainIds.length).toBeLessThanOrEqual(2);
+        expect(extras.length).toBeLessThanOrEqual(maxExtras);
+      }
+    }
+  });
+
+  it("長さは目安で、どれも 80〜250字の範囲に収まる", () => {
+    for (const target of Object.values(LENGTH_TARGETS)) {
+      expect(target.chars.min).toBeGreaterThanOrEqual(80);
+      expect(target.chars.max).toBeLessThanOrEqual(250);
     }
   });
 

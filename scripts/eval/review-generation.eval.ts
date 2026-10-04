@@ -144,6 +144,8 @@ interface QualityScore {
   surveySummary: boolean;
   polishedEssay: boolean;
   awkwardConnection: boolean;
+  compressed: boolean;
+  padded: boolean;
 }
 
 const QUALITY_SCHEMA = {
@@ -156,8 +158,10 @@ const QUALITY_SCHEMA = {
       survey_summary: { type: "boolean" },
       polished_essay: { type: "boolean" },
       awkward_connection: { type: "boolean" },
+      compressed: { type: "boolean" },
+      padded: { type: "boolean" },
     },
-    required: ["warmth", "naturalness", "survey_summary", "polished_essay", "awkward_connection"],
+    required: ["warmth", "naturalness", "survey_summary", "polished_essay", "awkward_connection", "compressed", "padded"],
     additionalProperties: false,
   },
 };
@@ -168,10 +172,13 @@ const QUALITY_SYSTEM_PROMPT = `あなたは口コミの読み手として採点�
   - 文章として完成されすぎていないことも自然さに含めます。少し口語的な言い方、短い文が混ざる、「！」がたまに入る、最後が単純な感想で終わる、締めの文が無い、は減点しません。
   - 整いすぎた言い回し(嬉しく思いました、〜することができました、印象に残りました、安心感がありました など)、体験を抽象的な名詞でまとめる文(心地よい体験でした、満足のいく時間でした など)、最後だけきれいに総括する文(〜と思えるお店でした、全体的に〜 など)は減点します。
   - 「！」を毎文のように使う、回答に対してテンションが高すぎる、も減点します。
+  - 回答を短い文に圧縮して要点を並べただけの文章、字数を埋めるための水増しは減点します。長さそのものは減点しません(自然に終わる短い口コミも、内容が豊富な長めの口コミも自然です)。
   - 別々の回答を無理に1文につなげている、因果関係があいまいなつなぎ方をしている、「安心」「嬉しい」などの気持ちが何に対するものか分かりにくい、も減点します。
 ・survey_summary: アンケートの回答を順番に要約・列挙しただけに見えるなら true
 ・polished_essay: AIが口コミとして綺麗にまとめた作文に見えるなら true
-・awkward_connection: 読んでいて引っかかる文があるなら true(別々の回答を1文に詰め込んでいる、「Aしてもらえて、Bが気になっていたけどCでした」のように前後の関係があいまい、気持ちが何に対するものか分かりにくい、同じ内容を2回書いている など)`;
+・awkward_connection: 読んでいて引っかかる文があるなら true(別々の回答を1文に詰め込んでいる、「Aしてもらえて、Bが気になっていたけどCでした」のように前後の関係があいまい、気持ちが何に対するものか分かりにくい、同じ内容を2回書いている など)
+・compressed: たくさんの回答を短い文章に詰め込み、要点をまとめただけに見えるなら true
+・padded: 字数を埋めるための水増し(同じ内容の言い換え、内容の無い文)があるなら true`;
 
 /** 読み手としての採点(評価だけで使う。本番では使わない)。 */
 async function judgeQuality(materials: Material[], draft: string): Promise<QualityScore | null> {
@@ -183,6 +190,8 @@ async function judgeQuality(materials: Material[], draft: string): Promise<Quali
       survey_summary: boolean;
       polished_essay: boolean;
       awkward_connection: boolean;
+      compressed: boolean;
+      padded: boolean;
     }>({
       task: "review_verification",
       model: AUDIT_MODEL,
@@ -190,7 +199,7 @@ async function judgeQuality(materials: Material[], draft: string): Promise<Quali
       userPrompt: `【素材】\n${materials.map((m) => `${m.id} ${m.text}`).join("\n")}\n\n【下書き】\n${draft}`,
       schema: QUALITY_SCHEMA,
       temperature: 0,
-      maxOutputTokens: 100,
+      maxOutputTokens: 120,
       timeoutMs: 30_000,
     });
     const clamp = (n: number) => Math.min(5, Math.max(1, Math.round(n)));
@@ -200,6 +209,8 @@ async function judgeQuality(materials: Material[], draft: string): Promise<Quali
       surveySummary: result.data.survey_summary === true,
       polishedEssay: result.data.polished_essay === true,
       awkwardConnection: result.data.awkward_connection === true,
+      compressed: result.data.compressed === true,
+      padded: result.data.padded === true,
     };
   });
 }
@@ -289,6 +300,8 @@ function summarizeQuality(scores: QualityScore[]) {
     surveySummary: scores.filter((q) => q.surveySummary).length,
     polishedEssay: scores.filter((q) => q.polishedEssay).length,
     awkwardConnection: scores.filter((q) => q.awkwardConnection).length,
+    compressed: scores.filter((q) => q.compressed).length,
+    padded: scores.filter((q) => q.padded).length,
   };
 }
 
