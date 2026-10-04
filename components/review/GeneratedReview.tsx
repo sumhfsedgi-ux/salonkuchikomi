@@ -1,5 +1,8 @@
 "use client";
 
+// 回答の内容(満足度・否定的な内容の有無)によって、Google口コミへの導線を出し分けては
+// いけない(review gating の禁止。docs/plans/reviews-465-plan.md §7-1)。そのため、この
+// コンポーネントには CTA の表示を切り替える引数を持たせない(テストで保証している)。
 interface Props {
   review: string;
   onReviewChange: (next: string) => void;
@@ -24,10 +27,12 @@ export default function GeneratedReview({
     >
       <div className="text-center">
         <h2 className="text-lg font-semibold text-stone-800">
-          口コミが完成しました
+          口コミの下書きができました
         </h2>
         <p className="mt-2 text-balance text-sm text-stone-500">
-          内容を確認して、必要であれば自由に修正してください。
+          アンケートをもとに口コミ文を作成しました。
+          <br />
+          内容を確認して、必要に応じて自由に編集してください。
         </p>
       </div>
 
@@ -59,12 +64,12 @@ export default function GeneratedReview({
         onClick={onCopy}
         className="btn-primary block text-center"
       >
-        Google口コミを書く
+        この内容をコピーしてGoogleへ進む
       </a>
       <p className="text-center text-xs text-stone-400">
-        口コミ文をコピーして、Googleの投稿画面を開きます
+        Googleの口コミ投稿画面が開きます。
         <br />
-        投稿前に内容をご確認ください
+        自動で投稿されることはありません。
       </p>
     </div>
   );

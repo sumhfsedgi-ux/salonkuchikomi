@@ -113,6 +113,13 @@ describe("callOpenAIJson", () => {
     expect(secondBody.temperature).toBe(0.7);
   });
 
+  it("model を指定すれば、タスクの既定のモデルより優先する", async () => {
+    fetchMock.mockResolvedValueOnce(completion("{}"));
+    const result = await callOpenAIJson({ ...baseOptions, model: "override-model" });
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).model).toBe("override-model");
+    expect(result.model).toBe("override-model");
+  });
+
   it("429 は再試行し、2回目で成功すれば attempts=2", async () => {
     fetchMock.mockResolvedValueOnce(errorResponse(429, "rate_limit_exceeded"));
     fetchMock.mockResolvedValueOnce(completion("{}"));
