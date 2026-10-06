@@ -3,12 +3,12 @@
 // 判定はすべてコードで行い、LLM には判断させない。
 
 import { OTHER_OPTION_TEXT } from "@/lib/constants";
-import { findNegativeMarkers, findPhrases, hasPerception, isPurposeLike } from "@/lib/ai/naturalJapanese/analyze";
+import { findNegativeMarkers, hasPerception, isPurposeLike } from "@/lib/ai/naturalJapanese/analyze";
+import { hasNegativeIntent, intentKinds } from "@/lib/ai/naturalJapanese/evidence";
 import type { LintSource } from "@/lib/ai/naturalJapanese/lint";
-import { INTENT_PHRASES } from "@/lib/ai/naturalJapanese/phrases";
 
 /** 質問の役割。質問文のキーワードで判定する(テンプレートに役割の列は無い)。 */
-export type QuestionRole = "visit" | "reason" | "menu" | "experience" | "staff_shop" | "free_text" | "other";
+export type QuestionRole = "visit" | "discovery" | "reason" | "menu" | "experience" | "staff_shop" | "satisfaction" | "intention" | "research" | "free_text" | "other";
 
 /** choice = 選んだ選択肢、other_detail = 「その他」の詳細、free_text = 自由記述。 */
 export type MaterialKind = "choice" | "other_detail" | "free_text";
@@ -45,8 +45,13 @@ const MAX_FREE_TEXT_SEGMENTS = 5;
 const MIN_SEGMENT_CHARS = 4;
 
 const ROLE_RULES: ReadonlyArray<[QuestionRole, RegExp]> = [
+  ["research", /新メニュー調査|商品調査|発売して|今後.*(?:食べたい|試したい|商品)|食べたい商品/u],
   ["visit", /何回目|来店回数|ご来店は|利用回数|ご利用は何/u],
+  ["discovery", /きっかけ|知った|見つけた/u],
+  ["intention", /今後について|今後のご利用|また.*(?:来たい|利用したい)|再来店/u],
+  ["satisfaction", /満足度/u],
   ["reason", /悩み|目的|きっかけ|理由|ご希望|期待|求めて/u],
+  ["experience", /仕上がり|おいしかった|美味しかった/u],
   ["menu", /メニュー|コース|施術内容|受けた施術|利用した/u],
   ["staff_shop", /スタッフ|店内|サロン|お店|雰囲気|接客|対応/u],
   ["experience", /感じ|体感|感想|いかが|どう/u],
@@ -115,6 +120,8 @@ interface Candidate {
 
 function toCandidates(input: MaterialInput): Candidate[] {
   const role = detectRole(input.questionText, input.questionType);
+  // 店舗向けの市場調査は、利用した体験として生成・検証に渡さない。
+  if (role === "research") return [];
   const base = { role, questionText: input.questionText };
   const candidates: Candidate[] = [];
 
@@ -142,10 +149,10 @@ function toCandidates(input: MaterialInput): Candidate[] {
 export function buildMaterials(inputs: readonly MaterialInput[]): Material[] {
   const enriched = inputs.flatMap(toCandidates).map((candidate) => ({
     ...candidate,
-    negative: findNegativeMarkers(candidate.text).length > 0,
+    negative: findNegativeMarkers(candidate.text).length > 0 || hasNegativeIntent(candidate.text) || /改善してほしい|満足していない/u.test(candidate.text),
     perception: hasPerception(candidate.text),
     purposeLike: candidate.role === "reason" || isPurposeLike(candidate.text),
-    intent: findPhrases(candidate.text, INTENT_PHRASES).length > 0,
+    intent: intentKinds(candidate.text).length > 0,
   }));
 
   // 本人の言葉(自由記述・「その他」の詳細)と否定的な素材は削らない。
@@ -183,6 +190,8 @@ export function toLintSources(materials: readonly Material[]): LintSource[] {
   return materials.map((m) => ({
     id: m.id,
     text: m.text,
+    questionText: m.questionText,
+    role: m.role,
     negative: m.negative,
     perception: m.perception,
     purposeLike: m.purposeLike,

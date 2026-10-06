@@ -92,7 +92,7 @@ export function appealCategoriesOf(text: string): AppealCategory[] {
 
 function isContext(material: Material): boolean {
   // 来店回数・来店理由・メニューは背景で、お店の良さとしての評価ではない。
-  return material.role === "visit" || material.role === "reason" || material.role === "menu";
+  return material.role === "visit" || material.role === "discovery" || material.role === "reason" || material.role === "menu" || material.role === "intention" || material.role === "research";
 }
 
 /**
