@@ -1,5 +1,7 @@
 # 口コミ文章改善 review-v3.3 実装・確認結果
 
+> 2026-10-06追記：標準テンプレートは、その後の利用者の指定で「良かった点」を選ぶ内容へ変更した。既存環境の更新には0018ではなく0019を使用する。内容と旧版削除の手順は [positive-review-templates.md](positive-review-templates.md) を参照。以下は文章生成改善時点の記録。
+
 2026-10-06。ブランチ feature/review-writing-quality。master（2f5f562）から口コミ文章改善だけを独立させてマージする。Google申請待ちの受信・返信機能（07d8fa6）は feature/reviews-d1-reply-engine に保管し、今回のマージに含めない。
 
 ## 実装

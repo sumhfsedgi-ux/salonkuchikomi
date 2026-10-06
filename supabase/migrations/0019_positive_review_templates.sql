@@ -1,7 +1,136 @@
--- 現行の標準テンプレート6件。0019と同じ内容。
--- 再実行で旧版を復活させない。独自テンプレート・コピー済みの店舗質問は残す。
--- 既存環境の更新には、旧IDでの作り直しを防ぐ関数も含む0019を使用する。
+-- 良かった点を選ぶ6業種のテンプレートへ更新し、旧標準12カテゴリを削除する。
+-- 0018適用済み・未適用のどちらでも実行可能。0013〜0017への依存はない。
+-- 既存店舗のアンケート・独自テンプレート・予約通知には書き込まない。
+-- 全体を1トランザクションで実行する。途中で失敗した場合は削除も確定しない。
 begin;
+
+create or replace function public.create_survey_from_template(
+  p_salon_id uuid,
+  p_template_id uuid,
+  p_survey_name text default '口コミアンケート'
+)
+returns uuid
+language plpgsql
+security invoker
+as $$
+declare
+  v_survey_id uuid;
+  v_question_id uuid;
+  tq record;
+  opt record;
+begin
+
+  -- 削除前に開いた画面から旧IDが送られても、既存アンケートを変更しない。
+  if p_template_id is not null and not exists (
+    select 1 from public.survey_templates t
+    join public.template_questions q on q.template_id = t.id
+    where t.id = p_template_id
+  ) then
+    raise exception '選択したテンプレートは利用できません。画面を再読み込みしてください。'
+      using errcode = 'P0002';
+  end if;
+  insert into surveys (salon_id, name, is_active)
+  values (p_salon_id, p_survey_name, true)
+  returning id into v_survey_id;
+
+  if p_template_id is not null then
+    for tq in
+      select * from template_questions
+      where template_id = p_template_id
+      order by sort_order
+    loop
+      insert into questions (survey_id, question_text, question_type, required, max_selections, sort_order)
+      values (v_survey_id, tq.question_text, tq.question_type, tq.required, tq.max_selections, tq.sort_order)
+      returning id into v_question_id;
+
+      for opt in
+        select * from template_question_options
+        where template_question_id = tq.id
+        order by sort_order
+      loop
+        insert into question_options (question_id, option_text, sort_order)
+        values (v_question_id, opt.option_text, opt.sort_order);
+      end loop;
+    end loop;
+  end if;
+
+  -- 明示的な「0から作成」以外で空のアンケートを確定しない。
+  if p_template_id is not null and not exists (
+    select 1 from public.questions where survey_id = v_survey_id
+  ) then
+    raise exception 'テンプレートの質問を取得できません。画面を再読み込みしてください。'
+      using errcode = 'P0002';
+  end if;
+
+  return v_survey_id;
+end;
+$$;
+
+create or replace function public.restart_survey_from_template(
+  p_salon_id uuid,
+  p_template_id uuid,
+  p_survey_name text default '口コミアンケート'
+)
+returns uuid
+language plpgsql
+security invoker
+as $$
+declare
+  v_survey_id uuid;
+  v_question_id uuid;
+  tq record;
+  opt record;
+begin
+
+  -- 削除前に開いた画面から旧IDが送られても、既存アンケートを変更しない。
+  if p_template_id is not null and not exists (
+    select 1 from public.survey_templates t
+    join public.template_questions q on q.template_id = t.id
+    where t.id = p_template_id
+  ) then
+    raise exception '選択したテンプレートは利用できません。画面を再読み込みしてください。'
+      using errcode = 'P0002';
+  end if;
+  update surveys
+  set is_active = false, updated_at = now()
+  where salon_id = p_salon_id and is_active = true;
+
+  insert into surveys (salon_id, name, is_active)
+  values (p_salon_id, p_survey_name, true)
+  returning id into v_survey_id;
+
+  if p_template_id is not null then
+    for tq in
+      select * from template_questions
+      where template_id = p_template_id
+      order by sort_order
+    loop
+      insert into questions (survey_id, question_text, question_type, required, max_selections, sort_order)
+      values (v_survey_id, tq.question_text, tq.question_type, tq.required, tq.max_selections, tq.sort_order)
+      returning id into v_question_id;
+
+      for opt in
+        select * from template_question_options
+        where template_question_id = tq.id
+        order by sort_order
+      loop
+        insert into question_options (question_id, option_text, sort_order)
+        values (v_question_id, opt.option_text, opt.sort_order);
+      end loop;
+    end loop;
+  end if;
+
+  -- 明示的な「0から作成」以外で空のアンケートを確定しない。
+  if p_template_id is not null and not exists (
+    select 1 from public.questions where survey_id = v_survey_id
+  ) then
+    raise exception 'テンプレートの質問を取得できません。画面を再読み込みしてください。'
+      using errcode = 'P0002';
+  end if;
+
+  return v_survey_id;
+end;
+$$;
 
 do $templates_refresh$
 declare
