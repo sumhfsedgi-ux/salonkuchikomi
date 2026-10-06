@@ -96,7 +96,7 @@ describe("runReviewPipeline: 通常の流れ", () => {
 
   it("否定的な素材を出典にする文は同期で意味検証し、問題なければ残す", async () => {
     const ai = fakeOpenAI({
-      review_generation: [draft(["説明が分かりやすかったです。", ["M3"]], ["待ち時間が長かったのは残念でした。", ["M4"]])],
+      review_generation: [draft(["説明が分かりやすかったです。", ["M3"]], ["待ち時間が長かったのは残念でした。", ["M4"]], ["肌がなめらかになったように感じました。", ["M2"]])],
       review_verification: [verdicts([1, true])],
     });
     const result = await runReviewPipeline({ materials, businessType: null }, { callJson: ai.callJson, random: fixedRandom });
@@ -109,7 +109,7 @@ describe("runReviewPipeline: 通常の流れ", () => {
 });
 
 describe("runReviewPipeline: NG の文の扱い", () => {
-  it("意味検証で NG の文は削除し、否定的な素材が残っていれば修正しない(長さは見ない)", async () => {
+  it("意味検証で NG の文は削除し、重要な体感を失ったら修復を試みるが、失敗時は未確認の文を戻さない", async () => {
     const ai = fakeOpenAI({
       review_generation: [
         draft(
@@ -119,12 +119,14 @@ describe("runReviewPipeline: NG の文の扱い", () => {
         ),
       ],
       review_verification: [verdicts([0, false, ["unsupported_effect"]], [2, true])],
+      review_repair: [new OpenAICallError("repair timeout", "timeout")],
     });
     const result = await runReviewPipeline({ materials, businessType: null }, { callJson: ai.callJson, random: fixedRandom });
     expect(result.draft).toBe("説明がすごく分かりやすくて、安心して受けられました。待ち時間が長かったのは残念でした。");
     expect(result.metadata.repairAction).toBe("removed");
     expect(result.metadata.verifyFlags).toContain("unsupported_effect");
-    expect(ai.tasks()).toEqual(["review_generation", "review_verification"]);
+    expect(ai.tasks()).toEqual(["review_generation", "review_verification", "review_repair"]);
+    expect(result.metadata.verifyFlags).toContain("important_evidence_unresolved");
   });
 
   it("極端な感情(block)は、意味検証を待たずに削除する", async () => {
@@ -193,16 +195,17 @@ describe("runReviewPipeline: NG の文の扱い", () => {
 });
 
 describe("runReviewPipeline: 構造の問題と締め", () => {
-  it("最後の文が抽象的な総括で、その素材が他の文にも使われていれば削る(締めの文は無くてよい)", async () => {
+  it("抽象的な締めは文型だけで削らず、構造の再生成が改善しなければ元の文を残す", async () => {
     const ai = fakeOpenAI({
       review_generation: [
+        draft(["説明が分かりやすくて、肌もなめらかになったように感じて嬉しかったです。", ["M2", "M3"]], ["心地よい体験でした。", ["M3"]]),
         draft(["説明が分かりやすくて、肌もなめらかになったように感じて嬉しかったです。", ["M2", "M3"]], ["心地よい体験でした。", ["M3"]]),
       ],
     });
     const result = await runReviewPipeline({ materials: positiveOnly, businessType: null }, { callJson: ai.callJson, random: fixedRandom });
-    expect(result.draft).toBe("説明が分かりやすくて、肌もなめらかになったように感じて嬉しかったです。");
-    expect(result.metadata.verifyFlags).toContain("closing_dropped");
-    expect(ai.tasks()).toEqual(["review_generation"]);
+    expect(result.draft).toContain("心地よい体験でした。");
+    expect(result.metadata.verifyFlags).not.toContain("closing_dropped");
+    expect(ai.tasks()).toEqual(["review_generation", "review_generation"]);
   });
 
   it("アンケートの要約(STRUCTURE)は、部分修正ではなく Style Seed を変えて全文を1回だけ作り直す", async () => {
@@ -364,7 +367,7 @@ describe("runReviewPipeline: 呼び出しの内容", () => {
     expect(schema).toContain('"enum":["M1","M2","M3"]');
     // system は固定の文面(素材を混ぜない)。
     expect(ai.calls[0].systemPrompt).toBe(GENERATION_SYSTEM_PROMPT);
-    expect(ai.calls[0].userPrompt).toContain("M3 [スタッフ・お店] 説明が分かりやすかった");
+    expect(ai.calls[0].userPrompt).toContain('M3 [スタッフ・お店] 質問="スタッフ・サロンについて感じたことを教えてください" 回答="説明が分かりやすかった"');
     // 店舗情報はお客様の体験とは分けて渡す。
     expect(ai.calls[0].userPrompt).toContain("【店舗情報】(お店が登録した情報で、お客様の体験ではない。");
     expect(ai.calls[0].userPrompt).toContain("業種: ネイル");
@@ -435,14 +438,14 @@ describe("cleanSentences / assembleDraft", () => {
     ).toBe("料金が少し高く感じました。");
   });
 
-  it("改行は最初の1回だけ、最後の文のあとには入れない", () => {
+  it("3段落まで許容し、最後の文のあとには入れない", () => {
     expect(
       assembleDraft([
         { text: "一。", sourceIds: [], breakAfter: true },
         { text: "二。", sourceIds: [], breakAfter: true },
         { text: "三。", sourceIds: [], breakAfter: true },
       ]),
-    ).toBe("一。\n二。三。");
+    ).toBe("一。\n\n二。\n\n三。");
   });
 });
 

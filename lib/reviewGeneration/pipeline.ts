@@ -1,11 +1,10 @@
 // 口コミ生成のパイプライン(docs/plans/reviews-465-plan.md §14)。
 //   Customer Evidence(素材) → Appeal Planning(コード。何を一番伝えるか)
 //   → Style Seed(コード。どう書くか) → 作文(LLM 1回) → Single Review Lint(コード)
-//   → 最後の文が抽象的な総括なら削る
 //   → 構造の問題(要約・均一・繰り返し・あいまいなつなぎ・抽象総括)は、Style Seed だけを変えて全文を1回だけ作り直す
 //     (伝えたい良さ = Appeal Planning は変えない)
 //   → 危険な文だけ同期で意味検証(LLM。NG・タイムアウトはその文を削除 = fail-closed)
-//   → 否定的な素材が消えた・下書きが空なら、事実違反の文だけ1回部分修正 → それでも消えるなら本人の原文を残す
+//   → 否定的な素材・主役の評価・意向が消えたら1回部分修正 → 未確認の文は復活させない
 // 回答・素材・下書きの本文はログに出さない。返すメタデータにも本文は含めない。
 
 import {
@@ -17,7 +16,6 @@ import {
 } from "@/lib/ai/openai";
 import {
   containsPhrase,
-  countChars,
   findNegativeMarkers,
   foldSpelling,
   normalize,
@@ -36,6 +34,9 @@ import {
   type LintSentence,
 } from "@/lib/ai/naturalJapanese/lint";
 import { buildAppealPlan } from "@/lib/reviewGeneration/appeal";
+import { missingEvidence } from "@/lib/reviewGeneration/coverage";
+import { hasRichChoices } from "@/lib/reviewGeneration/length";
+import { reviewCharacterCount } from "@/lib/ai/naturalJapanese/evidence";
 import { toLintSources, type Material } from "@/lib/reviewGeneration/materials";
 import {
   alternativeStyleSeed,
@@ -131,7 +132,6 @@ const REPAIR_TIMEOUT_MS = 10_000;
 // 残り時間がこれ未満なら、その呼び出しは行わない(意味検証なら NG 扱い)。
 const MIN_CALL_BUDGET_MS = 2_500;
 // 締めの総括を削ったあとに、これより短くなるなら削らない。
-const MIN_DRAFT_CHARS = 20;
 
 const GENERATION_TEMPERATURE = 0.9;
 const VERIFICATION_TEMPERATURE = 0;
@@ -205,15 +205,15 @@ export function cleanSentences(raw: RawDraft | null | undefined): DraftSentence[
   return sentences;
 }
 
-/** 文をつなげて下書きにする。改行は最初の1回だけ使う。 */
+/** 内容のまとまりに合わせ、最大3段落にする。 */
 export function assembleDraft(sentences: readonly DraftSentence[]): string {
-  let usedBreak = false;
+  let usedBreaks = 0;
   return sentences
     .map((s, i) => {
       const isLast = i === sentences.length - 1;
-      if (!isLast && s.breakAfter && !usedBreak) {
-        usedBreak = true;
-        return `${s.text}\n`;
+      if (!isLast && s.breakAfter && usedBreaks < 2) {
+        usedBreaks++;
+        return `${s.text}\n\n`;
       }
       return s.text;
     })
@@ -310,6 +310,12 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
 
   // 何を一番伝えるか(内容の優先順位)と、どう書くか(書き方の傾向)を、別々に決める。
   const appeal = buildAppealPlan(materials, input.storeDescription);
+  const richChoices = hasRichChoices(materials);
+  const importantIds = [...new Set([
+    ...appeal.primaryIds,
+    ...materials.filter((m) => m.intent || m.role === "intention").map((m) => m.id),
+    ...(richChoices ? [...appeal.supportIds, ...materials.filter((m) => m.role === "menu" || m.role === "discovery").map((m) => m.id)] : []),
+  ])];
   meta.appeal = appeal.primaryIds.map((id) => appeal.categories[id] ?? "other").join("+");
   let seed = buildStyleSeed(materials, { random, previous: input.previousSeed });
   meta.styleSeed = styleSeedSignature(seed);
@@ -318,33 +324,18 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
   const lint = (sentences: readonly LintSentence[]) => lintDraft(sentences, sources);
   const usable = (draft: readonly DraftSentence[]) => draft.length > blockedSentenceIndexes(lint(draft)).length;
 
-  async function generateOnce(styleSeed: StyleSeed): Promise<DraftSentence[]> {
+  async function generateOnce(styleSeed: StyleSeed, feedback = ""): Promise<DraftSentence[]> {
     const result = await callJson<RawDraft>({
       task: "review_generation",
       systemPrompt: GENERATION_SYSTEM_PROMPT,
-      userPrompt: buildGenerationUserPrompt(materials, appeal, styleSeed, businessType),
+      userPrompt: buildGenerationUserPrompt(materials, appeal, styleSeed, businessType) + feedback,
       schema: draftSchema(materials.map((m) => m.id)),
       temperature: temperatureFor(resolveModel("review_generation"), GENERATION_TEMPERATURE),
-      maxOutputTokens: 700,
+      maxOutputTokens: 1200,
       timeoutMs: Math.min(GENERATION_TIMEOUT_MS, remaining()),
     });
     meta.record("generation", result);
     return cleanSentences(result.data);
-  }
-
-  /** 最後の文が抽象的な総括で、その素材がほかの文にも使われていれば削る(締めの文は無くてよい)。 */
-  function dropSummaryClosing(draft: DraftSentence[]): DraftSentence[] {
-    if (draft.length < 2) return draft;
-    const last = draft.length - 1;
-    const summary = lint(draft).issues.some((i) => i.code === "abstract_ai_summary" && i.sentenceIndex === last);
-    if (!summary) return draft;
-    const rest = draft.slice(0, last);
-    const restIds = new Set(rest.flatMap((s) => s.sourceIds));
-    if (!draft[last].sourceIds.every((id) => restIds.has(id)) || countChars(assembleDraft(rest)) < MIN_DRAFT_CHARS) {
-      return draft;
-    }
-    meta.flag("closing_dropped");
-    return rest;
   }
 
   // ── 1. 作文(使える文が1つも無ければ1回だけ作り直す) ──
@@ -377,15 +368,18 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
   if (!sentences) {
     throw new ReviewGenerationError("口コミの作成に失敗しました", "generation_failed", meta.snapshot([]), failureKind);
   }
-  sentences = dropSummaryClosing(sentences);
 
   // ── 2. 構造の問題は、部分修正ではなく Style Seed を変えて全文を1回だけ作り直す ──
   const structureProblems = structureIssueCount(lint(sentences));
-  if (structureProblems > 0 && remaining() >= MIN_CALL_BUDGET_MS * 2) {
+  const tooBrief = richChoices && reviewCharacterCount(assembleDraft(sentences)) < 180;
+  if ((structureProblems > 0 || tooBrief) && remaining() >= MIN_CALL_BUDGET_MS * 2) {
     const nextSeed = alternativeStyleSeed(materials, seed, random);
     try {
-      const candidate = dropSummaryClosing(await generateOnce(nextSeed));
-      if (usable(candidate) && structureIssueCount(lint(candidate)) < structureProblems) {
+      const feedback = tooBrief ? `\n\n【書き直し】前の案は${reviewCharacterCount(assembleDraft(sentences))}文字で、材料に対して短い要約になっています。今回は180〜260文字を目指してください。回答にある来店のきっかけとメニュー、スタッフへの評価、仕上がり、店内の印象、今後の意向を自然に伝え、2〜3段落に分けてください。質問と回答にある具体的な材料を使い、同じ感想の反復や未回答の心理・行動で水増ししないでください。` : "";
+      const candidate = await generateOnce(nextSeed, feedback);
+      const preservesEvidence = missingEvidence(materials, importantIds, candidate).length <= missingEvidence(materials, importantIds, sentences).length;
+      const improvesLength = tooBrief && reviewCharacterCount(assembleDraft(candidate)) > reviewCharacterCount(assembleDraft(sentences)) && reviewCharacterCount(assembleDraft(candidate)) <= 350;
+      if (usable(candidate) && preservesEvidence && (improvesLength || (!tooBrief && structureIssueCount(lint(candidate)) < structureProblems))) {
         sentences = candidate;
         seed = nextSeed;
         meta.styleSeed = styleSeedSignature(seed);
@@ -450,7 +444,9 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
   if (rejected.size > 0) meta.action("removed");
 
   // ── 4. 否定的な素材が反映されていない・下書きが空なら、事実違反の文だけを1回部分修正する ──
-  if (documentBlockIssues(lint(kept)).length > 0 && remaining() >= MIN_CALL_BUDGET_MS) {
+  const lostEvidenceIds = missingEvidence(materials, importantIds, kept);
+  if (lostEvidenceIds.length) meta.flag("important_evidence_missing");
+  if ((documentBlockIssues(lint(kept)).length > 0 || lostEvidenceIds.length > 0) && remaining() >= MIN_CALL_BUDGET_MS) {
     const missingNegativeIds = documentBlockIssues(lint(kept))
       .filter((i) => i.code === "negative_not_reflected" && i.sourceId)
       .map((i) => i.sourceId as string);
@@ -459,6 +455,7 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
         materials,
         sentences: sentences.map((s, i) => ({ text: s.text, sourceIds: s.sourceIds, problems: rejected.get(i) ?? [] })),
         missingNegativeIds,
+        missingEvidenceIds: lostEvidenceIds,
         businessType,
         timeoutMs: Math.min(REPAIR_TIMEOUT_MS, remaining()),
         temperature: temperatureFor(resolveModel("review_repair"), REPAIR_TEMPERATURE),
@@ -469,7 +466,9 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
       const accepted = new Set(kept.map((s) => normalize(s.text)));
       const repairedRejected = await reject(repairedSentences, accepted);
       const candidate = repairedSentences.filter((_, i) => !repairedRejected.has(i));
-      if (candidate.length > 0) {
+      const missingNegatives = (draft: DraftSentence[]) => documentBlockIssues(lint(draft)).filter((i) => i.code === "negative_not_reflected").length;
+      if (candidate.length > 0 && missingNegatives(candidate) <= missingNegatives(kept) &&
+          missingEvidence(materials, importantIds, candidate).length <= lostEvidenceIds.length) {
         kept = candidate;
         meta.action("repaired");
       }
@@ -492,8 +491,9 @@ export async function runReviewPipeline(input: PipelineInput, deps: PipelineDeps
     throw new ReviewGenerationError("使える下書きができませんでした", "unusable_draft", meta.snapshot(lintCodes(lint(kept))));
   }
 
-  const citedIds = new Set(kept.flatMap((s) => s.sourceIds));
-  meta.appealCovered = appeal.primaryIds.length === 0 || appeal.primaryIds.some((id) => citedIds.has(id));
+  meta.appealCovered = missingEvidence(materials, appeal.primaryIds, kept).length === 0;
+  if (missingEvidence(materials, importantIds, kept).length) meta.flag("important_evidence_unresolved");
+  if (richChoices && reviewCharacterCount(assembleDraft(kept)) < 180) meta.flag("length_below_guidance");
 
   return {
     draft: assembleDraft(kept),

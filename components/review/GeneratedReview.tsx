@@ -1,5 +1,7 @@
 "use client";
 
+import { reviewCharacterCount } from "@/lib/ai/naturalJapanese/evidence";
+
 // 回答の内容(満足度・否定的な内容の有無)によって、Google口コミへの導線を出し分けては
 // いけない(review gating の禁止。docs/plans/reviews-465-plan.md §7-1)。そのため、この
 // コンポーネントには CTA の表示を切り替える引数を持たせない(テストで保証している)。
@@ -36,12 +38,16 @@ export default function GeneratedReview({
 
       <div className="card">
         <textarea
+          aria-label="口コミの下書き"
           value={review}
           onChange={(e) => onReviewChange(e.target.value)}
           rows={8}
           disabled={disabled}
           className="w-full resize-none rounded-lg border border-greige bg-white p-3 text-sm leading-relaxed text-stone-700 focus:border-sage focus:outline-none"
         />
+        <p className="mt-2 text-right text-xs text-stone-500" aria-live="polite">
+          {reviewCharacterCount(review)}文字（改行を除く）
+        </p>
       </div>
 
       {/*

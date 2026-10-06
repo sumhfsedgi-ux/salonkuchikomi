@@ -1,0 +1,1681 @@
+{
+  "before": [
+    {
+      "phase": "before",
+      "id": "salon-reference",
+      "businessType": "眉毛サロン",
+      "answers": [
+        {
+          "questionText": "ご来店は何回目ですか？",
+          "selected": [
+            "初めて"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "来店のきっかけは？",
+          "selected": [
+            "Googleマップを見て",
+            "InstagramなどのSNSを見て"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "今回受けたメニューは？",
+          "selected": [
+            "眉毛パーマ"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "スタッフの対応は？",
+          "selected": [
+            "カウンセリングが丁寧だった"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "仕上がりは？",
+          "selected": [
+            "理想通りの仕上がりだった"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "店内について",
+          "selected": [
+            "清潔感があって安心できた"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "今後について教えてください",
+          "selected": [
+            "ぜひまた来たい"
+          ],
+          "questionType": "multiple"
+        }
+      ],
+      "draft": "初めての利用でしたが、カウンセリングがとても丁寧で安心できました。",
+      "seed": {
+        "length": "medium",
+        "emotion": "low",
+        "exclamation": "occasional",
+        "opening": "feeling",
+        "closing": "neutral",
+        "tone": "plain"
+      },
+      "sentences": [
+        {
+          "text": "初めての利用でしたが、カウンセリングがとても丁寧で安心できました。",
+          "sourceIds": [
+            "M1",
+            "M5",
+            "M7"
+          ],
+          "breakAfter": true
+        }
+      ],
+      "metadata": {
+        "promptVersion": "review-v3.2",
+        "generationModel": "gpt-4.1-mini",
+        "verificationModel": "gpt-4.1-mini",
+        "latencyMs": 4844,
+        "inputTokens": 2780,
+        "outputTokens": 107,
+        "llmCalls": 2,
+        "lintCodes": [],
+        "verifyMode": "sync",
+        "verifyFlags": [
+          "extreme_emotional_exaggeration"
+        ],
+        "repairAction": "removed",
+        "styleSeed": "medium|low|occasional|feeling|neutral|plain",
+        "appeal": "counseling+finish",
+        "appealCovered": true
+      },
+      "characters": 33,
+      "trace": [
+        {
+          "task": "review_generation",
+          "data": {
+            "sentences": [
+              {
+                "text": "初めての利用でしたが、カウンセリングがとても丁寧で安心できました。",
+                "source_ids": [
+                  "M1",
+                  "M5",
+                  "M7"
+                ],
+                "break_after": true
+              },
+              {
+                "text": "仕上がりも理想通りで大満足です！",
+                "source_ids": [
+                  "M6",
+                  "M8"
+                ],
+                "break_after": false
+              }
+            ]
+          }
+        },
+        {
+          "task": "review_verification",
+          "data": {
+            "results": [
+              {
+                "sentence": 1,
+                "supported": false,
+                "issues": [
+                  "extreme_emotional_exaggeration"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "phase": "before",
+      "id": "salon-reference-repeat",
+      "businessType": "眉毛サロン",
+      "answers": [
+        {
+          "questionText": "ご来店は何回目ですか？",
+          "selected": [
+            "初めて"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "来店のきっかけは？",
+          "selected": [
+            "Googleマップを見て",
+            "InstagramなどのSNSを見て"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "今回受けたメニューは？",
+          "selected": [
+            "眉毛パーマ"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "スタッフの対応は？",
+          "selected": [
+            "カウンセリングが丁寧だった"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "仕上がりは？",
+          "selected": [
+            "理想通りの仕上がりだった"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "店内について",
+          "selected": [
+            "清潔感があって安心できた"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "今後について教えてください",
+          "selected": [
+            "ぜひまた来たい"
+          ],
+          "questionType": "multiple"
+        }
+      ],
+      "draft": "初めて眉毛パーマで訪れましたが、カウンセリングがとても丁寧で安心できました。理想通りの仕上がりで満足しています！清潔感のある店内も好印象でした。ぜひまた来たいと思います！",
+      "seed": {
+        "length": "slightly_long",
+        "emotion": "none",
+        "exclamation": "expressive",
+        "opening": "visit",
+        "closing": "short_intention_allowed",
+        "tone": "light"
+      },
+      "sentences": [
+        {
+          "text": "初めて眉毛パーマで訪れましたが、カウンセリングがとても丁寧で安心できました。",
+          "sourceIds": [
+            "M1",
+            "M4",
+            "M5",
+            "M7"
+          ],
+          "breakAfter": false
+        },
+        {
+          "text": "理想通りの仕上がりで満足しています！",
+          "sourceIds": [
+            "M6"
+          ],
+          "breakAfter": false
+        },
+        {
+          "text": "清潔感のある店内も好印象でした。",
+          "sourceIds": [
+            "M7"
+          ],
+          "breakAfter": false
+        },
+        {
+          "text": "ぜひまた来たいと思います！",
+          "sourceIds": [
+            "M8"
+          ],
+          "breakAfter": false
+        }
+      ],
+      "metadata": {
+        "promptVersion": "review-v3.2",
+        "generationModel": "gpt-4.1-mini",
+        "verificationModel": "gpt-4.1-mini",
+        "latencyMs": 4218,
+        "inputTokens": 4585,
+        "outputTokens": 286,
+        "llmCalls": 3,
+        "lintCodes": [
+          "factual_invention:aspect"
+        ],
+        "verifyMode": "sync",
+        "verifyFlags": [
+          "structure_regenerated"
+        ],
+        "repairAction": "regenerated",
+        "styleSeed": "slightly_long|none|expressive|visit|short_intention_allowed|light",
+        "appeal": "counseling+finish",
+        "appealCovered": true
+      },
+      "characters": 85,
+      "trace": [
+        {
+          "task": "review_generation",
+          "data": {
+            "sentences": [
+              {
+                "text": "初めての来店でしたが、カウンセリングがとても丁寧で安心しました。",
+                "source_ids": [
+                  "M1",
+                  "M5"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "仕上がりも理想通りで大満足です！",
+                "source_ids": [
+                  "M6"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "お店は清潔感があり、居心地の良い空間でした。",
+                "source_ids": [
+                  "M7"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "ぜひまた来たいと思います！",
+                "source_ids": [
+                  "M8"
+                ],
+                "break_after": false
+              }
+            ]
+          }
+        },
+        {
+          "task": "review_generation",
+          "data": {
+            "sentences": [
+              {
+                "text": "初めて眉毛パーマで訪れましたが、カウンセリングがとても丁寧で安心できました。",
+                "source_ids": [
+                  "M1",
+                  "M4",
+                  "M5",
+                  "M7"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "理想通りの仕上がりで満足しています！",
+                "source_ids": [
+                  "M6"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "清潔感のある店内も好印象でした。",
+                "source_ids": [
+                  "M7"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "ぜひまた来たいと思います！",
+                "source_ids": [
+                  "M8"
+                ],
+                "break_after": false
+              }
+            ]
+          }
+        },
+        {
+          "task": "review_verification",
+          "data": {
+            "results": [
+              {
+                "sentence": 2,
+                "supported": true,
+                "issues": []
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "phase": "before",
+      "id": "sparse",
+      "businessType": "美容室",
+      "answers": [
+        {
+          "questionText": "今回利用したメニューは？",
+          "selected": [
+            "カット"
+          ],
+          "questionType": "multiple"
+        }
+      ],
+      "draft": "カットを利用しました。",
+      "seed": {
+        "length": "short",
+        "emotion": "low",
+        "exclamation": "occasional",
+        "opening": "fact",
+        "closing": "none_preferred",
+        "tone": "plain"
+      },
+      "sentences": [
+        {
+          "text": "カットを利用しました。",
+          "sourceIds": [
+            "M1"
+          ],
+          "breakAfter": false
+        }
+      ],
+      "metadata": {
+        "promptVersion": "review-v3.2",
+        "generationModel": "gpt-4.1-mini",
+        "verificationModel": null,
+        "latencyMs": 716,
+        "inputTokens": 1568,
+        "outputTokens": 27,
+        "llmCalls": 1,
+        "lintCodes": [],
+        "verifyMode": "none",
+        "verifyFlags": [],
+        "repairAction": "none",
+        "styleSeed": "short|low|occasional|fact|none_preferred|plain",
+        "appeal": "",
+        "appealCovered": true
+      },
+      "characters": 11,
+      "trace": [
+        {
+          "task": "review_generation",
+          "data": {
+            "sentences": [
+              {
+                "text": "カットを利用しました。",
+                "source_ids": [
+                  "M1"
+                ],
+                "break_after": false
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "phase": "before",
+      "id": "mixed",
+      "businessType": "美容室",
+      "answers": [
+        {
+          "questionText": "仕上がりは？",
+          "selected": [
+            "理想通りの仕上がりだった"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "良かった点や気になった点を自由にお書きください",
+          "questionType": "text",
+          "selected": [],
+          "freeText": "待ち時間が長かったです。"
+        },
+        {
+          "questionText": "今後について",
+          "selected": [
+            "機会があればまた利用したい"
+          ],
+          "questionType": "multiple"
+        }
+      ],
+      "draft": "待ち時間が長かったです。\nそれでも理想通りの仕上がりで満足しています！機会があればまた利用したいです。",
+      "seed": {
+        "length": "medium",
+        "emotion": "low",
+        "exclamation": "occasional",
+        "opening": "feeling",
+        "closing": "neutral",
+        "tone": "match_voice"
+      },
+      "sentences": [
+        {
+          "text": "待ち時間が長かったです。",
+          "sourceIds": [
+            "M2"
+          ],
+          "breakAfter": true
+        },
+        {
+          "text": "それでも理想通りの仕上がりで満足しています！",
+          "sourceIds": [
+            "M1"
+          ],
+          "breakAfter": false
+        },
+        {
+          "text": "機会があればまた利用したいです。",
+          "sourceIds": [
+            "M3"
+          ],
+          "breakAfter": false
+        }
+      ],
+      "metadata": {
+        "promptVersion": "review-v3.2",
+        "generationModel": "gpt-4.1-mini",
+        "verificationModel": "gpt-4.1-mini",
+        "latencyMs": 2460,
+        "inputTokens": 2628,
+        "outputTokens": 113,
+        "llmCalls": 2,
+        "lintCodes": [
+          "softened_negative"
+        ],
+        "verifyMode": "sync",
+        "verifyFlags": [],
+        "repairAction": "none",
+        "styleSeed": "medium|low|occasional|feeling|neutral|match_voice",
+        "appeal": "finish",
+        "appealCovered": true
+      },
+      "characters": 50,
+      "trace": [
+        {
+          "task": "review_generation",
+          "data": {
+            "sentences": [
+              {
+                "text": "待ち時間が長かったです。",
+                "source_ids": [
+                  "M2"
+                ],
+                "break_after": true
+              },
+              {
+                "text": "それでも理想通りの仕上がりで満足しています！",
+                "source_ids": [
+                  "M1"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "機会があればまた利用したいです。",
+                "source_ids": [
+                  "M3"
+                ],
+                "break_after": false
+              }
+            ]
+          }
+        },
+        {
+          "task": "review_verification",
+          "data": {
+            "results": [
+              {
+                "sentence": 0,
+                "supported": true,
+                "issues": []
+              },
+              {
+                "sentence": 1,
+                "supported": true,
+                "issues": []
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "phase": "before",
+      "id": "neutral",
+      "businessType": "ネイルサロン",
+      "answers": [
+        {
+          "questionText": "今回利用したメニューは？",
+          "selected": [
+            "ハンドネイル"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "仕上がりは？",
+          "selected": [
+            "ふつうだった"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "今後について",
+          "selected": [
+            "まだ分からない"
+          ],
+          "questionType": "multiple"
+        }
+      ],
+      "draft": "ハンドネイルの施術を利用しました。施術の印象はふつうでした。",
+      "seed": {
+        "length": "medium",
+        "emotion": "medium",
+        "exclamation": "occasional",
+        "opening": "fact",
+        "closing": "none_preferred",
+        "tone": "plain"
+      },
+      "sentences": [
+        {
+          "text": "ハンドネイルの施術を利用しました。",
+          "sourceIds": [
+            "M1"
+          ],
+          "breakAfter": false
+        },
+        {
+          "text": "施術の印象はふつうでした。",
+          "sourceIds": [
+            "M2"
+          ],
+          "breakAfter": false
+        }
+      ],
+      "metadata": {
+        "promptVersion": "review-v3.2",
+        "generationModel": "gpt-4.1-mini",
+        "verificationModel": null,
+        "latencyMs": 2711,
+        "inputTokens": 3215,
+        "outputTokens": 150,
+        "llmCalls": 2,
+        "lintCodes": [],
+        "verifyMode": "none",
+        "verifyFlags": [
+          "structure_regenerated"
+        ],
+        "repairAction": "regenerated",
+        "styleSeed": "medium|medium|occasional|fact|none_preferred|plain",
+        "appeal": "other",
+        "appealCovered": true
+      },
+      "characters": 30,
+      "trace": [
+        {
+          "task": "review_generation",
+          "data": {
+            "sentences": [
+              {
+                "text": "ハンドネイルのメニューを利用しました。",
+                "source_ids": [
+                  "M1"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "施術の印象はふつうだったと感じています。",
+                "source_ids": [
+                  "M2"
+                ],
+                "break_after": true
+              },
+              {
+                "text": "効果やその後の変化についてはまだ分かりません。",
+                "source_ids": [
+                  "M3"
+                ],
+                "break_after": false
+              }
+            ]
+          }
+        },
+        {
+          "task": "review_generation",
+          "data": {
+            "sentences": [
+              {
+                "text": "ハンドネイルの施術を利用しました。",
+                "source_ids": [
+                  "M1"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "施術の印象はふつうでした。",
+                "source_ids": [
+                  "M2"
+                ],
+                "break_after": false
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "phase": "before",
+      "id": "own-words",
+      "businessType": "美容室",
+      "answers": [
+        {
+          "questionText": "今回利用したメニューは？",
+          "selected": [
+            "カットとカラー"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "良かった点や気になった点を自由にお書きください",
+          "questionType": "text",
+          "selected": [],
+          "freeText": "落ち着いた色にしたくて相談しました。いくつか色を見せてもらって選べたのがよかったです。長さもお願いした通りで、朝のセットが前より楽になりました！担当の方が話しやすく、気になっていた髪の広がりについても質問できました。店内も静かで過ごしやすかったです。またお願いしたいです。"
+        }
+      ],
+      "draft": "落ち着いた色にしたくて相談したところ、いくつか色を見せてもらって選べたのがよかったです。\n長さもお願いした通りで、朝のセットが前より楽になりました！担当の方が話しやすく、気になっていた髪の広がりについても質問できました。",
+      "seed": {
+        "length": "medium",
+        "emotion": "low",
+        "exclamation": "occasional",
+        "opening": "feeling",
+        "closing": "neutral",
+        "tone": "match_voice"
+      },
+      "sentences": [
+        {
+          "text": "落ち着いた色にしたくて相談したところ、いくつか色を見せてもらって選べたのがよかったです。",
+          "sourceIds": [
+            "M2",
+            "M3"
+          ],
+          "breakAfter": true
+        },
+        {
+          "text": "長さもお願いした通りで、朝のセットが前より楽になりました！",
+          "sourceIds": [
+            "M4"
+          ],
+          "breakAfter": true
+        },
+        {
+          "text": "担当の方が話しやすく、気になっていた髪の広がりについても質問できました。",
+          "sourceIds": [
+            "M5"
+          ],
+          "breakAfter": false
+        }
+      ],
+      "metadata": {
+        "promptVersion": "review-v3.2",
+        "generationModel": "gpt-4.1-mini",
+        "verificationModel": "gpt-4.1-mini",
+        "latencyMs": 2227,
+        "inputTokens": 2958,
+        "outputTokens": 148,
+        "llmCalls": 2,
+        "lintCodes": [],
+        "verifyMode": "sync",
+        "verifyFlags": [],
+        "repairAction": "none",
+        "styleSeed": "medium|low|occasional|feeling|neutral|match_voice",
+        "appeal": "counseling+feeling",
+        "appealCovered": true
+      },
+      "characters": 109,
+      "trace": [
+        {
+          "task": "review_generation",
+          "data": {
+            "sentences": [
+              {
+                "text": "落ち着いた色にしたくて相談したところ、いくつか色を見せてもらって選べたのがよかったです。",
+                "source_ids": [
+                  "M2",
+                  "M3"
+                ],
+                "break_after": true
+              },
+              {
+                "text": "長さもお願いした通りで、朝のセットが前より楽になりました！",
+                "source_ids": [
+                  "M4"
+                ],
+                "break_after": true
+              },
+              {
+                "text": "担当の方が話しやすく、気になっていた髪の広がりについても質問できました。",
+                "source_ids": [
+                  "M5"
+                ],
+                "break_after": false
+              }
+            ]
+          }
+        },
+        {
+          "task": "review_verification",
+          "data": {
+            "results": [
+              {
+                "sentence": 1,
+                "supported": true,
+                "issues": []
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "after": [
+    {
+      "phase": "after",
+      "id": "salon-reference",
+      "businessType": "眉毛サロン",
+      "answers": [
+        {
+          "questionText": "ご来店は何回目ですか？",
+          "selected": [
+            "初めて"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "来店のきっかけは？",
+          "selected": [
+            "Googleマップを見て",
+            "InstagramなどのSNSを見て"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "今回受けたメニューは？",
+          "selected": [
+            "眉毛パーマ"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "スタッフの対応は？",
+          "selected": [
+            "カウンセリングが丁寧だった"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "仕上がりは？",
+          "selected": [
+            "理想通りの仕上がりだった"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "店内について",
+          "selected": [
+            "清潔感があって安心できた"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "今後について教えてください",
+          "selected": [
+            "ぜひまた来たい"
+          ],
+          "questionType": "multiple"
+        }
+      ],
+      "draft": "初めての来店は、GoogleマップやInstagramなどのSNSでお店を知ったことがきっかけでした。\n\n眉毛パーマのメニューを利用しましたが、カウンセリングがとても丁寧で、納得して施術を受けられました。仕上がりは理想通りで、店内も清潔感があって安心できたのが嬉しかったです。ぜひまた来たいと思います！",
+      "seed": {
+        "length": "medium",
+        "emotion": "medium",
+        "exclamation": "occasional",
+        "opening": "feeling",
+        "closing": "short_intention_allowed",
+        "tone": "plain"
+      },
+      "sentences": [
+        {
+          "text": "初めての来店は、GoogleマップやInstagramなどのSNSでお店を知ったことがきっかけでした。",
+          "sourceIds": [
+            "M1",
+            "M2",
+            "M3"
+          ],
+          "breakAfter": true
+        },
+        {
+          "text": "眉毛パーマのメニューを利用しましたが、カウンセリングがとても丁寧で、納得して施術を受けられました。",
+          "sourceIds": [
+            "M4",
+            "M5"
+          ],
+          "breakAfter": false
+        },
+        {
+          "text": "仕上がりは理想通りで、店内も清潔感があって安心できたのが嬉しかったです。ぜひまた来たいと思います！",
+          "sourceIds": [
+            "M6",
+            "M7",
+            "M8"
+          ],
+          "breakAfter": true
+        }
+      ],
+      "metadata": {
+        "promptVersion": "review-v3.3",
+        "generationModel": "gpt-4.1-mini",
+        "verificationModel": null,
+        "latencyMs": 3513,
+        "inputTokens": 4944,
+        "outputTokens": 300,
+        "llmCalls": 2,
+        "lintCodes": [],
+        "verifyMode": "none",
+        "verifyFlags": [
+          "structure_regenerated",
+          "length_below_guidance"
+        ],
+        "repairAction": "regenerated",
+        "styleSeed": "medium|medium|occasional|feeling|short_intention_allowed|plain",
+        "appeal": "counseling+finish",
+        "appealCovered": true
+      },
+      "characters": 149,
+      "trace": [
+        {
+          "task": "review_generation",
+          "data": {
+            "sentences": [
+              {
+                "text": "初めて利用した眉毛サロンで、眉毛パーマをお願いしましたが、カウンセリングがとても丁寧で安心できました。",
+                "source_ids": [
+                  "M1",
+                  "M4",
+                  "M5"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "仕上がりは理想通りで、店内も清潔感があり居心地の良さを感じました。",
+                "source_ids": [
+                  "M6",
+                  "M7"
+                ],
+                "break_after": true
+              },
+              {
+                "text": "ぜひまた来たいと思います！",
+                "source_ids": [
+                  "M8"
+                ],
+                "break_after": false
+              }
+            ]
+          }
+        },
+        {
+          "task": "review_generation",
+          "data": {
+            "sentences": [
+              {
+                "text": "初めての来店は、GoogleマップやInstagramなどのSNSでお店を知ったことがきっかけでした。",
+                "source_ids": [
+                  "M1",
+                  "M2",
+                  "M3"
+                ],
+                "break_after": true
+              },
+              {
+                "text": "眉毛パーマのメニューを利用しましたが、カウンセリングがとても丁寧で、納得して施術を受けられました。",
+                "source_ids": [
+                  "M4",
+                  "M5"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "仕上がりは理想通りで、店内も清潔感があって安心できたのが嬉しかったです。ぜひまた来たいと思います！",
+                "source_ids": [
+                  "M6",
+                  "M7",
+                  "M8"
+                ],
+                "break_after": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "phase": "after",
+      "id": "salon-reference-repeat",
+      "businessType": "眉毛サロン",
+      "answers": [
+        {
+          "questionText": "ご来店は何回目ですか？",
+          "selected": [
+            "初めて"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "来店のきっかけは？",
+          "selected": [
+            "Googleマップを見て",
+            "InstagramなどのSNSを見て"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "今回受けたメニューは？",
+          "selected": [
+            "眉毛パーマ"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "スタッフの対応は？",
+          "selected": [
+            "カウンセリングが丁寧だった"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "仕上がりは？",
+          "selected": [
+            "理想通りの仕上がりだった"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "店内について",
+          "selected": [
+            "清潔感があって安心できた"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "今後について教えてください",
+          "selected": [
+            "ぜひまた来たい"
+          ],
+          "questionType": "multiple"
+        }
+      ],
+      "draft": "初めて利用させていただきましたが、InstagramやGoogleマップを見て気になっていた眉毛パーマをお願いしました。カウンセリングが丁寧で、仕上がりは理想通りでした。店内も清潔感があり、安心して施術を受けられました。ぜひまた来たいと思っています。",
+      "seed": {
+        "length": "slightly_long",
+        "emotion": "medium",
+        "exclamation": "expressive",
+        "opening": "visit",
+        "closing": "short_intention_allowed",
+        "tone": "light"
+      },
+      "sentences": [
+        {
+          "text": "初めて利用させていただきましたが、InstagramやGoogleマップを見て気になっていた眉毛パーマをお願いしました。",
+          "sourceIds": [
+            "M1",
+            "M2",
+            "M3",
+            "M4"
+          ],
+          "breakAfter": false
+        },
+        {
+          "text": "カウンセリングが丁寧で、仕上がりは理想通りでした。",
+          "sourceIds": [
+            "M5",
+            "M6"
+          ],
+          "breakAfter": false
+        },
+        {
+          "text": "店内も清潔感があり、安心して施術を受けられました。ぜひまた来たいと思っています。",
+          "sourceIds": [
+            "M7",
+            "M8"
+          ],
+          "breakAfter": true
+        }
+      ],
+      "metadata": {
+        "promptVersion": "review-v3.3",
+        "generationModel": "gpt-4.1-mini",
+        "verificationModel": "gpt-4.1-mini",
+        "latencyMs": 5720,
+        "inputTokens": 8240,
+        "outputTokens": 483,
+        "llmCalls": 4,
+        "lintCodes": [],
+        "verifyMode": "sync",
+        "verifyFlags": [
+          "structure_regen_rejected",
+          "factual_invention",
+          "important_evidence_missing",
+          "length_below_guidance"
+        ],
+        "repairAction": "repaired",
+        "styleSeed": "slightly_long|medium|expressive|visit|short_intention_allowed|light",
+        "appeal": "counseling+finish",
+        "appealCovered": true
+      },
+      "characters": 125,
+      "trace": [
+        {
+          "task": "review_generation",
+          "data": {
+            "sentences": [
+              {
+                "text": "初めて利用させていただきましたが、InstagramやGoogleマップを見て気になっていた眉毛パーマをお願いしました。",
+                "source_ids": [
+                  "M1",
+                  "M2",
+                  "M3",
+                  "M4"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "カウンセリングがとても丁寧で、自分の理想通りの仕上がりにしてもらえて大満足です！",
+                "source_ids": [
+                  "M5",
+                  "M6"
+                ],
+                "break_after": true
+              },
+              {
+                "text": "店内も清潔感があり、安心して施術を受けられました。ぜひまた来たいと思っています。",
+                "source_ids": [
+                  "M7",
+                  "M8"
+                ],
+                "break_after": false
+              }
+            ]
+          }
+        },
+        {
+          "task": "review_generation",
+          "data": {
+            "sentences": [
+              {
+                "text": "今回が初めての来店で、InstagramやGoogleマップを見てこちらのお店を知りました。",
+                "source_ids": [
+                  "M1",
+                  "M2",
+                  "M3"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "眉毛パーマの施術を受け、カウンセリングが丁寧だったのが印象的です。おかげで理想通りの仕上がりになりました！",
+                "source_ids": [
+                  "M4",
+                  "M5",
+                  "M6"
+                ],
+                "break_after": true
+              },
+              {
+                "text": "店内は清潔感があって安心できる空間でしたし、ぜひまた来たいと思っています。",
+                "source_ids": [
+                  "M7",
+                  "M8"
+                ],
+                "break_after": false
+              }
+            ]
+          }
+        },
+        {
+          "task": "review_verification",
+          "data": {
+            "results": [
+              {
+                "sentence": 1,
+                "supported": false,
+                "issues": [
+                  "factual_invention"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "task": "review_repair",
+          "data": {
+            "sentences": [
+              {
+                "text": "初めて利用させていただきましたが、InstagramやGoogleマップを見て気になっていた眉毛パーマをお願いしました。",
+                "source_ids": [
+                  "M1",
+                  "M2",
+                  "M3",
+                  "M4"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "カウンセリングが丁寧で、仕上がりは理想通りでした。",
+                "source_ids": [
+                  "M5",
+                  "M6"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "店内も清潔感があり、安心して施術を受けられました。ぜひまた来たいと思っています。",
+                "source_ids": [
+                  "M7",
+                  "M8"
+                ],
+                "break_after": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "phase": "after",
+      "id": "sparse",
+      "businessType": "美容室",
+      "answers": [
+        {
+          "questionText": "今回利用したメニューは？",
+          "selected": [
+            "カット"
+          ],
+          "questionType": "multiple"
+        }
+      ],
+      "draft": "今回カットを利用しました。",
+      "seed": {
+        "length": "short",
+        "emotion": "low",
+        "exclamation": "occasional",
+        "opening": "fact",
+        "closing": "none_preferred",
+        "tone": "plain"
+      },
+      "sentences": [
+        {
+          "text": "今回カットを利用しました。",
+          "sourceIds": [
+            "M1"
+          ],
+          "breakAfter": true
+        }
+      ],
+      "metadata": {
+        "promptVersion": "review-v3.3",
+        "generationModel": "gpt-4.1-mini",
+        "verificationModel": null,
+        "latencyMs": 1452,
+        "inputTokens": 2050,
+        "outputTokens": 56,
+        "llmCalls": 1,
+        "lintCodes": [],
+        "verifyMode": "none",
+        "verifyFlags": [],
+        "repairAction": "removed",
+        "styleSeed": "short|low|occasional|fact|none_preferred|plain",
+        "appeal": "",
+        "appealCovered": true
+      },
+      "characters": 13,
+      "trace": [
+        {
+          "task": "review_generation",
+          "data": {
+            "sentences": [
+              {
+                "text": "今回カットを利用しました。",
+                "source_ids": [
+                  "M1"
+                ],
+                "break_after": true
+              },
+              {
+                "text": "シンプルなメニューでしたが、満足しています。",
+                "source_ids": [
+                  "M1"
+                ],
+                "break_after": false
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "phase": "after",
+      "id": "mixed",
+      "businessType": "美容室",
+      "answers": [
+        {
+          "questionText": "仕上がりは？",
+          "selected": [
+            "理想通りの仕上がりだった"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "良かった点や気になった点を自由にお書きください",
+          "questionType": "text",
+          "selected": [],
+          "freeText": "待ち時間が長かったです。"
+        },
+        {
+          "questionText": "今後について",
+          "selected": [
+            "機会があればまた利用したい"
+          ],
+          "questionType": "multiple"
+        }
+      ],
+      "draft": "仕上がりは理想通りで、とても満足しています。\n\nただ、待ち時間が長かったのが少し残念でした。\n\n機会があればまた利用したいと思います！",
+      "seed": {
+        "length": "medium",
+        "emotion": "low",
+        "exclamation": "occasional",
+        "opening": "feeling",
+        "closing": "short_intention_allowed",
+        "tone": "match_voice"
+      },
+      "sentences": [
+        {
+          "text": "仕上がりは理想通りで、とても満足しています。",
+          "sourceIds": [
+            "M1"
+          ],
+          "breakAfter": true
+        },
+        {
+          "text": "ただ、待ち時間が長かったのが少し残念でした。",
+          "sourceIds": [
+            "M2"
+          ],
+          "breakAfter": true
+        },
+        {
+          "text": "機会があればまた利用したいと思います！",
+          "sourceIds": [
+            "M3"
+          ],
+          "breakAfter": false
+        }
+      ],
+      "metadata": {
+        "promptVersion": "review-v3.3",
+        "generationModel": "gpt-4.1-mini",
+        "verificationModel": "gpt-4.1-mini",
+        "latencyMs": 2104,
+        "inputTokens": 3428,
+        "outputTokens": 122,
+        "llmCalls": 2,
+        "lintCodes": [
+          "factual_invention:intent"
+        ],
+        "verifyMode": "sync",
+        "verifyFlags": [],
+        "repairAction": "none",
+        "styleSeed": "medium|low|occasional|feeling|short_intention_allowed|match_voice",
+        "appeal": "finish",
+        "appealCovered": true
+      },
+      "characters": 63,
+      "trace": [
+        {
+          "task": "review_generation",
+          "data": {
+            "sentences": [
+              {
+                "text": "仕上がりは理想通りで、とても満足しています。",
+                "source_ids": [
+                  "M1"
+                ],
+                "break_after": true
+              },
+              {
+                "text": "ただ、待ち時間が長かったのが少し残念でした。",
+                "source_ids": [
+                  "M2"
+                ],
+                "break_after": true
+              },
+              {
+                "text": "機会があればまた利用したいと思います！",
+                "source_ids": [
+                  "M3"
+                ],
+                "break_after": false
+              }
+            ]
+          }
+        },
+        {
+          "task": "review_verification",
+          "data": {
+            "results": [
+              {
+                "sentence": 1,
+                "supported": true,
+                "issues": []
+              },
+              {
+                "sentence": 2,
+                "supported": true,
+                "issues": []
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "phase": "after",
+      "id": "neutral",
+      "businessType": "ネイルサロン",
+      "answers": [
+        {
+          "questionText": "今回利用したメニューは？",
+          "selected": [
+            "ハンドネイル"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "仕上がりは？",
+          "selected": [
+            "ふつうだった"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "今後について",
+          "selected": [
+            "まだ分からない"
+          ],
+          "questionType": "multiple"
+        }
+      ],
+      "draft": "今回ハンドネイルの施術を受けました。仕上がりに関しては、特に印象に残るほどではなく、ふつうだったと感じています。今後の利用については、まだ分からず、はっきりしたことは言えません。",
+      "seed": {
+        "length": "medium",
+        "emotion": "low",
+        "exclamation": "occasional",
+        "opening": "fact",
+        "closing": "none_preferred",
+        "tone": "plain"
+      },
+      "sentences": [
+        {
+          "text": "今回ハンドネイルの施術を受けました。",
+          "sourceIds": [
+            "M1"
+          ],
+          "breakAfter": false
+        },
+        {
+          "text": "仕上がりに関しては、特に印象に残るほどではなく、ふつうだったと感じています。",
+          "sourceIds": [
+            "M2"
+          ],
+          "breakAfter": false
+        },
+        {
+          "text": "今後の利用については、まだ分からず、はっきりしたことは言えません。",
+          "sourceIds": [
+            "M3"
+          ],
+          "breakAfter": false
+        }
+      ],
+      "metadata": {
+        "promptVersion": "review-v3.3",
+        "generationModel": "gpt-4.1-mini",
+        "verificationModel": null,
+        "latencyMs": 4808,
+        "inputTokens": 6084,
+        "outputTokens": 358,
+        "llmCalls": 3,
+        "lintCodes": [
+          "robotic_survey_summary"
+        ],
+        "verifyMode": "none",
+        "verifyFlags": [
+          "structure_regen_rejected",
+          "important_evidence_missing"
+        ],
+        "repairAction": "repaired",
+        "styleSeed": "medium|low|occasional|fact|none_preferred|plain",
+        "appeal": "other",
+        "appealCovered": true
+      },
+      "characters": 89,
+      "trace": [
+        {
+          "task": "review_generation",
+          "data": {
+            "sentences": [
+              {
+                "text": "今回ハンドネイルの施術を受けました。",
+                "source_ids": [
+                  "M1"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "仕上がりに関しては、特に印象に残るほどではなく、ふつうだったと感じています。",
+                "source_ids": [
+                  "M2"
+                ],
+                "break_after": true
+              },
+              {
+                "text": "今後の利用についてはまだ決めかねているため、様子を見たいと思います。",
+                "source_ids": [
+                  "M3"
+                ],
+                "break_after": false
+              }
+            ]
+          }
+        },
+        {
+          "task": "review_generation",
+          "data": {
+            "sentences": [
+              {
+                "text": "今回ハンドネイルのメニューを利用しました。",
+                "source_ids": [
+                  "M1"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "仕上がりはふつうだったので、特に際立った感動はありませんでしたが、無難な仕上がりで安心もできました。",
+                "source_ids": [
+                  "M2"
+                ],
+                "break_after": true
+              },
+              {
+                "text": "今後の利用についてはまだ分からないため、次回の機会があればその時に判断したいと思っています。",
+                "source_ids": [
+                  "M3"
+                ],
+                "break_after": false
+              }
+            ]
+          }
+        },
+        {
+          "task": "review_repair",
+          "data": {
+            "sentences": [
+              {
+                "text": "今回ハンドネイルの施術を受けました。",
+                "source_ids": [
+                  "M1"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "仕上がりに関しては、特に印象に残るほどではなく、ふつうだったと感じています。",
+                "source_ids": [
+                  "M2"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "今後の利用については、まだ分からず、はっきりしたことは言えません。",
+                "source_ids": [
+                  "M3"
+                ],
+                "break_after": false
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "phase": "after",
+      "id": "own-words",
+      "businessType": "美容室",
+      "answers": [
+        {
+          "questionText": "今回利用したメニューは？",
+          "selected": [
+            "カットとカラー"
+          ],
+          "questionType": "multiple"
+        },
+        {
+          "questionText": "良かった点や気になった点を自由にお書きください",
+          "questionType": "text",
+          "selected": [],
+          "freeText": "落ち着いた色にしたくて相談しました。いくつか色を見せてもらって選べたのがよかったです。長さもお願いした通りで、朝のセットが前より楽になりました！担当の方が話しやすく、気になっていた髪の広がりについても質問できました。店内も静かで過ごしやすかったです。またお願いしたいです。"
+        }
+      ],
+      "draft": "落ち着いた色にしたくて相談したところ、いくつかの色を見せてもらい選べたのがよかったです。カットもお願いした通りの長さで、朝のセットが前より楽になりました！\n\n担当の方が話しやすく、気になっていた髪の広がりについても質問できました。店内も静かで過ごしやすかったです。またお願いしたいです。",
+      "seed": {
+        "length": "medium",
+        "emotion": "low",
+        "exclamation": "occasional",
+        "opening": "feeling",
+        "closing": "short_intention_allowed",
+        "tone": "match_voice"
+      },
+      "sentences": [
+        {
+          "text": "落ち着いた色にしたくて相談したところ、いくつかの色を見せてもらい選べたのがよかったです。",
+          "sourceIds": [
+            "M2",
+            "M3"
+          ],
+          "breakAfter": false
+        },
+        {
+          "text": "カットもお願いした通りの長さで、朝のセットが前より楽になりました！",
+          "sourceIds": [
+            "M1",
+            "M4"
+          ],
+          "breakAfter": true
+        },
+        {
+          "text": "担当の方が話しやすく、気になっていた髪の広がりについても質問できました。",
+          "sourceIds": [
+            "M5"
+          ],
+          "breakAfter": false
+        },
+        {
+          "text": "店内も静かで過ごしやすかったです。またお願いしたいです。",
+          "sourceIds": [
+            "M6"
+          ],
+          "breakAfter": true
+        }
+      ],
+      "metadata": {
+        "promptVersion": "review-v3.3",
+        "generationModel": "gpt-4.1-mini",
+        "verificationModel": "gpt-4.1-mini",
+        "latencyMs": 2628,
+        "inputTokens": 3905,
+        "outputTokens": 189,
+        "llmCalls": 2,
+        "lintCodes": [],
+        "verifyMode": "sync",
+        "verifyFlags": [],
+        "repairAction": "none",
+        "styleSeed": "medium|low|occasional|feeling|short_intention_allowed|match_voice",
+        "appeal": "counseling+feeling",
+        "appealCovered": true
+      },
+      "characters": 141,
+      "trace": [
+        {
+          "task": "review_generation",
+          "data": {
+            "sentences": [
+              {
+                "text": "落ち着いた色にしたくて相談したところ、いくつかの色を見せてもらい選べたのがよかったです。",
+                "source_ids": [
+                  "M2",
+                  "M3"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "カットもお願いした通りの長さで、朝のセットが前より楽になりました！",
+                "source_ids": [
+                  "M1",
+                  "M4"
+                ],
+                "break_after": true
+              },
+              {
+                "text": "担当の方が話しやすく、気になっていた髪の広がりについても質問できました。",
+                "source_ids": [
+                  "M5"
+                ],
+                "break_after": false
+              },
+              {
+                "text": "店内も静かで過ごしやすかったです。またお願いしたいです。",
+                "source_ids": [
+                  "M6"
+                ],
+                "break_after": true
+              }
+            ]
+          }
+        },
+        {
+          "task": "review_verification",
+          "data": {
+            "results": [
+              {
+                "sentence": 1,
+                "supported": true,
+                "issues": []
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

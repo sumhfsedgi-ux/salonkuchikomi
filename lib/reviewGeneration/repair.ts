@@ -26,6 +26,7 @@ export async function repairDraft(
     materials: readonly Material[];
     sentences: readonly SentenceToRepair[];
     missingNegativeIds: readonly string[];
+    missingEvidenceIds?: readonly string[];
     businessType: string | null;
     timeoutMs: number;
     temperature?: number;
@@ -34,10 +35,10 @@ export async function repairDraft(
   const result = await callJson<RawDraft>({
     task: "review_repair",
     systemPrompt: REPAIR_SYSTEM_PROMPT,
-    userPrompt: buildRepairUserPrompt(params.materials, params.sentences, params.missingNegativeIds, params.businessType),
+    userPrompt: buildRepairUserPrompt(params.materials, params.sentences, params.missingNegativeIds, params.businessType, params.missingEvidenceIds),
     schema: draftSchema(params.materials.map((m) => m.id)),
     temperature: params.temperature,
-    maxOutputTokens: 700,
+    maxOutputTokens: 1200,
     timeoutMs: params.timeoutMs,
   });
   return { raw: result.data, model: result.model, usage: result.usage, latencyMs: result.latencyMs };

@@ -28,6 +28,7 @@ import {
   normalize,
   sentenceEnding,
 } from "@/lib/ai/naturalJapanese/analyze";
+import { assessIntent, canonicalEvidence } from "@/lib/ai/naturalJapanese/evidence";
 import {
   ABSTRACT_NOUN_PATTERN,
   ASPECT_PHRASES,
@@ -37,7 +38,6 @@ import {
   EXTREME_EMOTION_PHRASES,
   FIRST_VISIT_PHRASES,
   FLIP_PHRASES,
-  INTENT_PHRASES,
   INVENTED_DETAIL_PHRASES,
   MEDICAL_PHRASES,
   OFF_TOPIC_PHRASES,
@@ -57,6 +57,8 @@ import {
 export interface LintSource {
   id: string;
   text: string;
+  questionText?: string;
+  role?: string;
   /** 否定的な内容を含む(必ずどこかの文に反映し、反転・弱めをしてはいけない)。 */
   negative: boolean;
   /** 「〜ように感じた」などの知覚表現を含む(効果として断定してはいけない)。 */
@@ -177,7 +179,8 @@ function issue(
 
 /** phrases のうち sentence に出てきて、supportText に出てこない語。 */
 function unsupportedPhrases(sentence: string, phrases: readonly string[], supportText: string): string[] {
-  return findPhrases(sentence, phrases).filter((phrase) => !containsPhrase(supportText, phrase));
+  return phrases.filter((phrase) => canonicalEvidence(sentence).includes(canonicalEvidence(phrase)) &&
+    !canonicalEvidence(supportText).includes(canonicalEvidence(phrase)));
 }
 
 function unsupportedNumbers(sentence: string, supportText: string): string[] {
@@ -200,9 +203,15 @@ export function lintDraft(sentences: readonly LintSentence[], sources: readonly 
   const traits: SentenceTraits[] = [];
   const sourceById = new Map(sources.map((s) => [s.id, s]));
   const allSourceText = sources.map((s) => s.text).join("\n");
+  // 回答が「清潔感がある」でも、質問が店内についてなら「店内」は新しい観点ではない。
+  // 質問にある評価語まで証拠にしない。場所・人物の名詞だけ補う。
+  const aspectSupportText = allSourceText + sources.map((s) =>
+    s.questionText?.match(/店内|スタッフ|カウンセリング|仕上がり/gu)?.join(" ") ?? "").join("\n");
   const firstVisit = findPhrases(allSourceText, FIRST_VISIT_PHRASES).length > 0;
   const repeatVisit = REPEAT_VISIT_PATTERN.test(normalize(allSourceText));
   const hasNegative = sources.some((s) => s.negative);
+  const hasEvaluation = sources.some((s) => !["visit", "menu", "discovery", "reason"].includes(s.role ?? "") &&
+    /丁寧|分かりやす|わかりやす|良かった|よかった|良い|よい|理想|満足|安心|清潔|話しやす|気に入|しっとり|なめらか|落ち着|リラックス|最高|嬉し|うれし/u.test(s.text));
 
   if (sentences.length === 0) {
     issues.push(issue("empty_draft", "block", null));
@@ -216,6 +225,12 @@ export function lintDraft(sentences: readonly LintSentence[], sources: readonly 
     const citedText = cited.map((s) => s.text).join("\n");
     const citesNegative = cited.some((s) => s.negative);
     const text = sentence.text;
+    // メニュー名だけの回答に、評価やスタッフの対応を補わない。
+    if (!hasEvaluation && /満足|うれし|嬉し|丁寧に対応|丁寧な対応|お願いしてよかった|来てよかった/u.test(text) &&
+        !sources.some((s) => /満足|うれし|嬉し|丁寧|よかった/u.test(s.text))) {
+      const contextOnly = sources.every((s) => ["visit", "menu", "discovery", "reason"].includes(s.role ?? ""));
+      issues.push(issue("factual_invention", contextOnly ? "block" : "risk", index, { detail: "aspect" }));
+    }
 
     // ── 技術的不備(block) ──
     if (sentence.sourceIds.length === 0) issues.push(issue("no_source", "block", index));
@@ -247,12 +262,23 @@ export function lintDraft(sentences: readonly LintSentence[], sources: readonly 
       issues.push(issue("factual_invention", repeatVisit ? "block" : "risk", index, { detail: "visit_count" }));
     }
     // 「また来たい」「おすすめ」などの意向は、回答に意向があるときだけ書いてよい。
-    if (unsupportedPhrases(text, INTENT_PHRASES, allSourceText).length > 0) {
+    const intent = assessIntent(text, cited.map((s) => s.text));
+    if (intent === "unsupported") {
       issues.push(issue("factual_invention", "block", index, { detail: "intent" }));
+    } else if (intent === "risk") {
+      issues.push(issue("factual_invention", "risk", index, { detail: "intent" }));
+    }
+    // 来店回数と、その施術を人生で初めて受けたことは別。
+    if (/初めて(?:の|に)?(?:眉毛|まつげ|まつ毛)?(?:パーマ|カット|カラー|施術|ネイル)|(?:パーマ|施術|ネイル).{0,8}初めて/u.test(text) &&
+        !cited.some((s) => !s.visitCount && s.text.includes("初めて"))) {
+      issues.push(issue("factual_invention", "risk", index, { detail: "visit_count" }));
+    }
+    if (unsupportedPhrases(text, ["リラックス", "緊張", "落ち着いて", "落ち着け"], allSourceText).length > 0) {
+      issues.push(issue("factual_invention", "risk", index, { detail: "detail" }));
     }
     // 回答に無い観点(雰囲気・スタッフ・料金 など)、仕上がりの評価、出来事・行動・生活での変化・お店の
     // 事情の推測。言い換えとして正しいこともあるので、意味検証で回答と比べる。
-    if (unsupportedPhrases(text, ASPECT_PHRASES, allSourceText).length > 0) {
+    if (unsupportedPhrases(text, ASPECT_PHRASES, aspectSupportText).length > 0) {
       issues.push(issue("factual_invention", "risk", index, { detail: "aspect" }));
     }
     if (unsupportedPhrases(text, OUTCOME_PHRASES, allSourceText).length > 0) {
@@ -308,6 +334,10 @@ export function lintDraft(sentences: readonly LintSentence[], sources: readonly 
     if (hasNegative && !citesNegative && unsupportedPhrases(text, OVERALL_POSITIVE_PHRASES, allSourceText).length > 0) {
       issues.push(issue("softened_negative", "risk", index));
     }
+    // 「それ以外は」は本人の評価でなければ、他の不満を勝手に打ち消す。
+    if (hasNegative && unsupportedPhrases(text, ["それ以外は", "差し引いても"], allSourceText).length > 0) {
+      issues.push(issue("softened_negative", "block", index));
+    }
 
     // ── 関係のあいまいなつなぎ(来店回数の前置きは内容の数に数えない) ──
     const topics = cited.filter((s) => !s.visitCount).length;
@@ -319,7 +349,7 @@ export function lintDraft(sentences: readonly LintSentence[], sources: readonly 
     if (unsupportedMatch(text, ABSTRACT_NOUN_PATTERN, allSourceText)) {
       issues.push(issue("abstract_ai_summary", "style", index, { detail: "abstract_noun" }));
     }
-    if (unsupportedMatch(text, THINKABLE_NOUN_PATTERN, allSourceText)) {
+    if (intent !== "supported" && unsupportedMatch(text, THINKABLE_NOUN_PATTERN, allSourceText)) {
       issues.push(issue("abstract_ai_summary", "style", index, { detail: "thinkable_noun" }));
     }
     // 最後の文だけ「全体的に〜」「総じて〜」と全体をまとめ直す。
