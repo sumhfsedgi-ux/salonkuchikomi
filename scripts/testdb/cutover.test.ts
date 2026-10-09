@@ -4,6 +4,8 @@
 // Google は擬似、Gmail・LINE はモック。旧側への書き込みは fixture のスキーマにだけ行う。
 //
 // 店舗の想定: 「Lavi に相当(予約受信用 Gmail 1つ・スタッフ3人)」を先に切り替え、「ayana に相当」は旧側で継続する。
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type postgres from "postgres";
 import { setupNotificationsTestEnv, openDirectConnections, closeConnections } from "./setupNotificationsEnv";
@@ -34,12 +36,30 @@ async function dbNow(offsetMs = 0): Promise<Date> {
   return new Date(now.getTime() + offsetMs);
 }
 
+/**
+ * 本番で運営が実行する、旧側の監視の最小限の権限(docs/plans/sql/hmail-legacy-watch-grant.sql)を、
+ * スキーマ名だけを写しに置き換えて読む(手順書の SQL と、ここで検証する SQL を同じにする)。
+ */
+function legacyWatchGrantSql(): string {
+  const file = readFileSync(path.join(process.cwd(), "docs/plans/sql/hmail-legacy-watch-grant.sql"), "utf8");
+  const statements = file
+    .split(/\r?\n/)
+    .filter((line) => !line.trimStart().startsWith("--") && line.trim().length > 0)
+    .join("\n");
+  if (!/^grant usage on schema hmail to service_role;\ngrant select \(salon_id, email_address, status\) on hmail\.mail_connections to service_role;$/.test(statements)) {
+    throw new Error("hmail-legacy-watch-grant.sql の内容が想定と違います");
+  }
+  return statements.replace(/\bhmail\b/g, FIXTURE);
+}
+
 async function createFixtureSchema() {
   await sql.unsafe(`
     drop schema if exists ${FIXTURE} cascade;
     create schema ${FIXTURE};
     create table ${FIXTURE}.salons (id uuid primary key, name text);
-    create table ${FIXTURE}.mail_connections (salon_id uuid primary key, email_address text, status text not null);
+    -- 本番の hmail.mail_connections と同じく、トークンの列もある(新側の監視には読ませない)。
+    create table ${FIXTURE}.mail_connections (salon_id uuid primary key, email_address text, status text not null,
+      encrypted_refresh_token text, token_iv text, token_auth_tag text);
     create table ${FIXTURE}.line_connections (salon_id uuid primary key, destination_id text, status text, linked_at timestamptz);
     create table ${FIXTURE}.notification_settings (salon_id uuid primary key, master_enabled boolean, new_reservation_enabled boolean, cancellation_enabled boolean);
     create table ${FIXTURE}.processed_emails (id uuid primary key default gen_random_uuid(), salon_id uuid not null, provider_message_id text not null,
@@ -47,9 +67,12 @@ async function createFixtureSchema() {
     create table ${FIXTURE}.notification_history (id uuid primary key default gen_random_uuid(), salon_id uuid not null, event_type text,
       provider_message_id text, line_text text, status text, error_message text, sent_at timestamptz not null default now());
     create table ${FIXTURE}.cron_runs (id uuid primary key default gen_random_uuid(), started_at timestamptz not null, finished_at timestamptz);
-    grant usage on schema ${FIXTURE} to service_role;
-    grant select on all tables in schema ${FIXTURE} to service_role;
+    -- RLS が有効(ポリシーなし・所有者にも強制)でも、service_role(BYPASSRLS)の監視は読めることを確かめる。
+    alter table ${FIXTURE}.mail_connections enable row level security;
+    alter table ${FIXTURE}.mail_connections force row level security;
   `);
+  // 新側(service_role)には、本番で運営が実行するのと同じ最小限の権限だけを付ける(ほかの表・列は読めない)。
+  await sql.unsafe(legacyWatchGrantSql());
 }
 
 const ON = { master: true, nr: true, cancel: true };
@@ -387,15 +410,66 @@ describe("切り替えの通し(Lavi を先に切り替え、ayana は旧側で�
   });
 
   it("監視の権限が無い・旧側の状態を確認できない場合は、開始を拒否する(確認できないものは止める)", async () => {
-    await sql.unsafe(`revoke select on ${FIXTURE}.mail_connections from service_role`);
+    // 本番の今の状態(service_role に hmail の権限が無い)と同じにする。表単位の取り消しで列単位の権限も外れる。
+    await sql.unsafe(`revoke select on ${FIXTURE}.mail_connections from service_role; revoke usage on schema ${FIXTURE} from service_role;`);
     try {
       const { data: state } = await admin.rpc("reservation_ops_legacy_state", { p_salon_id: salon.salonId });
       expect(state).toBe("unknown");
+      const { data: check } = await admin.rpc("reservation_ops_legacy_check", { p_salon_id: salon.salonId });
+      expect((check as Array<{ reason: string }>)[0].reason).toBe("legacy_unreadable");
       const { error } = await admin.rpc("reservation_ops_activate", { p_salon_id: salon.salonId, p_by: BY, p_mail_fetch_since: null, p_reason: null });
       expect(error?.message).toContain("reservation_ops:legacy_not_stopped:unknown");
     } finally {
-      await sql.unsafe(`grant select on ${FIXTURE}.mail_connections to service_role`);
+      await sql.unsafe(legacyWatchGrantSql());
     }
+    // 最小限の権限を戻すと、また確認できる。
+    const { data: restored } = await admin.rpc("reservation_ops_legacy_state", { p_salon_id: salon.salonId });
+    expect(restored).not.toBe("unknown");
+  });
+
+  it("監視の権限は必要な3列の読み取りだけ: トークンの列・ほかの表・書き込みは service_role から使えない(RLS は BYPASSRLS で素通り)", async () => {
+    const [role] = await sql<{ bypass: boolean }[]>`select rolbypassrls as bypass from pg_roles where rolname = 'service_role'`;
+    expect(role.bypass).toBe(true);
+    const columns = await sql<{ column_name: string; readable: boolean }[]>`
+      select column_name, has_column_privilege('service_role', ${`${FIXTURE}.mail_connections`}, column_name, 'SELECT') as readable
+        from information_schema.columns where table_schema = ${FIXTURE} and table_name = 'mail_connections' order by ordinal_position`;
+    expect(columns.filter((c) => c.readable).map((c) => c.column_name)).toEqual(["salon_id", "email_address", "status"]);
+    const tables = await sql<{ table_name: string; any_privilege: boolean }[]>`
+      select table_name, has_table_privilege('service_role', format('%I.%I', table_schema, table_name), 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE') as any_privilege
+        from information_schema.tables where table_schema = ${FIXTURE}`;
+    expect(tables.filter((t) => t.any_privilege)).toEqual([]);
+
+    // service_role として実際に読む・書く(取り消すトランザクションの中)。
+    const asServiceRole = async (query: string): Promise<string> => {
+      class Rollback extends Error {}
+      let outcome = "";
+      await sql
+        .begin(async (tx) => {
+          await tx.unsafe("set local role service_role");
+          try {
+            await tx.unsafe(query);
+            outcome = "ok";
+          } catch (error) {
+            outcome = (error as { code?: string }).code ?? "error";
+          }
+          throw new Rollback();
+        })
+        .catch((error) => {
+          if (!(error instanceof Rollback)) throw error;
+        });
+      return outcome;
+    };
+    expect(await asServiceRole(`select salon_id, email_address, status from ${FIXTURE}.mail_connections`)).toBe("ok");
+    expect(await asServiceRole(`select count(*) from ${FIXTURE}.mail_connections`)).toBe("ok");
+    expect(await asServiceRole(`select encrypted_refresh_token from ${FIXTURE}.mail_connections`)).toBe("42501");
+    expect(await asServiceRole(`select * from ${FIXTURE}.mail_connections`)).toBe("42501");
+    expect(await asServiceRole(`update ${FIXTURE}.mail_connections set status = status`)).toBe("42501");
+    for (const table of ["salons", "line_connections", "notification_settings", "processed_emails", "notification_history", "cron_runs"]) {
+      expect(await asServiceRole(`select 1 from ${FIXTURE}.${table} limit 1`), table).toBe("42501");
+    }
+    // 監視そのもの(service_role で呼ぶ関数)は、この権限で旧側の状態を確認できている。
+    const { data: check } = await admin.rpc("reservation_ops_legacy_check", { p_salon_id: salon.salonId });
+    expect((check as Array<{ reason: string | null }>)[0].reason).not.toBe("legacy_unreadable");
   });
 
   it("切り戻し: 新側が送信した後は A を使えない。B はメール×スタッフごとに旧側の処理済みを登録し、スタッフごとの元の状態へ戻す(ayana は変えない)", async () => {

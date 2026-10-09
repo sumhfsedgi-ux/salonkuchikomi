@@ -254,6 +254,10 @@ reconcile …(もう一度)→ accept-reconciliation --run-id=… --by=…
   - 0022・0023 の新しい列はすべて既定値つき。
   - 0023 は 0009 の `line_connections` に列を足すが、既存の制約は変えない。
 - **事前確認**: 本番の `public.mail_connections` の件数(0件のはず。新しいコードは使わない)/ service_role が `hmail.mail_connections` を読めるか(定期処理・開始の監視。読めないと「確認できない」になり、開始できない)/ 運用 CLI の接続(`DATABASE_URL`)が `hmail.salons`・`mail_connections`・`line_connections`・`notification_settings`・`processed_emails`・`notification_history`・`cron_runs` を読めるか / hmail の関数の最大実行時間・cron の間隔 / ayana の旧側の行の受信用 Gmail(`<ayanaの予約受信用Gmail>`)が Lavi と別であること(`map` の確認だけの実行で見える)。
+  - **2026-10-09 の結果**: service_role には hmail スキーマの USAGE も `hmail.mail_connections` の SELECT も無かった(ほかは期待どおり)。
+    新側の監視(`reservation_ops_legacy_check`。service_role)に必要な最小限の権限 = スキーマの USAGE と、`salon_id`・`email_address`・`status` の
+    3列だけの SELECT(`docs/plans/sql/hmail-legacy-watch-grant.sql`)。付与の前後の確認は `docs/plans/sql/hmail-legacy-watch-checks.sql`、
+    手順は `docs/plans/lavi-release-runbook.md` の段階1の 2b。service_role は BYPASSRLS のため、RLS のポリシーは追加しない。
 - **片付け**: hmail の bridge の Preview デプロイ(hmail-o2zzer8zu・-szxeypl7a・-7oistg4n0・-fs68j1vk4)と Preview の環境変数4つの削除、`chore/temp-migration-bridge` ブランチの削除(承認後)。
 - **LINE ログインチャネル(通知先の追加を有効にするとき)**:
   - hmail の公式アカウントの Messaging API チャネルと**同じプロバイダー**に作る。
