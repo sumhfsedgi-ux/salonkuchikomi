@@ -9,7 +9,11 @@
     "lint": "eslint",
     "test": "vitest run",
     "migrate:notifications": "tsx scripts/migrate-hmail-notifications.ts",
-    "eval:review": "vitest run --config vitest.eval.config.mts"
+    "eval:review": "vitest run --config vitest.eval.config.mts",
+    "testdb:migrate": "node scripts/testdb/migrate.mjs",
+    "testdb:walkthrough": "tsx scripts/testdb/walkthrough.ts",
+    "testdb:browser": "tsx scripts/testdb/browser-walkthrough.ts",
+    "test:testdb": "vitest run --config scripts/testdb/vitest.testdb.config.mts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -21,6 +25,7 @@
     "cheerio": "^1.2.0",
     "googleapis": "^174.0.1",
     "next": "16.3.8",
+    "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zod": "^4.4.3"
@@ -28,6 +33,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

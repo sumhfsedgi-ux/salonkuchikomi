@@ -3,11 +3,16 @@ import { getNotificationsSupabaseAdmin } from "@/lib/notifications/admin";
 // (hmailの lib/db/notificationHistory.ts を移植。1店舗に複数のLINE送信先
 // (スタッフ)を持てるようにしたため、各行がどの送信先向けだったかを
 // line_connection_idで判別できるようにしている -- PLAN 11b節参照。
-// attempts = attempts + 1 のような生SQL式でのupdateはSupabase JSクライアントに
-// 無いため、markRetryOutcome()は migration の notifications_mark_retry_outcome
-// RPCを呼ぶ。)
+//
+// 【Lavi Aromatic Herb切替PLAN】このテーブルへの書き込みは「最近の通知」
+// 表示用の履歴に専念する(recordNotification呼び出し時点のスナップショット)。
+// 再送の排他制御・状態管理は notification_deliveries(0020、
+// lib/notifications/db/notificationDeliveries.ts)へ移したため、旧
+// listRetryableFailures/markRetryOutcome(排他制御なしで同時実行に弱かった)は
+// 削除した。0009のnotifications_mark_retry_outcome RPC自体は書き換え禁止の
+// migrationに含まれるため残るが、呼び出し元は無い。)
 
-export type NotificationStatus = "sent" | "failed" | "skipped_disabled" | "test";
+export type NotificationStatus = "sent" | "failed" | "skipped_disabled" | "test" | "unknown";
 
 export interface NotificationHistoryRow {
   id: string;
@@ -115,44 +120,4 @@ export async function hasRecentTestNotification(salonId: string): Promise<boolea
     return false;
   }
   return (data?.length ?? 0) > 0;
-}
-
-const MAX_RETRY_ATTEMPTS = 3;
-const RETRY_WINDOW_HOURS = 24;
-
-/**
- * 直近の失敗(テスト通知は除く)のうち、まだ再送対象になっているもの。
- * line_connection_idがnull(=そもそも送信先が1件も無かったケース)の行は
- * 再送しようがないため、呼び出し元(retrySweep)でスキップする。
- */
-export async function listRetryableFailures(salonId: string): Promise<NotificationHistoryRow[]> {
-  const cutoff = new Date(Date.now() - RETRY_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
-  const supabase = getNotificationsSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("notification_history")
-    .select(COLUMNS)
-    .eq("salon_id", salonId)
-    .eq("status", "failed")
-    .lt("attempts", MAX_RETRY_ATTEMPTS)
-    .gt("sent_at", cutoff);
-
-  if (error) {
-    console.error("listRetryableFailures failed:", error);
-    throw new Error("再送対象の取得に失敗しました。");
-  }
-  return (data ?? []).map(rowToHistory);
-}
-
-export async function markRetryOutcome(
-  id: string,
-  outcome: { status: "sent" | "failed"; errorMessage?: string }
-): Promise<void> {
-  const supabase = getNotificationsSupabaseAdmin();
-  const { error } = await supabase.rpc("notifications_mark_retry_outcome", {
-    p_id: id,
-    p_status: outcome.status,
-    p_error_message: outcome.errorMessage ?? null,
-  });
-
-  if (error) console.error("markRetryOutcome failed:", error);
 }

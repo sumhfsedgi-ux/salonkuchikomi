@@ -1,0 +1,75 @@
+diff --git a/app/api/internal/migration-bridge/route.ts b/app/api/internal/migration-bridge/route.ts
+index 7ee1a29..10c67df 100644
+--- a/app/api/internal/migration-bridge/route.ts
++++ b/app/api/internal/migration-bridge/route.ts
+@@ -7,6 +7,15 @@ import { getMailConnection, decryptRefreshToken } from "@/lib/db/mailConnections
+ // 既存のlib/crypto/encryption.ts・APP_ENCRYPTION_KEYの扱いには一切触れず、
+ // 既存のgetMailConnection/decryptRefreshTokenを無改変で再利用するだけ。
+ // 移行完了後は本ファイルごと削除し、対応するPreviewブランチも削除する。mainへは一度もマージしない。
++//
++// 【2026-10修正】書き込み先のstatusを'connected'ではなく'migrating'にする
++// (review-app側のsupabase/migrations/0020_notification_deliveries.sqlで、
++// mail_connections.status の許容値に'migrating'を追加済みであることが前提 --
++// 本番の共有DBへ未適用の間はこのルートの書き込みが失敗する)。これにより、
++// 接続行をコピーしただけではreview-app側cronの処理対象にならない
++// (listActiveMailConnectionsはstatus in ('connected','needs_reconnect')のみを
++// 見るため)。'connected'への昇格(=本番有効化)は、カットオーバー手順の中で
++// 運用者が明示的なUPDATEとして行う(本ルートはしない)。
+ 
+ const ALGORITHM = "aes-256-gcm";
+ const IV_LENGTH = 12;
+@@ -60,22 +69,26 @@ export async function POST(request: NextRequest) {
+     return NextResponse.json({ ok: false, dryRun }, { status: 500 });
+   }
+ 
++  // dryRunでも移行先の鍵(NOTIFICATIONS_ENCRYPTION_KEY)が実際に使えることまで
++  // 検証する(結果は書き込まず破棄する)。鍵の形式異常にdryRun段階で気づけず、
++  // 本番切替の本番実行で初めて失敗する事態を避けるため。
++  let reencrypted: { ciphertext: string; iv: string; authTag: string };
++  try {
++    reencrypted = reencryptWithNewKey(plaintext);
++  } catch {
++    return NextResponse.json({ ok: false, dryRun, reason: "target_key_invalid" }, { status: 500 });
++  }
++
+   if (dryRun) {
+     return NextResponse.json({
+       ok: true,
+       dryRun: true,
+       emailAddress: row.emailAddress,
+       status: row.status,
++      targetKeyValid: true,
+     });
+   }
+ 
+-  let reencrypted: { ciphertext: string; iv: string; authTag: string };
+-  try {
+-    reencrypted = reencryptWithNewKey(plaintext);
+-  } catch {
+-    return NextResponse.json({ ok: false, dryRun: false }, { status: 500 });
+-  }
+-
+   const databaseUrl = process.env.DATABASE_URL;
+   if (!databaseUrl) {
+     return NextResponse.json({ ok: false, dryRun: false }, { status: 500 });
+@@ -87,14 +100,18 @@ export async function POST(request: NextRequest) {
+       insert into public.mail_connections
+         (salon_id, provider, email_address, encrypted_refresh_token, token_iv, token_auth_tag, scope, status, consecutive_failure_count, last_checked_at, migrated_from_hmail_salon_id, updated_at)
+       values
+-        (${targetSalonId}, 'gmail', ${row.emailAddress}, ${reencrypted.ciphertext}, ${reencrypted.iv}, ${reencrypted.authTag}, ${row.scope}, 'connected', 0, now(), ${sourceSalonId}, now())
++        (${targetSalonId}, 'gmail', ${row.emailAddress}, ${reencrypted.ciphertext}, ${reencrypted.iv}, ${reencrypted.authTag}, ${row.scope}, 'migrating', 0, now(), ${sourceSalonId}, now())
+       on conflict (salon_id) do update set
+         email_address = excluded.email_address,
+         encrypted_refresh_token = excluded.encrypted_refresh_token,
+         token_iv = excluded.token_iv,
+         token_auth_tag = excluded.token_auth_tag,
+         scope = excluded.scope,
+-        status = 'connected',
++        -- 既に運用者がカットオーバー手順で'connected'へ昇格済みの接続を、
++        -- このルートの再実行(トークンの取り直し等)で誤って'migrating'へ
++        -- 巻き戻さない。昇格済みでなければ'migrating'のまま(または新規なら
++        -- 'migrating'で開始)。
++        status = case when mail_connections.status = 'connected' then 'connected' else 'migrating' end,
+         consecutive_failure_count = 0,
+         last_checked_at = now(),
+         migrated_from_hmail_salon_id = excluded.migrated_from_hmail_salon_id,
