@@ -13,7 +13,6 @@ interface Props {
   onOtherDetailsChange: (details: Record<string, string>) => void;
   onSubmit: (answers: SurveyAnswers) => void;
   loading: boolean;
-  hasResult: boolean;
   hideCta: boolean;
 }
 
@@ -25,7 +24,6 @@ export default function SurveyForm({
   onOtherDetailsChange,
   onSubmit,
   loading,
-  hasResult,
   hideCta,
 }: Props) {
   const [validationErrors, setValidationErrors] = useState<
@@ -73,12 +71,6 @@ export default function SurveyForm({
     onSubmit(answers);
   }
 
-  const label = loading
-    ? "作成中…"
-    : hasResult
-      ? "もう一度作成する"
-      : "AIで口コミを作成する";
-
   return (
     <>
       <div className="flex flex-col gap-3">
@@ -108,19 +100,15 @@ export default function SurveyForm({
         >
           <button
             type="button"
-            className="btn-primary flex items-center justify-center gap-2"
+            className="btn-primary"
             onClick={handleSubmit}
             disabled={loading}
-            aria-busy={loading}
           >
-            {loading && (
-              <span
-                className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
-                aria-hidden="true"
-              />
-            )}
-            {label}
+            アンケートに回答する
           </button>
+          <p className="mt-1.5 text-center text-[11px] text-stone-400">
+            ※この操作でGoogleに投稿されることはありません
+          </p>
         </div>
       </div>
     </>

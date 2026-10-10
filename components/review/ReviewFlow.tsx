@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { SurveyQuestion, SurveyAnswers } from "@/lib/types";
 import Hero from "@/components/review/Hero";
+import StepIndicator, { type ReviewStep } from "@/components/review/StepIndicator";
 import SurveyForm from "@/components/review/SurveyForm";
 import ResultSkeleton from "@/components/review/ResultSkeleton";
 import GeneratedReview from "@/components/review/GeneratedReview";
@@ -29,6 +30,8 @@ function isTextField(target: EventTarget): target is HTMLTextAreaElement | HTMLI
 }
 
 export default function ReviewFlow({ salon, questions }: Props) {
+  // STEP 1 = 説明とアンケート、STEP 2 = 口コミの文章案。STEP 2 から STEP 1 へ戻る導線は置かない。
+  const [step, setStep] = useState<ReviewStep>(1);
   const [answers, setAnswers] = useState<SurveyAnswers>(() =>
     buildEmptyAnswers(questions),
   );
@@ -49,12 +52,7 @@ export default function ReviewFlow({ salon, questions }: Props) {
   // Hides the sticky bottom CTA while a text field is focused, so it doesn't
   // sit on top of the on-screen keyboard on mobile.
   const [isTextFieldFocused, setIsTextFieldFocused] = useState(false);
-  const resultRef = useRef<HTMLDivElement>(null);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (loading) resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [loading]);
 
   function handleFocusCapture(e: React.FocusEvent) {
     if (!isTextField(e.target)) return;
@@ -67,6 +65,13 @@ export default function ReviewFlow({ salon, questions }: Props) {
     // Short grace period so moving focus from one textarea straight to
     // another in the same form doesn't flash the CTA back in between.
     blurTimeoutRef.current = setTimeout(() => setIsTextFieldFocused(false), 50);
+  }
+
+  // 回答のチェックが通ったら、すぐ STEP 2 に切り替えて、作っている間の表示を出す。
+  function handleSurveySubmit(currentAnswers: SurveyAnswers) {
+    setStep(2);
+    window.scrollTo({ top: 0 });
+    void handleGenerate(currentAnswers);
   }
 
   async function handleGenerate(currentAnswers: SurveyAnswers) {
@@ -109,8 +114,8 @@ export default function ReviewFlow({ salon, questions }: Props) {
   // Reads `generatedReview` fresh on every render, so this always copies
   // whatever is currently in the (editable) textarea -- including any edits
   // the customer made after generation -- never the original AI output.
-  // Deliberately never blocks navigation on the result: the "この内容をコピーして
-  // Googleへ進む" link's default action (opening googleReviewUrl) always proceeds
+  // Deliberately never blocks navigation on the result: the "この口コミをコピーして
+  // Googleレビューへ進む" link's default action (opening googleReviewUrl) always proceeds
   // regardless of whether the copy succeeds, so a Clipboard API failure
   // never strands the customer -- they can still select and copy the
   // textarea manually once they land on Google's page.
@@ -140,60 +145,70 @@ export default function ReviewFlow({ salon, questions }: Props) {
     }
   }
 
-  const showResult = loading || generatedReview !== "" || error !== null;
-
+  // STEP 1 だけ、画面の下に固定したボタン(と注意書き)の分の余白を空ける。
   return (
     <div
       className="mx-auto flex w-full max-w-[500px] flex-1 flex-col px-4"
-      style={{ paddingBottom: "calc(6rem + env(safe-area-inset-bottom))" }}
+      style={step === 1 ? { paddingBottom: "calc(7.5rem + env(safe-area-inset-bottom))" } : undefined}
       onFocusCapture={handleFocusCapture}
       onBlurCapture={handleBlurCapture}
     >
-      <Hero salonName={salon.name} />
+      <StepIndicator current={step} />
 
-      <div className="flex flex-col gap-4">
-        <SurveyForm
-          questions={questions}
-          answers={answers}
-          onAnswersChange={setAnswers}
-          otherDetails={otherDetails}
-          onOtherDetailsChange={setOtherDetails}
-          onSubmit={handleGenerate}
-          loading={loading}
-          hasResult={generatedReview !== ""}
-          hideCta={isTextFieldFocused}
-        />
-
-        {showResult && (
-          <section ref={resultRef} className="flex flex-col gap-3 scroll-mt-4">
-            {loading && !generatedReview && <ResultSkeleton />}
-            {loading && generatedReview && (
-              <div className="flex items-center gap-2 rounded-lg bg-beige/60 px-3 py-2 text-sm text-stone-600">
-                <span
-                  className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-greige border-t-sage"
-                  aria-hidden="true"
-                />
-                新しい口コミを作成しています…
-              </div>
-            )}
-            {!loading && error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
-                {error}
-              </div>
-            )}
-            {generatedReview && (
-              <GeneratedReview
-                key={resultVersion}
-                review={generatedReview}
-                onReviewChange={setGeneratedReview}
-                onCopy={handleCopy}
-                googleReviewUrl={salon.googleReviewUrl}
-                disabled={loading}
+      {step === 1 ? (
+        <>
+          <Hero salonName={salon.name} />
+          <SurveyForm
+            questions={questions}
+            answers={answers}
+            onAnswersChange={setAnswers}
+            otherDetails={otherDetails}
+            onOtherDetailsChange={setOtherDetails}
+            onSubmit={handleSurveySubmit}
+            loading={loading}
+            hideCta={isTextFieldFocused}
+          />
+        </>
+      ) : (
+        <section className="flex flex-col gap-3 pt-5">
+          {loading && !generatedReview && <ResultSkeleton />}
+          {loading && generatedReview && (
+            <div className="flex items-center gap-2 rounded-lg bg-beige/60 px-3 py-2 text-sm text-stone-600">
+              <span
+                className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-greige border-t-sage"
+                aria-hidden="true"
               />
-            )}
-          </section>
-        )}
-      </div>
+              新しい口コミを作成しています…
+            </div>
+          )}
+          {!loading && error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+              {error}
+            </div>
+          )}
+          {/* 1回目の作成に失敗したときは文章案が無いので、ここで作り直せるようにする。 */}
+          {!loading && error && !generatedReview && (
+            <button
+              type="button"
+              onClick={() => void handleGenerate(answers)}
+              className="btn-primary"
+            >
+              もう一度作成する
+            </button>
+          )}
+          {generatedReview && (
+            <GeneratedReview
+              key={resultVersion}
+              review={generatedReview}
+              onReviewChange={setGeneratedReview}
+              onCopy={handleCopy}
+              onRegenerate={() => void handleGenerate(answers)}
+              googleReviewUrl={salon.googleReviewUrl}
+              disabled={loading}
+            />
+          )}
+        </section>
+      )}
 
       <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />
     </div>

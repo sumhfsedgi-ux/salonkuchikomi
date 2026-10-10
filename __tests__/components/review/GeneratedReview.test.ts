@@ -11,6 +11,7 @@ function render(review: string): string {
       review,
       onReviewChange: () => {},
       onCopy: () => {},
+      onRegenerate: () => {},
       googleReviewUrl: GOOGLE_URL,
     }),
   );
@@ -22,14 +23,18 @@ describe("GeneratedReview の Google口コミへの導線", () => {
     ["肯定的な下書き", "説明が分かりやすくて、施術のあとは肌がなめらかに感じました。"],
     ["否定的な下書き", "待ち時間が長かったのが残念でした。説明も少し分かりにくかったです。"],
     ["空の下書き", ""],
-  ])("%sでも同じ CTA を表示する", (_label, review) => {
+  ])("%sでも、コピーして進む導線と自分で書く導線の両方を同じ Google の URL で表示する", (_label, review) => {
     const html = render(review);
-    expect(html).toContain("この内容をコピーしてGoogleへ進む");
-    expect(html).toContain(`href="${GOOGLE_URL}"`);
+    expect(html.replace(/<[^>]+>/g, "")).toContain("この口コミをコピーしてGoogleレビューへ進む");
+    expect(html).toContain("自分で文章を考えて投稿する");
+    expect(html.split(`href="${GOOGLE_URL}"`).length - 1).toBe(2);
+    expect(html).toContain("もう一度作成する");
   });
 
-  it("投稿前に本人が確認・編集する案内と、自動で投稿されないことを表示する(チェックボックスは無い)", () => {
+  it("文章案の画面の見出しと、投稿前に本人が確認・編集する案内、自動で投稿されないことを表示する(チェックボックスは無い)", () => {
     const html = render("下書き");
+    expect(html).toContain("アンケートの回答をもとに");
+    expect(html).toContain("口コミの文章案を作成しました");
     expect(html).toContain("内容を確認して、実際の体験と違うところがあれば自由に編集してください。");
     expect(html).toContain("自動で投稿されることはありません");
     expect(html).not.toContain('type="checkbox"');
