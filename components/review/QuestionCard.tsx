@@ -13,6 +13,12 @@ interface Props {
   errorMessage?: string;
 }
 
+// 1行に収まらない質問は「、」のあとで折り返す(2行に均等に割ると、文の途中で切れて読みにくい)。
+function splitAfterComma(text: string): string[] {
+  const parts = text.split("、");
+  return parts.map((part, i) => (i < parts.length - 1 ? `${part}、` : part)).filter(Boolean);
+}
+
 export default function QuestionCard({
   question,
   index,
@@ -24,12 +30,16 @@ export default function QuestionCard({
 }: Props) {
   return (
     <div className="card" data-question-id={question.id}>
-      <div className="mb-2 flex items-baseline gap-2">
-        <span className="shrink-0 text-xs font-semibold text-sage-dark">
+      <div className="mb-2 flex items-start gap-2">
+        <span className="mt-0.5 shrink-0 text-xs font-semibold leading-relaxed text-sage-dark">
           {String(index + 1).padStart(2, "0")}
         </span>
-        <p className="text-balance text-sm font-medium leading-relaxed text-stone-800">
-          {question.question}
+        <p className="text-sm font-medium leading-relaxed text-stone-800">
+          {splitAfterComma(question.question).map((part, i) => (
+            <span key={i} className="inline-block">
+              {part}
+            </span>
+          ))}
         </p>
       </div>
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
