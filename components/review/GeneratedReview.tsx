@@ -30,11 +30,11 @@ export default function GeneratedReview({
       ].join(" ")}
     >
       <div className="text-center">
-        <h2 className="text-lg font-semibold leading-snug text-stone-800">
+        <h2 className="text-base font-medium leading-relaxed tracking-wide text-stone-700">
           <span className="inline-block">アンケートの回答をもとに</span>
           <span className="inline-block">口コミの文章案を作成しました</span>
         </h2>
-        <p className="mt-2 text-sm leading-relaxed text-stone-500">
+        <p className="mt-2 text-[13px] leading-relaxed text-stone-500">
           ご回答ありがとうございます。よろしければ、ぜひ口コミの投稿にご協力いただけますと幸いです。
         </p>
       </div>

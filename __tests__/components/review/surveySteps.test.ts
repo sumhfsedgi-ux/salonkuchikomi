@@ -1,15 +1,17 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import Hero from "@/components/review/Hero";
+import ReviewHeader from "@/components/review/ReviewHeader";
 import StepIndicator from "@/components/review/StepIndicator";
 import SurveyForm from "@/components/review/SurveyForm";
 
 describe("お客様ページの STEP 1", () => {
-  it("店名とお客様アンケートだけを表示する(説明文は出さない)", () => {
-    const html = renderToStaticMarkup(createElement(Hero, { salonName: "Lavi Aromatic Herb" }));
+  it.each([1, 2] as const)("ヘッダーに店名・お客様アンケート・ステップ(STEP %i が今)を出し、説明文は出さない", (step) => {
+    const html = renderToStaticMarkup(createElement(ReviewHeader, { salonName: "Lavi Aromatic Herb", step }));
     expect(html).toContain("Lavi Aromatic Herb");
     expect(html).toContain("お客様アンケート");
+    expect(html).toContain('aria-label="進み具合"');
+    expect(html).toContain(`aria-current="step" aria-label="STEP ${step}"`);
     expect(html).not.toContain("対象としています");
     expect(html).not.toContain("サービス改善");
   });

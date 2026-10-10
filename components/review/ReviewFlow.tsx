@@ -2,8 +2,8 @@
 
 import { useRef, useState } from "react";
 import type { SurveyQuestion, SurveyAnswers } from "@/lib/types";
-import Hero from "@/components/review/Hero";
-import StepIndicator, { type ReviewStep } from "@/components/review/StepIndicator";
+import ReviewHeader from "@/components/review/ReviewHeader";
+import type { ReviewStep } from "@/components/review/StepIndicator";
 import SurveyForm from "@/components/review/SurveyForm";
 import ResultSkeleton from "@/components/review/ResultSkeleton";
 import GeneratedReview from "@/components/review/GeneratedReview";
@@ -147,70 +147,70 @@ export default function ReviewFlow({ salon, questions }: Props) {
 
   // STEP 1 だけ、画面の下に固定したボタン(と注意書き)の分の余白を空ける。
   return (
-    <div
-      className="mx-auto flex w-full max-w-[500px] flex-1 flex-col px-4"
-      style={step === 1 ? { paddingBottom: "calc(7.5rem + env(safe-area-inset-bottom))" } : undefined}
-      onFocusCapture={handleFocusCapture}
-      onBlurCapture={handleBlurCapture}
-    >
-      <StepIndicator current={step} />
-
-      {step === 1 ? (
-        <>
-          <Hero salonName={salon.name} />
-          <SurveyForm
-            questions={questions}
-            answers={answers}
-            onAnswersChange={setAnswers}
-            otherDetails={otherDetails}
-            onOtherDetailsChange={setOtherDetails}
-            onSubmit={handleSurveySubmit}
-            loading={loading}
-            hideCta={isTextFieldFocused}
-          />
-        </>
-      ) : (
-        <section className="flex flex-col gap-3 pt-5">
-          {loading && !generatedReview && <ResultSkeleton />}
-          {loading && generatedReview && (
-            <div className="flex items-center gap-2 rounded-lg bg-beige/60 px-3 py-2 text-sm text-stone-600">
-              <span
-                className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-greige border-t-sage"
-                aria-hidden="true"
-              />
-              新しい口コミを作成しています…
-            </div>
-          )}
-          {!loading && error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
-              {error}
-            </div>
-          )}
-          {/* 1回目の作成に失敗したときは文章案が無いので、ここで作り直せるようにする。 */}
-          {!loading && error && !generatedReview && (
-            <button
-              type="button"
-              onClick={() => void handleGenerate(answers)}
-              className="btn-primary"
-            >
-              もう一度作成する
-            </button>
-          )}
-          {generatedReview && (
-            <GeneratedReview
-              key={resultVersion}
-              review={generatedReview}
-              onReviewChange={setGeneratedReview}
-              onCopy={handleCopy}
-              onRegenerate={() => void handleGenerate(answers)}
-              googleReviewUrl={salon.googleReviewUrl}
-              disabled={loading}
+    <>
+      <ReviewHeader salonName={salon.name} step={step} />
+      <div
+        className="mx-auto flex w-full max-w-[500px] flex-1 flex-col px-4"
+        style={step === 1 ? { paddingBottom: "calc(7.5rem + env(safe-area-inset-bottom))" } : undefined}
+        onFocusCapture={handleFocusCapture}
+        onBlurCapture={handleBlurCapture}
+      >
+        {step === 1 ? (
+          <div className="pt-4">
+            <SurveyForm
+              questions={questions}
+              answers={answers}
+              onAnswersChange={setAnswers}
+              otherDetails={otherDetails}
+              onOtherDetailsChange={setOtherDetails}
+              onSubmit={handleSurveySubmit}
+              loading={loading}
+              hideCta={isTextFieldFocused}
             />
-          )}
-        </section>
-      )}
+          </div>
+        ) : (
+          <section className="flex flex-col gap-3 pt-5">
+            {loading && !generatedReview && <ResultSkeleton />}
+            {loading && generatedReview && (
+              <div className="flex items-center gap-2 rounded-lg bg-beige/60 px-3 py-2 text-sm text-stone-600">
+                <span
+                  className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-greige border-t-sage"
+                  aria-hidden="true"
+                />
+                新しい口コミを作成しています…
+              </div>
+            )}
+            {!loading && error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+                {error}
+              </div>
+            )}
+            {/* 1回目の作成に失敗したときは文章案が無いので、ここで作り直せるようにする。 */}
+            {!loading && error && !generatedReview && (
+              <button
+                type="button"
+                onClick={() => void handleGenerate(answers)}
+                className="btn-primary"
+              >
+                もう一度作成する
+              </button>
+            )}
+            {generatedReview && (
+              <GeneratedReview
+                key={resultVersion}
+                review={generatedReview}
+                onReviewChange={setGeneratedReview}
+                onCopy={handleCopy}
+                onRegenerate={() => void handleGenerate(answers)}
+                googleReviewUrl={salon.googleReviewUrl}
+                disabled={loading}
+              />
+            )}
+          </section>
+        )}
 
-      <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />
-    </div>
+        <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />
+      </div>
+    </>
   );
 }

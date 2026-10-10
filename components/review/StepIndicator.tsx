@@ -7,7 +7,7 @@ export type ReviewStep = (typeof STEPS)[number];
 // 今のステップと、終わったステップは緑で塗る。丸と丸の間は小さい三角でつなぐ。
 export default function StepIndicator({ current }: { current: ReviewStep }) {
   return (
-    <ol className="flex items-center justify-center gap-4 pt-5" aria-label="進み具合">
+    <ol className="flex items-center justify-center gap-4" aria-label="進み具合">
       {STEPS.map((step, i) => {
         const reached = step <= current;
         return (
