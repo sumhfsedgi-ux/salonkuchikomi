@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SurveyQuestion, SurveyAnswers } from "@/lib/types";
 import ReviewHeader from "@/components/review/ReviewHeader";
 import type { ReviewStep } from "@/components/review/StepIndicator";
@@ -53,6 +53,28 @@ export default function ReviewFlow({ salon, questions }: Props) {
   // sit on top of the on-screen keyboard on mobile.
   const [isTextFieldFocused, setIsTextFieldFocused] = useState(false);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 計測: ボタンを押してから、完成文(または失敗の表示)が画面に反映されるまで。
+  // ブラウザの performance に残すだけで、送信もログもしない(開発者ツールや手元の計測で読む)。
+  const pendingTimingRef = useRef<{ kind: "initial" | "regenerate"; outcome: "shown" | "failed" } | null>(null);
+  const [timingTick, setTimingTick] = useState(0);
+
+  useEffect(() => {
+    const timing = pendingTimingRef.current;
+    if (!timing) return;
+    pendingTimingRef.current = null;
+    // 結果を描画したあとのフレームの、さらに次のフレームを終点にする(画面に反映されたあと)。
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        try {
+          performance.mark("review:end");
+          performance.measure(`review:${timing.kind}:${timing.outcome}`, "review:start", "review:end");
+        } catch {
+          // 計測できなくても何もしない。
+        }
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [timingTick]);
 
   function handleFocusCapture(e: React.FocusEvent) {
     if (!isTextField(e.target)) return;
@@ -76,6 +98,17 @@ export default function ReviewFlow({ salon, questions }: Props) {
 
   async function handleGenerate(currentAnswers: SurveyAnswers) {
     if (loading) return;
+    const timingKind = generatedReview ? "regenerate" : "initial";
+    const markDone = (outcome: "shown" | "failed") => {
+      pendingTimingRef.current = { kind: timingKind, outcome };
+      setTimingTick((t) => t + 1);
+    };
+    try {
+      performance.clearMarks("review:start");
+      performance.mark("review:start");
+    } catch {
+      // 計測できなくても何もしない。
+    }
     setLoading(true);
     setError(null);
     try {
@@ -96,16 +129,19 @@ export default function ReviewFlow({ salon, questions }: Props) {
       const data = await res.json();
       if (!res.ok) {
         setError(data.error ?? "口コミの作成に失敗しました。もう一度お試しください。");
+        markDone("failed");
         return;
       }
       setGeneratedReview(data.review);
       setPreviousPlan(data.plan ?? null);
       setGenerationId(typeof data.generationId === "string" ? data.generationId : null);
       setResultVersion((v) => v + 1);
+      markDone("shown");
     } catch {
       setError(
         "通信エラーが発生しました。ネットワークをご確認のうえ、もう一度お試しください。",
       );
+      markDone("failed");
     } finally {
       setLoading(false);
     }

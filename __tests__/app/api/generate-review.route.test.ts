@@ -216,8 +216,10 @@ describe("POST /api/generate-review: v2", () => {
     });
     expect(Object.keys(json.plan).sort()).toEqual(Object.keys(SEED).sort());
     // 店舗の説明は、Appeal Planning の優先度付けのためにだけパイプラインへ渡す。
+    // 2つ目の引数は、AI の呼び出しを時間の計測のためだけに包んだもの(中身は callOpenAIJson のまま)。
     expect(runReviewPipeline).toHaveBeenCalledWith(
       expect.objectContaining({ storeDescription: "丁寧なカウンセリングを大切にしています" }),
+      { callJson: expect.any(Function) },
     );
     expect(generateReviewV1).not.toHaveBeenCalled();
 

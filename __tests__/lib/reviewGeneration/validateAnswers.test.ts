@@ -184,11 +184,21 @@ describe("loadActiveSurvey", () => {
   it("店舗・有効なアンケート・質問・選択肢を読む", async () => {
     const { client, filters } = fakeSupabase({
       salon_public: { data: { id: SALON_ID, name: "テストサロン", business_type: null, description: "丁寧なご説明を大切にしています" } },
-      surveys: { data: { id: "survey-1" } },
-      questions: {
-        data: [{ id: Q_VISIT, question_text: "何回目？", question_type: "single", max_selections: null }],
+      // 質問と選択肢は、アンケートに埋め込んで1回で読む。
+      surveys: {
+        data: {
+          id: "survey-1",
+          questions: [
+            {
+              id: Q_VISIT,
+              question_text: "何回目？",
+              question_type: "single",
+              max_selections: null,
+              question_options: [{ option_text: "初めて" }],
+            },
+          ],
+        },
       },
-      question_options: { data: [{ question_id: Q_VISIT, option_text: "初めて" }] },
     });
     const survey = await loadActiveSurvey(client, SALON_ID);
     expect(survey).toEqual({
@@ -199,6 +209,7 @@ describe("loadActiveSurvey", () => {
       questions: [{ id: Q_VISIT, text: "何回目？", type: "single", options: ["初めて"], maxSelections: null }],
     });
     expect(filters).toContainEqual(["surveys", "is_active", true]);
+    expect(filters).toContainEqual(["surveys", "salon_id", SALON_ID]);
   });
 
   it("店舗が無ければ null、DB のエラーは投げる", async () => {
