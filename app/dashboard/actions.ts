@@ -16,6 +16,7 @@ export async function logoutAction() {
 
 const salonInfoSchema = z.object({
   name: z.string().trim().min(1, "店舗名を入力してください").max(100),
+  business_type: z.string().trim().max(100, "業種は100文字以内で入力してください").optional(),
 });
 
 const CREATE_SALON_MAX_ATTEMPTS = 5;
@@ -31,6 +32,7 @@ export async function createSalonAction(
 
   const parsed = salonInfoSchema.safeParse({
     name: formData.get("name"),
+    business_type: formData.get("business_type") ?? undefined,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "入力内容をご確認ください。" };
@@ -65,7 +67,13 @@ export async function createSalonAction(
   for (let attempt = 0; attempt < CREATE_SALON_MAX_ATTEMPTS; attempt++) {
     const { data: inserted, error } = await supabase
       .from("salons")
-      .insert({ owner_id: profile.id, name: parsed.data.name, slug: generateRandomSlug(), plan: "reviews" })
+      .insert({
+        owner_id: profile.id,
+        name: parsed.data.name,
+        business_type: parsed.data.business_type || null,
+        slug: generateRandomSlug(),
+        plan: "reviews",
+      })
       .select(
         "id, owner_id, name, slug, google_review_url, description, business_type, onboarding_completed, plan, created_at, updated_at",
       )
@@ -130,6 +138,7 @@ export async function startSurveyAction(
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/reviews");
+  revalidatePath("/dashboard/setup/reviews");
   return {};
 }
 

@@ -52,15 +52,4 @@ export async function getNotificationSettings(salonId: string): Promise<Notifica
   return created?.[0] ? rowToSettings(created[0]) : { salonId, masterEnabled: true };
 }
 
-export async function updateNotificationSettings(salonId: string, masterEnabled: boolean): Promise<void> {
-  const supabase = getNotificationsSupabaseAdmin();
-  const { error } = await supabase
-    .from("notification_settings")
-    .update({ master_enabled: masterEnabled, updated_at: new Date().toISOString() })
-    .eq("salon_id", salonId);
-
-  if (error) {
-    console.error("updateNotificationSettings failed:", error);
-    throw new Error("通知設定の保存に失敗しました。");
-  }
-}
+// 全体スイッチの変更は lib/notifications/recipients/db.ts の setMasterEnabled(切り替え待ちの間は DB が受け付けない)。

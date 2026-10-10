@@ -4,8 +4,8 @@ import type { EventType } from "@/lib/notifications/hotpepper/types";
 // (hmailの lib/db/lineConnections.ts を移植。ただし1店舗=1行だったhmailと異なり、
 // review-appでは1店舗に複数のLINE送信先(スタッフ)を持てる設計にしている
 // -- PLAN 11b節参照。新規のLINEひもづけ(setLineDestination相当)は今回の
-// スコープ外のセルフサーブ連携フロー用なので持たない。既存ユーザーの接続先は
-// 移行スクリプトが直接書き込む。)
+// 既存ユーザーの接続先は移行スクリプトが、新しい通知先は招待と LINE ログイン
+// (lib/notifications/line/login/flow.ts・DB の line_invite_redeem)が書き込む。)
 
 export interface LineConnection {
   id: string;
@@ -17,10 +17,6 @@ export interface LineConnection {
   cancellationEnabled: boolean;
   linkedAt: string | null;
 }
-
-export type LineConnectionSettingsUpdate = Partial<
-  Pick<LineConnection, "newReservationEnabled" | "cancellationEnabled" | "label">
->;
 
 interface LineConnectionRow {
   id: string;
@@ -49,14 +45,16 @@ function rowToConnection(row: LineConnectionRow): LineConnection {
   };
 }
 
-/** 1店舗に紐づく全LINE送信先(スタッフ)。 */
-export async function listLineConnections(salonId: string): Promise<LineConnection[]> {
+/**
+ * 1店舗に紐づく LINE 送信先(スタッフ)。既定では解除した通知先を含めない(配信の宛先・テスト通知に使う)。
+ * 過去の配信の表示名を引くときだけ includeRemoved を使う。ON/OFF・表示名・解除は lib/notifications/recipients/db.ts
+ * (切り替え待ちの間の制限を DB の関数で確かめる)。
+ */
+export async function listLineConnections(salonId: string, options: { includeRemoved?: boolean } = {}): Promise<LineConnection[]> {
   const supabase = getNotificationsSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("line_connections")
-    .select(COLUMNS)
-    .eq("salon_id", salonId)
-    .order("linked_at", { ascending: true });
+  let query = supabase.from("line_connections").select(COLUMNS).eq("salon_id", salonId);
+  if (!options.includeRemoved) query = query.is("removed_at", null);
+  const { data, error } = await query.order("linked_at", { ascending: true });
 
   if (error) {
     console.error("listLineConnections failed:", error);
@@ -66,34 +64,11 @@ export async function listLineConnections(salonId: string): Promise<LineConnecti
 }
 
 /**
- * スタッフ単位のイベント種別トグルを更新する。salonIdも条件に含めることで、
- * クライアントから渡されたconnectionIdが呼び出し元自身の店舗のものであることを
- * DB側でも強制する(他店舗のline_connectionsを誤って/意図的に書き換えられない
- * ようにするため -- クライアント供給のIDを単体で信用しない、という設計原則)。
+ * スタッフがこの種別の通知を受け取る設定か(画面表示用。送信の可否は送信直前に DB の
+ * notifications_begin_send が同じ規則で判定する)。分類できなかった通知('unknown'・'change')は
+ * 専用の設定が無いため、新規予約・キャンセルのどちらかを受け取る設定のスタッフにだけ送る
+ * (全通知を OFF にしたスタッフには送らない)。
  */
-export async function updateLineConnectionSettings(
-  connectionId: string,
-  salonId: string,
-  update: LineConnectionSettingsUpdate
-): Promise<void> {
-  const supabase = getNotificationsSupabaseAdmin();
-  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  if (update.newReservationEnabled !== undefined) patch.new_reservation_enabled = update.newReservationEnabled;
-  if (update.cancellationEnabled !== undefined) patch.cancellation_enabled = update.cancellationEnabled;
-  if (update.label !== undefined) patch.label = update.label;
-
-  const { error } = await supabase
-    .from("line_connections")
-    .update(patch)
-    .eq("id", connectionId)
-    .eq("salon_id", salonId);
-
-  if (error) {
-    console.error("updateLineConnectionSettings failed:", error);
-    throw new Error("LINE送信先の設定保存に失敗しました。");
-  }
-}
-
 export function isEventTypeEnabledForConnection(connection: LineConnection, eventType: EventType): boolean {
   switch (eventType) {
     case "new_reservation":
@@ -101,9 +76,6 @@ export function isEventTypeEnabledForConnection(connection: LineConnection, even
     case "cancellation":
       return connection.cancellationEnabled;
     default:
-      // 'unknown'(判定できない予約関連メール)は専用トグルが無いため常に通す。
-      // 'change'もここを通るが、検出ロジックが'change'を生成することは無いため
-      // 実質到達しない(hmailの既知の制約)。
-      return true;
+      return connection.newReservationEnabled || connection.cancellationEnabled;
   }
 }

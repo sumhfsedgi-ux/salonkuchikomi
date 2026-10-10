@@ -24,3 +24,8 @@ const PLAN_FEATURES: Record<SalonPlan, Feature[]> = {
 export function isFeatureEnabledForPlan(plan: SalonPlan, feature: Feature): boolean {
   return PLAN_FEATURES[plan].includes(feature);
 }
+
+/** その機能を含む契約プランの一覧(DB の関数へ渡し、SQL 側に契約と機能の対応を書かないため)。 */
+export function plansIncluding(feature: Feature): SalonPlan[] {
+  return (Object.keys(PLAN_FEATURES) as SalonPlan[]).filter((plan) => PLAN_FEATURES[plan].includes(feature));
+}
