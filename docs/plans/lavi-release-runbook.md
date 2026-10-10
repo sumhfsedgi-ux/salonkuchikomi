@@ -23,6 +23,17 @@
 
 ## 1. 本番反映前の準備
 
+**2026-10-10 に完了**(詳細は計画書 §1)。
+- 2b の権限、6 の 0021 → 0022 → 0023、3 の LINE ログインチャネル、5 の環境変数(検証フラグ `=1`・宛先は空)を、運営が実施した。
+- 7 のデプロイは PR #3 のマージで行った。
+- 4 の問い合わせ先と、Google の `GOOGLE_CLIENT_ID`・`GOOGLE_CLIENT_SECRET` は未設定。
+- **0021〜0023 は本番適用済みなので、以後書き換えない**(修正は新しい migration で行う)。
+
+**デプロイのしかた**
+- Vercel の `salonpack` は、GitHub の `sumhfsedgi-ux/salonkuchikomi` の `master` への push で、本番に自動でデプロイされる。
+- 環境変数だけを変えたときの「再デプロイ」は、Vercel の画面で行う(salonpack → Deployments → 最新の Production → ⋯ → Redeploy)。
+- ローカルの `review-app/.vercel` のリンクは、今は無い古いプロジェクトを指している。CLI の `vercel deploy` は使わない。
+
 1. **コードを確定する**: このブランチを commit し、PR を作る(まだ master にマージしない)。
 2. **読み取りだけの事前確認**(計画書 §10「事前確認」)— **2026-10-09 実施済み**:
    0020 だけ適用済み(0021〜0023 なし)/ `public.mail_connections` は0件 / SQL Editor(postgres)から hmail の各表を読める /
@@ -58,6 +69,8 @@
 ## 2. 実機確認(運営自身の LINE だけ)
 
 運営の検証用の店舗を使う(予約通知を含む契約: `scripts/salon-contract.ts set-plan … --plan=salonpack`。「利用する機能」で予約通知を選ぶ)。この店舗の予約通知は開始しない。
+- Google 連携をしていないので、この店舗の予約通知の状態は「設定が必要」のままでよい(通知先の追加とテスト通知は、Google の連携なしで使える)。
+- お客様の店舗(Lavi・ayana)では行わない。
 
 **2-A. LINE ログインと通知先の登録**(送信は一切しない状態で行う)
 1. PC で検証用の店舗の「予約通知」→「通知先を追加」→ 表示名 →「招待を作成」。
@@ -68,7 +81,7 @@
 6. 運営自身の LINE のユーザー ID を読む(読み取りだけ): `select destination_id from public.line_connections where salon_id = '<検証用の店舗の id>' and removed_at is null;`
 
 **2-B. 指定宛先へのテスト送信**
-1. Vercel の `LINE_REAL_SEND_VERIFY_DESTINATIONS` に 2-A の6のユーザー ID だけを設定し、再デプロイする。
+1. Vercel の `LINE_REAL_SEND_VERIFY_DESTINATIONS`(Production)に、2-A の6のユーザー ID だけを設定し、再デプロイする(段階1の「デプロイのしかた」)。
 2. 検証用の店舗の「予約通知」で、案内が「検証モード: 指定した検証用の宛先(1人)にだけ…」であることを確かめてから押す → 確認で「送信する」。
 3. 運営自身の LINE に「予約通知の設定が完了しました」が届く。画面は「検証用の宛先にだけ送信しました…」。
 4. `LINE_REAL_SEND_VERIFY_DESTINATIONS` を空に戻して再デプロイする(段階4の④の直前まで、再び送信しない状態にする)。

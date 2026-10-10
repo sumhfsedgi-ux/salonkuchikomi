@@ -1,10 +1,12 @@
 # 予約通知の切り替え PLAN(旧サービス hmail → SalonPack)・SalonPack 共通の Google 連携
 
-最終更新: 2026-10-09(branch: `feature/lavi-notification-cutover`、すべて未commit。本番準備の手順は `docs/plans/lavi-release-runbook.md`)
+最終更新: 2026-10-10(branch: `feature/lavi-notification-cutover`、PR #3。本番準備の手順は `docs/plans/lavi-release-runbook.md`)
 
-> **本番の状態(2026-10-09 時点)**: 本番の共有DBに適用済みなのは **0020 だけ**。0021・0022・0023 と、このブランチのアプリは
-> **本番には未適用・未デプロイ**(テスト用DBにだけ適用して検証)。旧サービス(hmail)は Lavi・ayana の両方で今も通知中で、
-> 停止・設定変更はしていない。このファイルの「これからの手順」は、まだ実行していない。
+> **本番の状態(2026-10-10 時点)**: 本番の共有DBに **0020〜0023 を適用済み**。旧側の監視の最小限の権限も付与済み。
+> アプリは PR #3 のマージで本番(Vercel の salonpack)にデプロイする。
+> **LINE へは1通も送らない状態**(`LINE_REAL_SEND_VERIFY=1`・検証宛先は空)で、予約通知の定期ジョブも作っていない。Google 接続の条件(手順書の段階3)は未完了。
+> 旧サービス(hmail)は Lavi・ayana の両方で今も通知中で、停止・設定変更はしていない。§5 の ⓪〜⑤ は、まだ実行していない。
+> **0021〜0023 は本番適用済みのため、以後は直接書き換えない**(DB の修正は新しい migration で行う)。
 
 ## 0. 確定した方針
 
@@ -18,7 +20,21 @@
 
 ## 1. 履歴(実施済みの作業。これからの手順とは別)
 
-- **0020 を本番の共有DBへ適用済み**(2026-10-08、お客様が SQL Editor で実行)。`notification_deliveries` 等。0020 は書き換えない。追加の修正は 0021・0022(**本番未適用**。テスト用DBでだけ適用・再適用を確認)。
+- **0020 を本番の共有DBへ適用済み**(2026-10-08、お客様が SQL Editor で実行)。`notification_deliveries` 等。0020 は書き換えない。
+- **2026-10-10 の本番適用**(運営が実行。手順書の段階1)。0020〜0023 は以後書き換えない。
+  - **旧側の監視の権限**: `docs/plans/sql/hmail-legacy-watch-grant.sql` の2文を付与した。前後の確認 [A]〜[D] はすべて期待どおり。
+  - **本番 DB**: コミット 27649c9 の 0021 → 0022 → 0023 を順に適用した。すべて成功し、対象の表があることも確認した。
+  - **LINE ログインチャネル**: hmail と同じプロバイダーに作成・公開した。既存の公式アカウントをリンクした。
+    - コールバック URL は `https://salonpack-salontokyo.vercel.app/api/line/login/callback`。
+    - 既存の Messaging API チャネル(Webhook・シークレット・アクセストークン)は変えていない。
+  - **Vercel(salonpack)の Production の環境変数**:
+    - 設定: `LINE_LOGIN_CHANNEL_ID`・`LINE_LOGIN_CHANNEL_SECRET`・`LINE_RECIPIENT_INVITES_ENABLED=1`・`NEXT_PUBLIC_APP_URL=https://salonpack-salontokyo.vercel.app`・`GOOGLE_TOKEN_KEYS`・`GOOGLE_TOKEN_KEY_CURRENT`・`NOTIFICATIONS_CRON_SECRET`
+    - 実機確認のあいだは送らない: `LINE_REAL_SEND_VERIFY=1`、`LINE_REAL_SEND_VERIFY_DESTINATIONS` は無し
+    - 既存の値: `LINE_CHANNEL_ACCESS_TOKEN`(再発行していない)
+    - 未設定: `GOOGLE_CLIENT_ID`・`GOOGLE_CLIENT_SECRET`(段階3)、問い合わせ先(保留)、擬似・検証用 DB の設定
+  - **アプリ**: PR #3 で master(アンケート画面の2ステップ化・口コミ生成の待ち時間の改善)を取り込み、master にマージした → GitHub 連携で本番に自動デプロイ。
+    - 予約通知の定期ジョブ(cron-job.org)は作っていない。
+    - hmail の停止・設定変更、Lavi・ayana の新側での開始、お客様への再接続の依頼は、していない。
 - **hmail の migration-bridge**: `chore/temp-migration-bridge` を Vercel の Preview にデプロイし、Preview 限定の環境変数4つを設定して dry-run の疎通まで確認した。**この方式は廃止**。ローカルでは、未commitだった route.ts の変更を `docs/plans/history/hmail-migration-bridge-uncommitted-2026-10-08.patch` に保存してから、そのファイルだけ元に戻し、秘密値の控え(`hmail/.env.migration-bridge.local`)を削除した。外部に残る片付けは §10。
 - **フェーズ0(Lavi の旧側のスタッフ行の確認。読み取りのみ)**: hmail の salon 行3件(予約受信用 Gmail は全員 `<Laviの予約受信用Gmail>`、全員 `connected`):
   `30a76230-e8c3-4c6e-99eb-509e5d6d795a`(onboarding 未完了)、`6d68e9ce-2db8-45d4-b8d1-a656780c6f8e`(LaviAromaticHerb)、`eff51657-fa3f-4d4e-98d8-a3dae38a1de3`。
@@ -238,14 +254,15 @@ reconcile …(もう一度)→ accept-reconciliation --run-id=… --by=…
 - `npx tsc --noEmit`・`npm run lint`・`npm run build`。
 - 0021・0022・0023 はテスト用DBで適用・再適用(冪等)を確認。本番には未適用。
 
-## 10. 外部の前提(手作業。今回は実行していない)
+## 10. 外部の前提(手作業。2026-10-10 時点の実施状況は §1)
 
 - **Google Cloud プロジェクトの整合**: 届いた口コミ(GBP API)の利用申請先(salonpack-gbp、no. 538962216680)と、共通 OAuth クライアントを作るプロジェクトを一致させる(GBP API は「承認されたプロジェクトの番号」で申請する)。口コミブランチの計画の「Gmail とは別プロジェクト・統合しない」は、今回の方針で置き換わる。
 - **GBP API の利用承認と、Gmail の OAuth 審査は別**。`gmail.readonly` は Restricted scope で、"If you store restricted scope data on servers (or transmit), then you must go through a security assessment." → 必要に応じてセキュリティ評価を受ける。
 - **公開ステータス**: 「テスト」のままだと "…publishing status of 'Testing' is issued a refresh token expiring in 7 days…" → 本番前に「本番」へ。
 - **リダイレクトURI**: `https://<本番ドメイン>/api/google/oauth/callback`。
 - **Vercel の環境変数(本番)**: `GOOGLE_CLIENT_ID`・`GOOGLE_CLIENT_SECRET`(新しいクライアント)、`GOOGLE_TOKEN_KEYS`・`GOOGLE_TOKEN_KEY_CURRENT`、`NEXT_PUBLIC_APP_URL`、`NOTIFICATIONS_CRON_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`。`GOOGLE_REVIEWS_OAUTH_ENABLED` は承認を確認するまで設定しない。
-  - 本番には `SALONPACK_VERIFY_MODE`・`GOOGLE_OAUTH_SIMULATED`・`LINE_LOGIN_SIMULATED`・`LINE_REAL_SEND_VERIFY` を**設定しない**(どれかがあると、本番でも LINE へ送らない。定期処理の応答の `lineSendMode` が `simulated` / `verify` になる)。
+  - 本番には `SALONPACK_VERIFY_MODE`・`GOOGLE_OAUTH_SIMULATED`・`LINE_LOGIN_SIMULATED` を**設定しない**(どれかがあると、本番でも LINE へ送らない。定期処理の応答の `lineSendMode` が `simulated` になる)。
+  - `LINE_REAL_SEND_VERIFY=1` は、実機確認のあいだだけ設定する。宛先が空なら1通も送らず、`lineSendMode` は `verify` になる。Lavi の開始(§5 の ④)の直前に削除する(手順書の段階4)。
   - Vercel のプレビューのデプロイからは LINE へ送らない(§8.3)。
 - **LINE**: 長期のチャネルアクセストークンを**再発行しない**("Reissuing a long-lived channel access token will invalidate the currently active long-lived channel access token." → 旧サービスの通知が Lavi・ayana の両方で即座に止まる)。既存の値を使うか、v2.1 / ステートレスのトークンを別に発行する。
 - **cron**: cron-job.org に SalonPack の `POST /api/cron/notifications/poll-mail` のジョブ(`Authorization: Bearer <NOTIFICATIONS_CRON_SECRET>`)。プロジェクトの関数の最大実行時間が60秒以上であること。
