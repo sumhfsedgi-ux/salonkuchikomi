@@ -4,10 +4,11 @@ import { NextResponse, type NextRequest } from "next/server";
 /**
  * Refreshes the Supabase auth session cookie on every request, and gates
  * `/dashboard/**` behind an authenticated session. `/login`,
- * `/forgot-password`, `/reset-password` and the legacy `/admin/**`
+ * `/forgot-password`, `/reset-password`, `/privacy` and the legacy `/admin/**`
  * redirect stubs (see app/admin/) are intentionally left unguarded -- the
- * first three are the public auth screens themselves, and the stubs only
- * ever call redirect() and read nothing sensitive.
+ * first three are the public auth screens themselves, `/privacy` is the
+ * public privacy policy (registered with Google, so it must open without
+ * login), and the stubs only ever call redirect() and read nothing sensitive.
  *
  * This is an *optimistic* check only: getClaims() verifies the JWT's
  * signature and expiry locally (via a cached JWKS, so it costs a network

@@ -9,7 +9,7 @@ describe("Proxy の対象", () => {
     expect(matcher.test("/api/generate-review")).toBe(false);
   });
 
-  it.each(["/dashboard", "/dashboard/reviews", "/login", "/forgot-password", "/api/review-events", "/api/cron/notifications/poll-mail", "/"])(
+  it.each(["/dashboard", "/dashboard/reviews", "/login", "/forgot-password", "/api/review-events", "/api/cron/notifications/poll-mail", "/", "/privacy"])(
     "%s は今まで通り対象にする",
     (pathname) => {
       expect(matcher.test(pathname)).toBe(true);
