@@ -28,7 +28,7 @@ export default function QuestionCard({
         <span className="shrink-0 text-xs font-semibold text-sage-dark">
           {String(index + 1).padStart(2, "0")}
         </span>
-        <p className="text-balance text-sm font-medium leading-relaxed text-stone-800">
+        <p className="text-sm font-medium leading-relaxed text-stone-800">
           {question.question}
         </p>
       </div>

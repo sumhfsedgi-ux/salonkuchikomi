@@ -48,7 +48,7 @@ export default function MultiSelectQuestion({
                 onClick={() => toggle(option)}
                 aria-pressed={isSelected}
                 className={[
-                  "relative flex min-h-16 w-full items-center justify-center rounded-xl border px-2 py-3.5 text-center text-sm leading-snug transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage/50 focus-visible:ring-offset-1",
+                  "relative flex min-h-13 w-full items-center justify-center rounded-xl border px-2 py-3 text-center text-sm leading-snug transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage/50 focus-visible:ring-offset-1",
                   isSelected
                     ? "border-sage bg-sage/10 text-sage-dark"
                     : "border-greige bg-white text-stone-600 hover:border-sage",

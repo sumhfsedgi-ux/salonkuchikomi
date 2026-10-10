@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { SurveyQuestion, SurveyAnswers } from "@/lib/types";
-import Hero from "@/components/review/Hero";
+import ReviewHeader from "@/components/review/ReviewHeader";
+import type { ReviewStep } from "@/components/review/StepIndicator";
 import SurveyForm from "@/components/review/SurveyForm";
 import ResultSkeleton from "@/components/review/ResultSkeleton";
 import GeneratedReview from "@/components/review/GeneratedReview";
@@ -29,6 +30,8 @@ function isTextField(target: EventTarget): target is HTMLTextAreaElement | HTMLI
 }
 
 export default function ReviewFlow({ salon, questions }: Props) {
+  // STEP 1 = 説明とアンケート、STEP 2 = 口コミの文章案。STEP 2 から STEP 1 へ戻る導線は置かない。
+  const [step, setStep] = useState<ReviewStep>(1);
   const [answers, setAnswers] = useState<SurveyAnswers>(() =>
     buildEmptyAnswers(questions),
   );
@@ -49,12 +52,29 @@ export default function ReviewFlow({ salon, questions }: Props) {
   // Hides the sticky bottom CTA while a text field is focused, so it doesn't
   // sit on top of the on-screen keyboard on mobile.
   const [isTextFieldFocused, setIsTextFieldFocused] = useState(false);
-  const resultRef = useRef<HTMLDivElement>(null);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 計測: ボタンを押してから、完成文(または失敗の表示)が画面に反映されるまで。
+  // ブラウザの performance に残すだけで、送信もログもしない(開発者ツールや手元の計測で読む)。
+  const pendingTimingRef = useRef<{ kind: "initial" | "regenerate"; outcome: "shown" | "failed" } | null>(null);
+  const [timingTick, setTimingTick] = useState(0);
 
   useEffect(() => {
-    if (loading) resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [loading]);
+    const timing = pendingTimingRef.current;
+    if (!timing) return;
+    pendingTimingRef.current = null;
+    // 結果を描画したあとのフレームの、さらに次のフレームを終点にする(画面に反映されたあと)。
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        try {
+          performance.mark("review:end");
+          performance.measure(`review:${timing.kind}:${timing.outcome}`, "review:start", "review:end");
+        } catch {
+          // 計測できなくても何もしない。
+        }
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [timingTick]);
 
   function handleFocusCapture(e: React.FocusEvent) {
     if (!isTextField(e.target)) return;
@@ -69,8 +89,26 @@ export default function ReviewFlow({ salon, questions }: Props) {
     blurTimeoutRef.current = setTimeout(() => setIsTextFieldFocused(false), 50);
   }
 
+  // 回答のチェックが通ったら、すぐ STEP 2 に切り替えて、作っている間の表示を出す。
+  function handleSurveySubmit(currentAnswers: SurveyAnswers) {
+    setStep(2);
+    window.scrollTo({ top: 0 });
+    void handleGenerate(currentAnswers);
+  }
+
   async function handleGenerate(currentAnswers: SurveyAnswers) {
     if (loading) return;
+    const timingKind = generatedReview ? "regenerate" : "initial";
+    const markDone = (outcome: "shown" | "failed") => {
+      pendingTimingRef.current = { kind: timingKind, outcome };
+      setTimingTick((t) => t + 1);
+    };
+    try {
+      performance.clearMarks("review:start");
+      performance.mark("review:start");
+    } catch {
+      // 計測できなくても何もしない。
+    }
     setLoading(true);
     setError(null);
     try {
@@ -91,16 +129,19 @@ export default function ReviewFlow({ salon, questions }: Props) {
       const data = await res.json();
       if (!res.ok) {
         setError(data.error ?? "口コミの作成に失敗しました。もう一度お試しください。");
+        markDone("failed");
         return;
       }
       setGeneratedReview(data.review);
       setPreviousPlan(data.plan ?? null);
       setGenerationId(typeof data.generationId === "string" ? data.generationId : null);
       setResultVersion((v) => v + 1);
+      markDone("shown");
     } catch {
       setError(
         "通信エラーが発生しました。ネットワークをご確認のうえ、もう一度お試しください。",
       );
+      markDone("failed");
     } finally {
       setLoading(false);
     }
@@ -109,8 +150,8 @@ export default function ReviewFlow({ salon, questions }: Props) {
   // Reads `generatedReview` fresh on every render, so this always copies
   // whatever is currently in the (editable) textarea -- including any edits
   // the customer made after generation -- never the original AI output.
-  // Deliberately never blocks navigation on the result: the "この内容をコピーして
-  // Googleへ進む" link's default action (opening googleReviewUrl) always proceeds
+  // Deliberately never blocks navigation on the result: the "この口コミをコピーして
+  // Googleレビューへ進む" link's default action (opening googleReviewUrl) always proceeds
   // regardless of whether the copy succeeds, so a Clipboard API failure
   // never strands the customer -- they can still select and copy the
   // textarea manually once they land on Google's page.
@@ -140,32 +181,31 @@ export default function ReviewFlow({ salon, questions }: Props) {
     }
   }
 
-  const showResult = loading || generatedReview !== "" || error !== null;
-
+  // STEP 1 だけ、画面の下に固定したボタン(と注意書き)の分の余白を空ける。
   return (
-    <div
-      className="mx-auto flex w-full max-w-[500px] flex-1 flex-col px-4"
-      style={{ paddingBottom: "calc(6rem + env(safe-area-inset-bottom))" }}
-      onFocusCapture={handleFocusCapture}
-      onBlurCapture={handleBlurCapture}
-    >
-      <Hero salonName={salon.name} />
-
-      <div className="flex flex-col gap-4">
-        <SurveyForm
-          questions={questions}
-          answers={answers}
-          onAnswersChange={setAnswers}
-          otherDetails={otherDetails}
-          onOtherDetailsChange={setOtherDetails}
-          onSubmit={handleGenerate}
-          loading={loading}
-          hasResult={generatedReview !== ""}
-          hideCta={isTextFieldFocused}
-        />
-
-        {showResult && (
-          <section ref={resultRef} className="flex flex-col gap-3 scroll-mt-4">
+    <>
+      <ReviewHeader salonName={salon.name} step={step} />
+      <div
+        className="mx-auto flex w-full max-w-[500px] flex-1 flex-col px-4"
+        style={step === 1 ? { paddingBottom: "calc(7.5rem + env(safe-area-inset-bottom))" } : undefined}
+        onFocusCapture={handleFocusCapture}
+        onBlurCapture={handleBlurCapture}
+      >
+        {step === 1 ? (
+          <div className="pt-4">
+            <SurveyForm
+              questions={questions}
+              answers={answers}
+              onAnswersChange={setAnswers}
+              otherDetails={otherDetails}
+              onOtherDetailsChange={setOtherDetails}
+              onSubmit={handleSurveySubmit}
+              loading={loading}
+              hideCta={isTextFieldFocused}
+            />
+          </div>
+        ) : (
+          <section className="flex flex-col gap-3 pt-5">
             {loading && !generatedReview && <ResultSkeleton />}
             {loading && generatedReview && (
               <div className="flex items-center gap-2 rounded-lg bg-beige/60 px-3 py-2 text-sm text-stone-600">
@@ -181,21 +221,32 @@ export default function ReviewFlow({ salon, questions }: Props) {
                 {error}
               </div>
             )}
+            {/* 1回目の作成に失敗したときは文章案が無いので、ここで作り直せるようにする。 */}
+            {!loading && error && !generatedReview && (
+              <button
+                type="button"
+                onClick={() => void handleGenerate(answers)}
+                className="btn-primary"
+              >
+                もう一度作成する
+              </button>
+            )}
             {generatedReview && (
               <GeneratedReview
                 key={resultVersion}
                 review={generatedReview}
                 onReviewChange={setGeneratedReview}
                 onCopy={handleCopy}
+                onRegenerate={() => void handleGenerate(answers)}
                 googleReviewUrl={salon.googleReviewUrl}
                 disabled={loading}
               />
             )}
           </section>
         )}
-      </div>
 
-      <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />
-    </div>
+        <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />
+      </div>
+    </>
   );
 }

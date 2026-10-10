@@ -117,72 +117,59 @@ export interface ActiveSurvey {
   questions: SurveyQuestionRecord[];
 }
 
-interface QuestionRow {
+interface SurveyRow {
   id: string;
-  question_text: string;
-  question_type: "single" | "multiple" | "text";
-  max_selections: number | null;
-}
-
-interface OptionRow {
-  question_id: string;
-  option_text: string;
+  questions:
+    | {
+        id: string;
+        question_text: string;
+        question_type: "single" | "multiple" | "text";
+        max_selections: number | null;
+        question_options: { option_text: string }[] | null;
+      }[]
+    | null;
 }
 
 /**
  * 店舗の有効なアンケートを読む(anon で読める範囲: salon_public ビューと公開中のアンケート)。
  * 店舗かアンケートが無ければ null。DB のエラーは投げる。
+ *
+ * 店舗(salon_public はビューなので埋め込めない)と、アンケート(質問・選択肢を埋め込み)は
+ * 互いに依存しないので、同時に読む(DB の往復は1回分)。並べ方は今までと同じく、質問も選択肢も
+ * sort_order の順。エラーと「無い」の判定は、今までと同じく店舗 → アンケートの順に見る。
  */
 export async function loadActiveSurvey(supabase: SupabaseClient, salonId: string): Promise<ActiveSurvey | null> {
-  const { data: salon, error: salonError } = await supabase
-    .from("salon_public")
-    .select("id, name, business_type, description")
-    .eq("id", salonId)
-    .maybeSingle();
+  const [salonResult, surveyResult] = await Promise.all([
+    supabase.from("salon_public").select("id, name, business_type, description").eq("id", salonId).maybeSingle(),
+    supabase
+      .from("surveys")
+      .select("id, questions(id, question_text, question_type, max_selections, question_options(option_text))")
+      .eq("salon_id", salonId)
+      .eq("is_active", true)
+      .order("sort_order", { referencedTable: "questions" })
+      .order("sort_order", { referencedTable: "questions.question_options" })
+      .maybeSingle(),
+  ]);
+
+  const { data: salon, error: salonError } = salonResult;
   if (salonError) throw salonError;
   if (!salon) return null;
 
-  const { data: survey, error: surveyError } = await supabase
-    .from("surveys")
-    .select("id")
-    .eq("salon_id", salonId)
-    .eq("is_active", true)
-    .maybeSingle();
+  const { error: surveyError } = surveyResult;
+  const survey = surveyResult.data as SurveyRow | null;
   if (surveyError) throw surveyError;
   if (!survey) return null;
-
-  const { data: questionRows, error: questionError } = await supabase
-    .from("questions")
-    .select("id, question_text, question_type, max_selections")
-    .eq("survey_id", survey.id)
-    .order("sort_order");
-  if (questionError) throw questionError;
-  const questions = (questionRows ?? []) as QuestionRow[];
-
-  let options: OptionRow[] = [];
-  if (questions.length > 0) {
-    const { data: optionRows, error: optionError } = await supabase
-      .from("question_options")
-      .select("question_id, option_text")
-      .in(
-        "question_id",
-        questions.map((q) => q.id),
-      )
-      .order("sort_order");
-    if (optionError) throw optionError;
-    options = (optionRows ?? []) as OptionRow[];
-  }
 
   return {
     salonId: salon.id as string,
     salonName: salon.name as string,
     businessType: (salon.business_type as string | null) ?? null,
     description: (salon.description as string | null) ?? null,
-    questions: questions.map((q) => ({
+    questions: (survey.questions ?? []).map((q) => ({
       id: q.id,
       text: q.question_text,
       type: q.question_type,
-      options: options.filter((o) => o.question_id === q.id).map((o) => o.option_text),
+      options: (q.question_options ?? []).map((o) => o.option_text),
       maxSelections: q.max_selections,
     })),
   };

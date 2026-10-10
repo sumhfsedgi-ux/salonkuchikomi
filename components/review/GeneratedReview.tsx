@@ -9,6 +9,7 @@ interface Props {
   review: string;
   onReviewChange: (next: string) => void;
   onCopy: () => void;
+  onRegenerate: () => void;
   googleReviewUrl: string;
   disabled?: boolean;
 }
@@ -17,6 +18,7 @@ export default function GeneratedReview({
   review,
   onReviewChange,
   onCopy,
+  onRegenerate,
   googleReviewUrl,
   disabled = false,
 }: Props) {
@@ -28,15 +30,19 @@ export default function GeneratedReview({
       ].join(" ")}
     >
       <div className="text-center">
-        <h2 className="text-lg font-semibold text-stone-800">
-          口コミの下書きができました
+        <h2 className="text-base font-medium leading-relaxed tracking-wide text-stone-700">
+          <span className="inline-block">アンケートの回答をもとに</span>
+          <span className="inline-block">口コミの文章案を作成しました</span>
         </h2>
-        <p className="mt-2 text-balance text-sm text-stone-500">
-          内容を確認して、実際の体験と違うところがあれば自由に編集してください。
+        <p className="mt-2 text-[13px] leading-relaxed text-stone-500">
+          ご回答ありがとうございます。よろしければ、ぜひ口コミの投稿にご協力いただけますと幸いです。
         </p>
       </div>
 
       <div className="card">
+        <p className="mb-2 text-xs leading-relaxed text-stone-500">
+          内容を確認して、実際の体験と違うところがあれば自由に編集してください。
+        </p>
         <textarea
           aria-label="口コミの下書き"
           value={review}
@@ -66,13 +72,33 @@ export default function GeneratedReview({
         target="_blank"
         rel="noopener noreferrer"
         onClick={onCopy}
-        className="btn-primary block text-center"
+        className="btn-primary block px-3 text-center"
       >
-        この内容をコピーしてGoogleへ進む
+        {/* 狭い画面では「コピーして」のあとで折り返す(最後の1文字だけが次の行に回らないように)。 */}
+        <span className="inline-block">この口コミをコピーして</span>
+        <span className="inline-block">Googleレビューへ進む</span>
       </a>
-      <p className="text-center text-xs text-stone-400">
+      <p className="-mt-2 text-center text-xs text-stone-400">
         自動で投稿されることはありません
       </p>
+
+      <button
+        type="button"
+        onClick={onRegenerate}
+        disabled={disabled}
+        className="w-full rounded-lg border border-sage py-3 text-sm font-medium text-sage-dark transition hover:bg-sage/10 disabled:opacity-50"
+      >
+        もう一度作成する
+      </button>
+      {/* 文章案を使わずに投稿したい人向け。コピーはせず、同じ Google の投稿画面を開く。 */}
+      <a
+        href={googleReviewUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block py-1 text-center text-sm text-sage-dark underline underline-offset-4"
+      >
+        自分で文章を考えて投稿する
+      </a>
     </div>
   );
 }

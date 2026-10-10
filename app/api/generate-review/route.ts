@@ -1,5 +1,6 @@
 import { after, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { callOpenAIJson } from "@/lib/ai/openai";
 import { createClient } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import {
@@ -17,6 +18,7 @@ import {
   runShadowVerification,
 } from "@/lib/reviewGeneration/pipeline";
 import { checkGenerationRateLimit, clientIp } from "@/lib/reviewGeneration/rateLimit";
+import { createRequestTimer, serverTimingHeader, type RequestTimer } from "@/lib/reviewGeneration/timing";
 import {
   loadActiveSurvey,
   parseGenerateRequest,
@@ -58,48 +60,73 @@ function adminClientOrNull(): SupabaseClient | null {
   }
 }
 
+// 区間ごとの待ち時間を1行だけログに出す(ms と回数・状態だけ。回答・文章・IP は出さない)。
+// REVIEW_SERVER_TIMING=1 のときだけ、同じ内容を Server-Timing ヘッダーでも返す(手元の計測用)。
+function finish(
+  timer: RequestTimer,
+  response: NextResponse,
+  context: { outcome: string; salonId?: string; pipeline?: "v1" | "v2" },
+): NextResponse {
+  const summary = timer.summary();
+  console.info("generate-review timing", { ...context, status: response.status, ...summary });
+  if (process.env.REVIEW_SERVER_TIMING?.trim() === "1") {
+    response.headers.set("Server-Timing", serverTimingHeader(summary));
+  }
+  return response;
+}
+
 // 回答・生成した文章はログに出さない(salonId と種類・状態だけを出す)。
 export async function POST(request: Request) {
+  const timer = createRequestTimer();
+
   let body: unknown;
   try {
-    body = await request.json();
+    body = await timer.measure("parse", () => request.json());
   } catch {
-    return NextResponse.json({ error: BAD_REQUEST_ERROR }, { status: 400 });
+    return finish(timer, NextResponse.json({ error: BAD_REQUEST_ERROR }, { status: 400 }), { outcome: "bad_json" });
   }
 
   const parsed = parseGenerateRequest(body);
   if (!parsed) {
     console.error("Invalid generate-review payload");
-    return NextResponse.json({ error: BAD_REQUEST_ERROR }, { status: 400 });
+    return finish(timer, NextResponse.json({ error: BAD_REQUEST_ERROR }, { status: 400 }), { outcome: "bad_request" });
   }
   const { salonId } = parsed;
+  const pipeline = pipelineVersion();
 
   let survey;
   try {
-    survey = await loadActiveSurvey(await createClient(), salonId);
+    survey = await timer.measure("survey", async () => loadActiveSurvey(await createClient(), salonId));
   } catch {
     console.error("generate-review: failed to load survey", { salonId });
-    return NextResponse.json({ error: GENERIC_ERROR }, { status: 503 });
+    return finish(timer, NextResponse.json({ error: GENERIC_ERROR }, { status: 503 }), { outcome: "survey_error", salonId });
   }
   if (!survey) {
-    return NextResponse.json({ error: "店舗またはアンケートが見つかりません。" }, { status: 404 });
+    return finish(timer, NextResponse.json({ error: "店舗またはアンケートが見つかりません。" }, { status: 404 }), {
+      outcome: "not_found",
+      salonId,
+    });
   }
 
-  const validation = validateAnswers(survey, parsed.answers);
+  const loadedSurvey = survey;
+  const validation = await timer.measure("validate", () => validateAnswers(loadedSurvey, parsed.answers));
   if (!validation.ok) {
     if (validation.reason === "stale") {
-      return NextResponse.json({ error: STALE_ERROR }, { status: 409 });
+      return finish(timer, NextResponse.json({ error: STALE_ERROR }, { status: 409 }), { outcome: "stale", salonId });
     }
     console.error("generate-review: invalid answers", { salonId, reason: validation.reason });
-    return NextResponse.json({ error: BAD_REQUEST_ERROR }, { status: 400 });
+    return finish(timer, NextResponse.json({ error: BAD_REQUEST_ERROR }, { status: 400 }), { outcome: "invalid", salonId });
   }
 
   const admin = adminClientOrNull();
   if (admin) {
-    const decision = await checkGenerationRateLimit(admin, { salonId, ip: clientIp(request) });
+    const decision = await timer.measure("rateLimit", () => checkGenerationRateLimit(admin, { salonId, ip: clientIp(request) }));
     if (!decision.allowed) {
       console.warn("generate-review: rate limited", { salonId, scope: decision.scope });
-      return NextResponse.json({ error: RATE_LIMITED_ERROR }, { status: 429 });
+      return finish(timer, NextResponse.json({ error: RATE_LIMITED_ERROR }, { status: 429 }), {
+        outcome: "rate_limited",
+        salonId,
+      });
     }
   }
 
@@ -111,14 +138,20 @@ export async function POST(request: Request) {
   };
   const materials = buildMaterials(validation.inputs);
 
-  if (pipelineVersion() === "v2") {
+  if (pipeline === "v2") {
     try {
-      const result = await runReviewPipeline({
-        materials,
-        businessType: survey.businessType,
-        storeDescription: survey.description,
-        previousSeed: parsed.previousPlan,
-      });
+      const result = await timer.measure("generation", () =>
+        runReviewPipeline(
+          {
+            materials,
+            businessType: loadedSurvey.businessType,
+            storeDescription: loadedSurvey.description,
+            previousSeed: parsed.previousPlan,
+          },
+          // 今までと同じ callOpenAIJson を、時間を測るためだけに包む(引数と結果は変えない)。
+          { callJson: timer.wrapCallJson(callOpenAIJson) },
+        ),
+      );
       record({ kind, ...eventFieldsFromMetadata(result.metadata) });
 
       if (admin && result.metadata.verifyMode === "none" && Math.random() < shadowVerifyRate()) {
@@ -143,12 +176,20 @@ export async function POST(request: Request) {
       }
 
       // 再生成のときに前回と違う書き方にするため、Style Seed を返す(本文は含まない)。
-      return NextResponse.json({ review: result.draft, generationId, plan: result.seed });
+      return finish(timer, NextResponse.json({ review: result.draft, generationId, plan: result.seed }), {
+        outcome: kind,
+        salonId,
+        pipeline,
+      });
     } catch (err) {
       if (!(err instanceof ReviewGenerationError)) {
         console.error("generate-review v2: unexpected error", { salonId });
         record({ kind: "failed", pipeline: "v2", errorKind: "unexpected" });
-        return NextResponse.json({ error: GENERIC_ERROR }, { status: 502 });
+        return finish(timer, NextResponse.json({ error: GENERIC_ERROR }, { status: 502 }), {
+          outcome: "failed:unexpected",
+          salonId,
+          pipeline,
+        });
       }
       console.error("generate-review v2 failed", { salonId, kind: err.kind, cause: err.causeKind });
       record({
@@ -156,25 +197,31 @@ export async function POST(request: Request) {
         kind: "failed",
         errorKind: err.causeKind ? `${err.kind}:${err.causeKind}` : err.kind,
       });
-      if (err.kind === "config") return NextResponse.json({ error: CONFIG_ERROR }, { status: 500 });
-      if (err.kind === "no_materials") return NextResponse.json({ error: BAD_REQUEST_ERROR }, { status: 400 });
+      const failure = { outcome: `failed:${err.kind}`, salonId, pipeline };
+      if (err.kind === "config") return finish(timer, NextResponse.json({ error: CONFIG_ERROR }, { status: 500 }), failure);
+      if (err.kind === "no_materials") {
+        return finish(timer, NextResponse.json({ error: BAD_REQUEST_ERROR }, { status: 400 }), failure);
+      }
       const status = err.causeKind === "timeout" ? 504 : 502;
-      return NextResponse.json({ error: GENERIC_ERROR }, { status });
+      return finish(timer, NextResponse.json({ error: GENERIC_ERROR }, { status }), failure);
     }
   }
 
-  const result = await generateReviewV1({
-    answers: validation.v1Answers,
-    salonName: survey.salonName,
-    businessType: survey.businessType ?? undefined,
-    previousReview: parsed.previousReview,
-  });
+  const result = await timer.measure("generation", () =>
+    generateReviewV1({
+      answers: validation.v1Answers,
+      salonName: loadedSurvey.salonName,
+      businessType: loadedSurvey.businessType ?? undefined,
+      previousReview: parsed.previousReview,
+    }),
+  );
   if (!result.ok) {
     console.error("generate-review v1 failed", { salonId, kind: result.kind });
     record({ kind: "failed", pipeline: "v1", promptVersion: V1_PROMPT_VERSION, errorKind: result.kind });
-    return NextResponse.json(
-      { error: result.kind === "config" ? CONFIG_ERROR : GENERIC_ERROR },
-      { status: result.status },
+    return finish(
+      timer,
+      NextResponse.json({ error: result.kind === "config" ? CONFIG_ERROR : GENERIC_ERROR }, { status: result.status }),
+      { outcome: `failed:${result.kind}`, salonId, pipeline },
     );
   }
   record({
@@ -188,5 +235,5 @@ export async function POST(request: Request) {
     lintFlags: lintPlainDraft(result.review, materials),
     verifyMode: "none",
   });
-  return NextResponse.json({ review: result.review, generationId });
+  return finish(timer, NextResponse.json({ review: result.review, generationId }), { outcome: kind, salonId, pipeline });
 }
