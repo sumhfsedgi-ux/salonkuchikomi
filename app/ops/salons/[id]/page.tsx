@@ -5,7 +5,10 @@ import { requireOperator } from "@/lib/ops/operator";
 import { getSalonDetail, listAuditLog, type AuditEntry } from "@/lib/ops/queries";
 import { ACTOR_KIND_LABELS, PLAN_LABELS, formatJst } from "@/lib/ops/labels";
 import { FEATURE_CATEGORIES, FEATURE_REGISTRY, getFeatureDefinition, isFeatureKey } from "@/lib/features/registry";
-import { OVERRIDE_LABELS, LIFECYCLE_LABELS } from "@/lib/features/entitlements";
+import { LIFECYCLE_LABELS } from "@/lib/features/entitlements";
+import { switchLabel } from "@/lib/ops/toggle";
+import type { PlanRules } from "@/lib/ops/preview";
+import type { SalonPlan } from "@/lib/access/plan";
 import PageHeader from "@/components/ui/PageHeader";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
@@ -58,7 +61,7 @@ function auditTarget(target: string): string {
   const label = key && isFeatureKey(key) ? getFeatureDefinition(key).label : key;
   switch (kind) {
     case "feature":
-      return `${label}の設定`;
+      return label;
     case "hold":
       return `${label}の権限による停止`;
     case "catalog":
@@ -70,11 +73,19 @@ function auditTarget(target: string): string {
   }
 }
 
-function auditValue(target: string, value: unknown): string {
+/**
+ * 機能のプラン内の標準(変更履歴の個別設定を、スイッチと同じ「利用中/停止」で読むため)。
+ * 個別設定が効くのは対象プランのときだけなので、今の契約が対象外なら、その機能を含むプランの標準で読む。
+ */
+function featureDefaultOn(rules: PlanRules, plan: SalonPlan, key: string): boolean {
+  return rules[plan]?.[key] ?? rules.salonpack?.[key] ?? rules.reviews?.[key] ?? true;
+}
+
+function auditValue(target: string, value: unknown, defaultOn: (key: string) => boolean): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "string") {
     if (target === "plan" && (value === "reviews" || value === "salonpack")) return PLAN_LABELS[value];
-    if (value === "inherit" || value === "allow" || value === "deny") return OVERRIDE_LABELS[value];
+    if (value === "inherit" || value === "allow" || value === "deny") return switchLabel(value, defaultOn(target.split(":")[1] ?? ""));
     if (value === "open") return "停止";
     if (value === "released") return "解除";
     if (value === "none") return "なし";
@@ -107,6 +118,7 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
 
   const [detail, audit] = await Promise.all([getSalonDetail(id), listAuditLog(id, historyBefore)]);
   if (!detail) notFound();
+  const defaultOn = (key: string) => featureDefaultOn(detail.rules, detail.plan, key);
 
   const features: EditorFeature[] = FEATURE_REGISTRY.filter((d) => d.entitlement === "catalog" && detail.entitlements[d.key]).map((d) => {
     const e = detail.entitlements[d.key]!;
@@ -268,7 +280,7 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
                     <span>{actorText(e)}</span>
                   </div>
                   <p className="text-sm text-ink">
-                    {auditTarget(e.target)}: {auditValue(e.target, e.before)} → {auditValue(e.target, e.after)}
+                    {auditTarget(e.target)}: {auditValue(e.target, e.before, defaultOn)} → {auditValue(e.target, e.after, defaultOn)}
                   </p>
                   {e.note && <p className="whitespace-pre-line text-xs text-ink-muted">メモ: {e.note}</p>}
                 </li>

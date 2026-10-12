@@ -22,3 +22,8 @@ export function overrideForSwitch(on: boolean, defaultOn: boolean, saved: Overri
   if (on === defaultOn) return "inherit";
   return on ? "allow" : "deny";
 }
+
+/** 保存した個別設定を、スイッチと同じ言葉で表す(変更履歴)。 */
+export function switchLabel(override: OverrideMode, defaultOn: boolean): "利用中" | "停止" {
+  return isSwitchOn(override, defaultOn) ? "利用中" : "停止";
+}
