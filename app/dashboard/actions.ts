@@ -8,6 +8,7 @@ import { getCurrentSalon, applyDefaultBusinessType } from "@/lib/supabase/querie
 import { generateRandomSlug } from "@/lib/generateSlug";
 import { resolveFeatureSalon } from "@/lib/access/featureAccess";
 import { getPlanExperience } from "@/lib/features/access";
+import { isOperatorUser } from "@/lib/ops/operator";
 import type { OwnerSalon } from "@/lib/types";
 
 export async function logoutAction() {
@@ -31,6 +32,8 @@ export async function createSalonAction(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "ログインが必要です。" };
+  // 運営の管理者アカウントは店舗を持たない(サロンオーナーとは別のアカウントで運用する)。画面を通さない呼び出しでも作らせない。
+  if (await isOperatorUser(user.id)) return { error: "運営管理のアカウントでは店舗を登録できません。" };
 
   const parsed = salonInfoSchema.safeParse({
     name: formData.get("name"),

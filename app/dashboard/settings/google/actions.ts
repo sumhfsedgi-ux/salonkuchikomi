@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentSalon } from "@/lib/supabase/queries";
 import { canAccessFeature } from "@/lib/access/featureAccess";
-import { featureAccessInputFor, resolveFeatureAccess } from "@/lib/features/access";
+import { resolveFeatureAccess } from "@/lib/features/access";
+import { loadFeatureAccessInput } from "@/lib/features/accessInput";
 import { FEATURE_REGISTRY, type FeatureDefinition } from "@/lib/features/registry";
 import { turnOffFeatureSwitch } from "@/lib/features/featureSwitch";
 import { listSalonGoogleBindings, unbindGoogleFeatures } from "@/lib/google/db/bindings";
@@ -42,7 +43,7 @@ async function resolveContext() {
 /** その Google 権限を使う機能を、この店舗が使えるか(契約・APP_MODE・提供状況・ユーザー権限)。使えなければ結果の表示へ戻す。 */
 async function requireGoogleFeatureAccess(salon: OwnerSalon, userId: string, google: GoogleFeature): Promise<FeatureDefinition> {
   const def = definitionFor(google);
-  const access = resolveFeatureAccess(def, featureAccessInputFor(salon));
+  const access = resolveFeatureAccess(def, await loadFeatureAccessInput(salon));
   if (access.status === "coming_soon") redirect("/dashboard/settings/google?google=not_available");
   if (access.status !== "allowed" || !(await canAccessFeature(salon, userId, def.accessFeature))) {
     redirect("/dashboard/settings/google?google=feature_not_allowed");

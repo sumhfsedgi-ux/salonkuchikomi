@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentSalon } from "@/lib/supabase/queries";
-import { featureAccessInputFor, getPlanExperience, isFeatureIntroduced, resolveAllFeatureAccess } from "@/lib/features/access";
+import { getPlanExperience, isFeatureIntroduced, resolveAllFeatureAccess } from "@/lib/features/access";
+import { loadFeatureAccessInput } from "@/lib/features/accessInput";
 import SalonSettingsForm from "@/components/admin/SalonSettingsForm";
 import PageHeader from "@/components/ui/PageHeader";
 import Card from "@/components/ui/Card";
@@ -15,7 +16,7 @@ export default async function DashboardSettingsPage() {
   // Google連携の案内は、その店舗に紹介してよい機能(lib/features/access.ts)のうち、Google が必要なものだけ。
   // 口コミプランでは、提供中でない機能・契約外の機能を案内しない。
   const experience = getPlanExperience(salon.plan);
-  const googleLabels = resolveAllFeatureAccess(featureAccessInputFor(salon))
+  const googleLabels = resolveAllFeatureAccess(await loadFeatureAccessInput(salon))
     .filter((a) => a.definition.googleFeature && isFeatureIntroduced(a, experience, "guide"))
     .map((a) => a.definition.label);
 

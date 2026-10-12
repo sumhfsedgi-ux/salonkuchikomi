@@ -20,6 +20,7 @@ export const STATE_CHANGED_ERROR = "予約通知の状態が変わりました�
 const START_ERRORS: Record<Exclude<CustomerStartResult, "started" | "already_active">, string> = {
   legacy_salon: "この店舗の予約通知は運営側で開始します。お客様の操作は不要です。",
   paused_by_operator: "予約通知は運営側で停止中です。お問い合わせください。",
+  entitlement_hold: "予約通知は運営側で停止中です。お問い合わせください。",
   plan_not_allowed: "この機能はご契約に含まれていません。",
   // スイッチを ON にしたあと、開始までの間に「利用を停止する」が入った場合。
   not_selected: STATE_CHANGED_ERROR,

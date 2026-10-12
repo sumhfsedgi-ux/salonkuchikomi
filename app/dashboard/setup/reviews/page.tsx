@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getTemplates, getSurveyQuestionsWithOptions } from "@/lib/supabase/queries";
-import { requireFeatureAccess } from "@/lib/access/featureAccess";
+import { requireFeaturePage } from "@/lib/access/featureAccess";
+import FeatureSuspended from "@/components/dashboard/FeatureSuspended";
 import { getPlanExperience } from "@/lib/features/access";
 import OnboardingWizard from "@/components/admin/OnboardingWizard";
 
@@ -11,7 +12,10 @@ export const dynamic = "force-dynamic";
 
 export default async function ReviewsSetupPage() {
   const supabase = await createClient();
-  const salon = await requireFeatureAccess(supabase, "reviews");
+  // 運営が口コミの利用を止めている店舗は、停止中の案内だけを出す(アンケート等は読まない・消さない)。
+  const page = await requireFeaturePage(supabase, "reviews");
+  if (page.status === "suspended") return <FeatureSuspended title="口コミ" />;
+  const salon = page.salon;
 
   const { data: survey } = await supabase
     .from("surveys")

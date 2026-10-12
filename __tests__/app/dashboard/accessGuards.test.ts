@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OwnerSalon } from "@/lib/types";
+import type { FeatureKey } from "@/lib/features/registry";
+import type { OverrideMode } from "@/lib/features/entitlements";
+import { entitlementsFor } from "../../helpers/entitlements";
 
 // メニューに出さないだけでなく、URL・Server Action を直接呼ばれても、権限の無い機能を使えないこと。
 // DB・Google には接続しない(店舗の解決と外部の呼び出しを差し替える)。
@@ -27,6 +30,11 @@ vi.mock("@/lib/google/runtime", () => ({ getGoogleFlowDeps: () => ({}) }));
 vi.mock("@/lib/google/db/bindings", () => ({ listSalonGoogleBindings: async () => [], unbindGoogleFeatures }));
 vi.mock("@/lib/google/revocations", () => ({ processGoogleRevocations: vi.fn() }));
 vi.mock("@/lib/features/featureSwitch", () => ({ turnOffFeatureSwitch, turnOnReservationSwitch: vi.fn() }));
+// DB の利用権限(salon_feature_access_all)の読み込みを差し替える(既定は契約プランの標準のまま)。
+let entitlementOverrides: Partial<Record<FeatureKey, OverrideMode>> = {};
+vi.mock("@/lib/features/loadEntitlements", () => ({
+  loadSalonEntitlements: async () => entitlementsFor(currentSalon?.plan ?? "reviews", { overrides: entitlementOverrides }),
+}));
 
 function salon(plan: "reviews" | "salonpack"): OwnerSalon {
   return {
@@ -64,6 +72,7 @@ async function redirectOf(run: () => Promise<unknown>): Promise<string> {
 beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_APP_MODE", "salonpack");
   vi.clearAllMocks();
+  entitlementOverrides = {};
 });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -129,5 +138,36 @@ describe("ページの入口(requireFeatureAccess)", () => {
       currentSalon = salon(plan);
       await expect(requireFeatureAccess(supabase, "google_reviews")).rejects.toThrow("NOT_FOUND");
     }
+  });
+});
+
+describe("運営による利用停止(個別に利用不可)", () => {
+  it("口コミを停止すると、画面は停止中の案内(404 にしない)、操作の入口は拒否", async () => {
+    currentSalon = salon("reviews");
+    entitlementOverrides = { reviews: "deny" };
+    const { requireFeaturePage, requireFeatureAccess, resolveFeatureSalon } = await import("@/lib/access/featureAccess");
+    const supabase = (await (await import("@/lib/supabase/server")).createClient()) as never;
+    await expect(requireFeaturePage(supabase, "reviews")).resolves.toMatchObject({ status: "suspended", salon: { id: "salon-1" } });
+    await expect(requireFeatureAccess(supabase, "reviews")).rejects.toThrow("NOT_FOUND");
+    expect(await resolveFeatureSalon(supabase, "reviews")).toEqual({ ok: false, error: "この機能は利用できません。" });
+  });
+
+  it("予約通知を停止すると、Google連携の開始・停止の操作も受け付けない", async () => {
+    currentSalon = salon("salonpack");
+    entitlementOverrides = { reservation_notifications: "deny" };
+    const { startGoogleConnectAction } = await import("@/app/dashboard/settings/google/actions");
+    expect(await redirectOf(() => startGoogleConnectAction(form({ features: "gmail", purpose: "connect" })))).toBe(
+      "/dashboard/settings/google?google=feature_not_allowed"
+    );
+    expect(startGoogleConnect).not.toHaveBeenCalled();
+  });
+
+  it("ブログ・予約通知の停止は、ほかの機能の入口に影響しない", async () => {
+    currentSalon = salon("salonpack");
+    entitlementOverrides = { blog: "deny" };
+    const { requireFeatureAccess } = await import("@/lib/access/featureAccess");
+    const supabase = (await (await import("@/lib/supabase/server")).createClient()) as never;
+    await expect(requireFeatureAccess(supabase, "blog")).rejects.toThrow("NOT_FOUND");
+    await expect(requireFeatureAccess(supabase, "notifications")).resolves.toMatchObject({ id: "salon-1" });
   });
 });

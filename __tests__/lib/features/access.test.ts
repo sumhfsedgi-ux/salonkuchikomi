@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { canAccessFeature } from "@/lib/access/featureAccess";
+import { entitlementsFor } from "../../helpers/entitlements";
+import type { SalonEntitlements } from "@/lib/features/entitlements";
+
+// DB の利用権限(salon_feature_access_all)の読み込みだけを差し替える(判定は DB の結果をそのまま使う)。
+let dbEntitlements: SalonEntitlements = {};
+vi.mock("@/lib/features/loadEntitlements", () => ({ loadSalonEntitlements: async () => dbEntitlements }));
+
+const { canAccessFeature, featureAccessStatus } = await import("@/lib/access/featureAccess");
 import {
   getPlanExperience,
   isFeatureIntroduced,
@@ -29,8 +36,9 @@ describe("契約プランごとの画面の作り(機能ごとの利用権限と
 });
 
 describe("機能ごとの利用権限: 契約・APP_MODE → 提供状況の順に判定する", () => {
+  const input = (plan: SalonPlan, googleReviewsAvailable = false, entitlements = entitlementsFor(plan)) => ({ plan, googleReviewsAvailable, entitlements });
   const statuses = (plan: SalonPlan, googleReviewsAvailable = false) =>
-    Object.fromEntries(resolveAllFeatureAccess({ plan, googleReviewsAvailable }).map((a) => [a.key, a.status]));
+    Object.fromEntries(resolveAllFeatureAccess(input(plan, googleReviewsAvailable)).map((a) => [a.key, a.status]));
 
   it("口コミプラン: 口コミだけ利用でき、ブログ・予約通知は契約外、届いた口コミは準備中", () => {
     expect(statuses("reviews")).toEqual({ reviews: "allowed", blog: "not_allowed", reservation_notifications: "not_allowed", google_reviews: "coming_soon" });
@@ -42,20 +50,61 @@ describe("機能ごとの利用権限: 契約・APP_MODE → 提供状況の順�
   });
 
   it("契約外の機能は、提供前でも準備中ではなく契約外", () => {
-    const comingSoonButNotInPlan = { ...FEATURE_REGISTRY.find((d) => d.key === "blog")!, availability: "coming_soon" as const };
-    expect(resolveFeatureAccess(comingSoonButNotInPlan, { plan: "reviews", googleReviewsAvailable: false }).status).toBe("not_allowed");
+    const blog = FEATURE_REGISTRY.find((d) => d.key === "blog")!;
+    const ent = entitlementsFor("reviews", { lifecycle: { blog: "coming_soon" } });
+    expect(resolveFeatureAccess(blog, input("reviews", false, ent)).status).toBe("not_allowed");
   });
 
   it("利用できない理由を短く返す(利用できるときは null)", () => {
-    const [reviews, blog, , googleReviews] = resolveAllFeatureAccess({ plan: "reviews", googleReviewsAvailable: false });
+    const [reviews, blog, , googleReviews] = resolveAllFeatureAccess(input("reviews"));
     expect(reviews.reason).toBeNull();
     expect(blog.reason).toBe("ご契約のプランに含まれていません。");
     expect(googleReviews.reason).toBe("Googleの承認を確認中のため、準備中です。");
   });
 
   it("メニューに出す機能は、利用できる機能だけ", () => {
-    expect(listUsableFeatureKeys({ plan: "reviews", googleReviewsAvailable: false })).toEqual(["reviews"]);
-    expect(listUsableFeatureKeys({ plan: "salonpack", googleReviewsAvailable: false })).toEqual(["reviews", "blog", "reservation_notifications"]);
+    expect(listUsableFeatureKeys(input("reviews"))).toEqual(["reviews"]);
+    expect(listUsableFeatureKeys(input("salonpack"))).toEqual(["reviews", "blog", "reservation_notifications"]);
+  });
+});
+
+describe("DB の利用権限(個別設定・提供状態)をそのまま使う", () => {
+  const blog = FEATURE_REGISTRY.find((d) => d.key === "blog")!;
+  const reviews = FEATURE_REGISTRY.find((d) => d.key === "reviews")!;
+  const input = (plan: SalonPlan, entitlements: SalonEntitlements) => ({ plan, googleReviewsAvailable: false, entitlements });
+
+  it("個別に利用不可は「利用停止中」(契約や運営内部の事情は書かない)", () => {
+    const a = resolveFeatureAccess(blog, input("salonpack", entitlementsFor("salonpack", { overrides: { blog: "deny" } })));
+    expect(a).toMatchObject({ status: "suspended", reason: "現在、この機能はご利用いただけません。詳しくは運営にお問い合わせください。" });
+    expect(listUsableFeatureKeys(input("salonpack", entitlementsFor("salonpack", { overrides: { reviews: "deny" } })))).toEqual(["blog", "reservation_notifications"]);
+    expect(resolveFeatureAccess(reviews, input("reviews", entitlementsFor("reviews", { overrides: { reviews: "deny" } }))).status).toBe("suspended");
+  });
+
+  it("口コミプランへの個別許可は効かない(対象プランの外)", () => {
+    expect(resolveFeatureAccess(blog, input("reviews", entitlementsFor("reviews", { overrides: { blog: "allow" } }))).status).toBe("not_allowed");
+  });
+
+  it("準備中・提供終了は個別に許可しても使えない", () => {
+    const comingSoon = entitlementsFor("salonpack", { overrides: { blog: "allow" }, lifecycle: { blog: "coming_soon" } });
+    expect(resolveFeatureAccess(blog, input("salonpack", comingSoon)).status).toBe("coming_soon");
+    const ended = entitlementsFor("salonpack", { overrides: { blog: "allow" }, lifecycle: { blog: "ended" } });
+    expect(resolveFeatureAccess(blog, input("salonpack", ended))).toMatchObject({ status: "ended", reason: "この機能の提供は終了しました。" });
+  });
+
+  it("判定を読めなかった機能は使わせない", () => {
+    expect(resolveFeatureAccess(blog, input("salonpack", {})).status).toBe("not_allowed");
+  });
+
+  it("APP_MODE が提供しない機能は、DB で利用可でも使えない", () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_MODE", "reviews");
+    expect(resolveFeatureAccess(blog, input("salonpack", entitlementsFor("salonpack"))).status).toBe("not_allowed");
+  });
+
+  it("サーバー側の入口も、停止中の状態を返す(画面は停止中の案内、操作は拒否)", async () => {
+    dbEntitlements = entitlementsFor("salonpack", { overrides: { reviews: "deny" } });
+    expect(await featureAccessStatus({ id: "salon-1", plan: "salonpack" }, "user-1", "reviews")).toBe("suspended");
+    expect(await canAccessFeature({ id: "salon-1", plan: "salonpack" }, "user-1", "reviews")).toBe(false);
+    expect(await canAccessFeature({ id: "salon-1", plan: "salonpack" }, "user-1", "settings")).toBe(true);
   });
 });
 
@@ -66,8 +115,9 @@ describe("サーバー側の入口(canAccessFeature)と、ホーム・メニュ�
         vi.stubEnv("NEXT_PUBLIC_APP_MODE", mode);
         vi.stubEnv("GOOGLE_REVIEWS_OAUTH_ENABLED", flag);
         for (const plan of PLANS) {
+          dbEntitlements = entitlementsFor(plan);
           for (const def of FEATURE_REGISTRY) {
-            const access = resolveFeatureAccess(def, { plan, googleReviewsAvailable: flag === "1" });
+            const access = resolveFeatureAccess(def, { plan, googleReviewsAvailable: flag === "1", entitlements: dbEntitlements });
             const allowed = await canAccessFeature({ id: "salon-1", plan }, "user-1", def.accessFeature);
             expect({ mode, flag, plan, key: def.key, allowed }).toEqual({ mode, flag, plan, key: def.key, allowed: access.status === "allowed" });
           }
@@ -79,6 +129,7 @@ describe("サーバー側の入口(canAccessFeature)と、ホーム・メニュ�
 
 describe("画面で紹介してよい機能", () => {
   const all: FeatureAccessStatus[] = ["allowed", "not_allowed", "coming_soon"];
+  const stopped: FeatureAccessStatus[] = ["suspended", "ended"];
   // 画面に出す機能(listed)で、利用権限の状態ごとの出し分けを確かめる。
   const listed = FEATURE_REGISTRY.find((d) => d.key === "reservation_notifications")!;
   const as = (status: FeatureAccessStatus) => ({ definition: listed, status });
@@ -89,6 +140,12 @@ describe("画面で紹介してよい機能", () => {
 
   it("SalonPack の案内(サロン設定・Google連携)は、契約外を出さず、準備中は出す", () => {
     expect(all.map((s) => isFeatureIntroduced(as(s), "feature_home", "guide"))).toEqual([true, false, true]);
+  });
+
+  it("停止中・提供終了は、SalonPack のホームには出し(理由を読める)、案内には出さない", () => {
+    expect(stopped.map((s) => isFeatureIntroduced(as(s), "feature_home", "home"))).toEqual([true, true]);
+    expect(stopped.map((s) => isFeatureIntroduced(as(s), "feature_home", "guide"))).toEqual([false, false]);
+    expect(stopped.map((s) => isFeatureIntroduced(as(s), "reviews_direct", "guide"))).toEqual([false, false]);
   });
 
   it("口コミプランは機能一覧のホームを使わず、案内には利用できる機能だけ(準備中も出さない)", () => {
@@ -104,7 +161,7 @@ describe("画面で紹介してよい機能", () => {
         for (const status of all) expect(isFeatureIntroduced({ definition: googleReviews, status }, experience, surface)).toBe(false);
       }
     }
-    expect(listUsableFeatureKeys({ plan: "salonpack", googleReviewsAvailable: true })).not.toContain("google_reviews");
+    expect(listUsableFeatureKeys({ plan: "salonpack", googleReviewsAvailable: true, entitlements: entitlementsFor("salonpack") })).not.toContain("google_reviews");
     expect(FEATURE_REGISTRY.filter((d) => d.listed).map((d) => d.key)).toEqual(["reviews", "blog", "reservation_notifications"]);
   });
 });

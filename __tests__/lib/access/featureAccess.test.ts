@@ -2,6 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getAppMode, isFeatureServedByMode, type Feature } from "@/lib/appMode";
 import { isFeatureEnabledForPlan, type SalonPlan } from "@/lib/access/plan";
 import { canAccessFeature } from "@/lib/access/featureAccess";
+import { entitlementsFor } from "../../helpers/entitlements";
+
+// DB の利用権限(salon_feature_access_all)の読み込みを差し替える(店舗 id の末尾がプラン。個別設定なし)。
+vi.mock("@/lib/features/loadEntitlements", () => ({
+  loadSalonEntitlements: async (salonId: string) => entitlementsFor(salonId.endsWith("salonpack") ? "salonpack" : "reviews"),
+}));
 
 const SALONPACK_ONLY: Feature[] = ["blog", "notifications"];
 const REVIEW_SUITE: Feature[] = ["review_replies", "google_reviews", "review_notifications"];
@@ -57,7 +63,7 @@ describe("APP_MODE ごとの提供機能", () => {
 });
 
 describe("canAccessFeature(APP_MODE × 契約プラン)", () => {
-  const salon = (plan: SalonPlan) => ({ id: "salon-1", plan });
+  const salon = (plan: SalonPlan) => ({ id: `salon-${plan}`, plan });
 
   it("reviews モードでは salonpack プランの店舗でもブログを使えない", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_MODE", "reviews");

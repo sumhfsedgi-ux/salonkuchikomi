@@ -6,13 +6,15 @@ import { hasScopeFor } from "@/lib/google/scopes";
 import { isLineInviteAvailable } from "@/lib/notifications/line/login/config";
 import type { OwnerSalon } from "@/lib/types";
 import type { GoogleConnectionSnapshot, ReservationOpsState, SetupContext } from "@/lib/features/featureState";
+import { loadSalonEntitlements } from "@/lib/features/loadEntitlements";
 
 // 機能の状態判定(lib/features/featureState.ts)に渡す材料を1か所で集める。
 // salon は呼び出し元が getCurrentSalon() で解決したもの(クライアントから受け取らない)。
 
 export async function loadSetupContext(salon: Pick<OwnerSalon, "id" | "plan" | "onboardingCompleted" | "googleReviewUrl">): Promise<SetupContext> {
   const supabase = getServiceRoleClient();
-  const [reservationSwitch, survey, salonSettings, lines, ops, bindings, master, scan] = await Promise.all([
+  const [entitlements, reservationSwitch, survey, salonSettings, lines, ops, bindings, master, scan] = await Promise.all([
+    loadSalonEntitlements(salon.id),
     // 予約通知の内部スイッチだけを読む(ほかの機能の行は、お客様が機能を選んでいた頃の記録で、判定には使わない)。
     supabase
       .from("salon_feature_selections")
@@ -56,6 +58,7 @@ export async function loadSetupContext(salon: Pick<OwnerSalon, "id" | "plan" | "
 
   return {
     plan: salon.plan,
+    entitlements,
     reservationSwitch: switchRow ? { selected: switchRow.selected, updatedAt: switchRow.updated_at } : null,
     hasActiveSurvey: (survey.data ?? []).length > 0,
     onboardingCompleted: salon.onboardingCompleted,

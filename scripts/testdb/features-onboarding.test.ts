@@ -105,7 +105,7 @@ function realDeps(salon: TestSalonFixture) {
     loadContext: async () => loadSetupContext(await salonRow(salon.salonId)),
     turnOnSwitch: (expected: Awaited<ReturnType<typeof reservationSwitch>>) =>
       turnOnReservationSwitch({ salonId: salon.salonId, userId: salon.userId, expected }),
-    customerStart: () => customerStartReservationNotifications({ salonId: salon.salonId, userId: salon.userId, allowedPlans: PLANS }),
+    customerStart: () => customerStartReservationNotifications({ salonId: salon.salonId, userId: salon.userId }),
   };
 }
 
@@ -159,7 +159,7 @@ describe("初回の開始", () => {
     await admin.from("line_connections").update({ status: "not_connected" }).eq("id", line);
     // LINE の通知先が無いので DB の customer_start は開始しない(スイッチは ON のまま残る)。
     expect(await turnOnReservationSwitch({ salonId: salon.salonId, userId: salon.userId, expected: null })).toBe(true);
-    expect(await customerStartReservationNotifications({ salonId: salon.salonId, userId: salon.userId, allowedPlans: PLANS })).toBe("no_line_recipients");
+    expect(await customerStartReservationNotifications({ salonId: salon.salonId, userId: salon.userId })).toBe("no_line_recipients");
     expect((await reservationSwitch(salon.salonId))?.selected).toBe(true);
     expect(await opsState(salon.salonId)).toBe("setup_pending");
     expect(await isPollable(salon.salonId)).toBe(false);
@@ -282,7 +282,7 @@ describe("同時の操作: 古い判定で、新しい停止を解除しない",
     await createTestLineConnection(salon.salonId);
     expect(await turnOnReservationSwitch({ salonId: salon.salonId, userId: salon.userId, expected: null })).toBe(true);
     await turnOffFeatureSwitch({ salonId: salon.salonId, userId: salon.userId, key: "reservation_notifications" });
-    expect(await customerStartReservationNotifications({ salonId: salon.salonId, userId: salon.userId, allowedPlans: PLANS })).toBe("not_selected");
+    expect(await customerStartReservationNotifications({ salonId: salon.salonId, userId: salon.userId })).toBe("not_selected");
     expect(await opsState(salon.salonId)).toBe("setup_pending");
     expect(await isPollable(salon.salonId)).toBe(false);
   });
@@ -296,7 +296,7 @@ describe("同時の操作: 古い判定で、新しい停止を解除しない",
 });
 
 describe("停止期間の記録(遅延通知のルールに使う)", () => {
-  it("予約通知を止めた期間・全体スイッチを OFF にした期間・契約から外れた期間を、DB の時刻で記録する", async () => {
+  it("予約通知を止めた期間・全体スイッチを OFF にした期間を、DB の時刻で記録する(契約の変更は記録だけ)", async () => {
     const salon = await newSalon();
     await turnOnReservationSwitch({ salonId: salon.salonId, userId: salon.userId, expected: null });
     await turnOffFeatureSwitch({ salonId: salon.salonId, userId: salon.userId, key: "reservation_notifications" });
@@ -309,10 +309,12 @@ describe("停止期間の記録(遅延通知のルールに使う)", () => {
     await setMasterEnabled(salon.salonId, true);
     expect((await intervals(salon.salonId, "manual_master_off"))[0].ended_at).not.toBeNull();
 
+    // 契約の変更(0024 以降): contract の停止期間は開閉しない。開始前の店舗には権限による停止も開かない
+    // (開始済みの店舗の扱いは scripts/localdb/entitlements.test.ts)。契約変更の記録は続ける。
     await admin.from("salons").update({ plan: "reviews" }).eq("id", salon.salonId);
-    expect(await intervals(salon.salonId, "contract")).toEqual([expect.objectContaining({ ended_at: null })]);
     await admin.from("salons").update({ plan: "salonpack" }).eq("id", salon.salonId);
-    expect((await intervals(salon.salonId, "contract"))[0].ended_at).not.toBeNull();
+    expect(await intervals(salon.salonId, "contract")).toEqual([]);
+    expect(await intervals(salon.salonId, "entitlement")).toEqual([]);
     const { data: changes } = await admin.from("salon_plan_changes").select("old_plan, new_plan").eq("salon_id", salon.salonId).order("changed_at");
     expect(changes).toEqual([
       { old_plan: "salonpack", new_plan: "reviews" },
@@ -324,7 +326,7 @@ describe("停止期間の記録(遅延通知のルールに使う)", () => {
 describe("お客様による開始(旧サービスを使っていない店舗だけ)", () => {
   it("Google に接続しただけでは始まらない。条件がそろわないと開始できず、旧サービス利用店舗は画面から開始できない", async () => {
     const salon = await newSalon();
-    const start = () => customerStartReservationNotifications({ salonId: salon.salonId, userId: salon.userId, allowedPlans: PLANS });
+    const start = () => customerStartReservationNotifications({ salonId: salon.salonId, userId: salon.userId });
     expect(await start()).toBe("not_selected");
     await turnOnReservationSwitch({ salonId: salon.salonId, userId: salon.userId, expected: null });
     expect(await start()).toBe("gmail_not_connected");
