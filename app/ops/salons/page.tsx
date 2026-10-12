@@ -118,15 +118,8 @@ export default async function OpsSalonsPage({ searchParams }: PageProps<"/ops/sa
                     <span className="text-ink-muted">利用可能な機能:</span>{" "}
                     {CATALOG_FEATURES.filter((d) => s.entitled[d.key] === true).map((d) => d.label).join("・") || "なし"}
                   </p>
-                  {CATALOG_FEATURES.some((d) => s.overrides[d.key] || s.openHolds.includes(d.key)) && (
-                    <ul className="flex flex-wrap gap-1.5 md:justify-end" aria-label="個別設定・停止">
-                      {CATALOG_FEATURES.filter((d) => s.overrides[d.key]).map((d) => (
-                        <li key={`o-${d.key}`}>
-                          <Badge variant="neutral">
-                            {d.label}: {s.overrides[d.key] === "allow" ? "個別に許可" : "個別に利用不可"}
-                          </Badge>
-                        </li>
-                      ))}
+                  {CATALOG_FEATURES.some((d) => s.openHolds.includes(d.key)) && (
+                    <ul className="flex flex-wrap gap-1.5 md:justify-end" aria-label="停止">
                       {CATALOG_FEATURES.filter((d) => s.openHolds.includes(d.key)).map((d) => (
                         <li key={`h-${d.key}`}>
                           <Badge variant="warning">{d.label}: 権限による停止中</Badge>

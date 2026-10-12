@@ -15,7 +15,7 @@ import { OVERRIDE_LABELS, type EntitlementReason, type FeatureLifecycle, type Ov
 import type { FeatureCategory, FeatureIcon } from "@/lib/features/registry";
 import { previewAccess, type CatalogEntry, type PlanRules } from "@/lib/ops/preview";
 import { describeChanges } from "@/lib/ops/impact";
-import { differsFromDefault, isSwitchOn, overrideForSwitch } from "@/lib/ops/toggle";
+import { isSwitchOn, overrideForSwitch } from "@/lib/ops/toggle";
 import { PLAN_LABELS } from "@/lib/ops/labels";
 import { saveEntitlementsAction } from "@/app/ops/salons/[id]/actions";
 
@@ -214,7 +214,6 @@ export default function EntitlementEditor({ salonId, version, plan, features, ca
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="text-base font-semibold text-ink">{f.label}</h4>
-                        {inPlan && differsFromDefault(draftOverride, defaultOn) && <Badge variant="neutral">標準と異なる設定</Badge>}
                         {f.holdOpen && <Badge variant="warning">権限による停止中</Badge>}
                       </div>
                       <p className="mt-1 text-sm text-ink-muted">{f.description}</p>
