@@ -81,6 +81,15 @@ describe("カードの4種類", () => {
     expect(text(markup)).toContain("Hot PepperブログをAIで作成");
   });
 
+  it("SalonPack で運営が利用不可にした機能も、契約外と同じカード(「利用停止中」や問い合わせの案内は出さない)", () => {
+    const state = stateOf(ctx({ entitlements: entitlementsFor("salonpack", { overrides: { blog: "deny" } }) }), "blog");
+    expect(toHomeCard(state)).toMatchObject({ kind: "not_allowed", href: null, ctaLabel: "利用できません", reason: "ご契約のプランに含まれていません。" });
+    const plain = text(html(state));
+    expect(plain).toContain("ご契約外");
+    expect(plain).not.toContain("利用停止中");
+    expect(plain).not.toContain("運営");
+  });
+
   it("準備中: グレー、「準備中」のバッジと理由、ボタンは非活性", () => {
     const state = stateOf(ctx(), "google_reviews");
     expect(toHomeCard(state)).toMatchObject({ kind: "coming_soon", href: null, ctaLabel: "準備中" });

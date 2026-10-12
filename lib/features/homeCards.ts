@@ -7,9 +7,10 @@ import type { FeatureKey } from "@/lib/features/registry";
 //   - setup_required: 利用は許可されているが設定が未完了(押せる。「設定へ進む」で最初の未完了の設定へ)
 //   - not_allowed:    契約外(グレー。説明は読める。ボタンは非活性)
 //   - coming_soon:    提供前(グレー。ボタンは非活性)
-//   - suspended:      運営が利用を停止している・提供終了(グレー。ボタンは非活性。理由を文字で出す)
+//   - ended:          提供終了(グレー。ボタンは非活性)
+// 運営が個別に利用不可にした機能は、契約外と同じ not_allowed になる(lib/features/access.ts)。
 
-export type HomeCardKind = "available" | "setup_required" | "not_allowed" | "coming_soon" | "suspended";
+export type HomeCardKind = "available" | "setup_required" | "not_allowed" | "coming_soon" | "ended";
 
 export interface HomeCard {
   key: FeatureKey;
@@ -47,7 +48,7 @@ export function toHomeCard(state: FeatureState): HomeCard {
   if (state.access !== "allowed") {
     return {
       ...base,
-      kind: state.access === "ended" ? "suspended" : state.access,
+      kind: state.access,
       badge: { label: state.statusLabel, variant: "neutral" },
       reason: state.message,
       href: null,

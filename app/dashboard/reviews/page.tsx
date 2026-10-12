@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getTemplates, getActiveSurveyWithQuestions } from "@/lib/supabase/queries";
 import { requireFeaturePage } from "@/lib/access/featureAccess";
-import FeatureSuspended from "@/components/dashboard/FeatureSuspended";
+import NoFeaturesAvailable from "@/components/dashboard/NoFeaturesAvailable";
 import QuestionEditor from "@/components/admin/QuestionEditor";
 import RestartSurveyFromTemplate from "@/components/admin/RestartSurveyFromTemplate";
 import CopyUrlButton from "@/components/admin/CopyUrlButton";
@@ -14,9 +14,9 @@ import Alert from "@/components/ui/Alert";
 
 export default async function DashboardReviewsPage({ searchParams }: PageProps<"/dashboard/reviews">) {
   const supabase = await createClient();
-  // 運営が口コミの利用を止めている店舗は、停止中の案内だけを出す(アンケート等は読まない・消さない)。
+  // 口コミを使えない口コミプランの店舗は、利用できる機能が無い旨だけを出す(アンケート等は読まない・消さない)。
   const page = await requireFeaturePage(supabase, "reviews");
-  if (page.status === "suspended") return <FeatureSuspended title="口コミ" />;
+  if (page.status === "no_features") return <NoFeaturesAvailable title="口コミ" />;
   const salon = page.salon;
   const params = await searchParams;
 

@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { isFeatureServedByMode, type Feature } from "@/lib/appMode";
 import { isFeatureEnabledForPlan } from "@/lib/access/plan";
 import { hasUserPermission } from "@/lib/access/userPermission";
-import { resolveFeatureAccess, type FeatureAccessStatus } from "@/lib/features/access";
+import { getPlanExperience, resolveFeatureAccess, type FeatureAccessStatus } from "@/lib/features/access";
 import { loadFeatureAccessInput } from "@/lib/features/accessInput";
 import { FEATURE_REGISTRY } from "@/lib/features/registry";
 import { getCurrentSalon } from "@/lib/supabase/queries";
@@ -75,14 +75,14 @@ export async function requireFeatureAccess(
 }
 
 /**
- * 画面(Page)用。運営が利用を停止している(suspended)ときは404にせず、停止中の画面を出せるよう店舗と状態を返す
- * (口コミプランは口コミの画面へ直接進むため、404 やリダイレクトの繰り返しにしない)。それ以外の利用できない状態は404。
- * 停止中でも、その機能のデータ・操作には触れない(呼び出し側は停止中の案内だけを出す)。
+ * 画面(Page)用。口コミプランの口コミの画面は、ログイン後の入口そのもの(/dashboard から直接進む)。
+ * 口コミを使えない口コミプランの店舗には、404 やリダイレクトの繰り返しにせず「利用できる機能が無い」案内を出せるよう、
+ * no_features と店舗を返す(呼び出し側は案内だけを出し、その機能のデータ・操作には触れない)。それ以外の利用できない状態は404。
  */
 export async function requireFeaturePage(
   supabase: SupabaseClient,
   feature: Feature
-): Promise<{ status: "allowed" | "suspended"; salon: OwnerSalon }> {
+): Promise<{ status: "allowed" | "no_features"; salon: OwnerSalon }> {
   const salon = await getCurrentSalon(supabase);
   if (!salon) redirect("/dashboard");
 
@@ -91,6 +91,7 @@ export async function requireFeaturePage(
   } = await supabase.auth.getUser();
   if (!user) notFound();
   const status = await featureAccessStatus(salon, user.id, feature);
-  if (status !== "allowed" && status !== "suspended") notFound();
-  return { status, salon };
+  if (status === "allowed") return { status, salon };
+  if (feature === "reviews" && getPlanExperience(salon.plan) === "reviews_direct") return { status: "no_features", salon };
+  notFound();
 }

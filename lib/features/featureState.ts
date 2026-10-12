@@ -80,7 +80,6 @@ export type FeatureStatus =
   | "not_allowed"
   | "coming_soon"
   | "ended"
-  | "suspended"
   | "setup_required"
   | "google_connect_required"
   | "reconnect_required"
@@ -98,7 +97,6 @@ export const FEATURE_STATUS_LABELS: Record<FeatureStatus, string> = {
   not_allowed: "ご契約外",
   coming_soon: "準備中",
   ended: "提供終了",
-  suspended: "利用停止中",
   setup_required: "設定が必要",
   google_connect_required: "Google接続待ち",
   reconnect_required: "再接続が必要",
