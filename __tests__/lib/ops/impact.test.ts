@@ -22,7 +22,7 @@ describe("予約通知", () => {
   it("稼働中に利用不可にすると、新しい送信を始めないこと・送信開始済みは続くこと・自動で再開しないことを出す", () => {
     const [s] = describeChanges({ planBefore: "salonpack", planAfter: "salonpack", features: [feature({})] });
     expect(s.revokes).toBe(true);
-    expect(s.title).toBe("予約通知: プランに従う → 個別に利用不可");
+    expect(s.title).toBe("予約通知: 利用中 → 停止");
     const text = s.details.join("\n");
     expect(text).toContain("新しい予約メールの確認と通知の送信を始めません");
     expect(text).toContain("送信を開始済みの通知は完了まで続きます");
@@ -51,7 +51,7 @@ describe("予約通知", () => {
       planAfter: "salonpack",
       features: [feature({ beforeOverride: "inherit", afterOverride: "inherit", before: { allowed: false, reason: "not_in_plan" }, after: { allowed: true, reason: "plan_default" }, runtimeStarted: false })],
     }).slice(1);
-    expect(s.title).toBe("予約通知");
+    expect(s.title).toBe("予約通知: 使えない → 利用中");
     expect(s.details.join("\n")).toContain("この保存だけでは連携や通知を始めません");
   });
 });
@@ -78,11 +78,23 @@ describe("口コミ・プランの変更", () => {
       ],
     });
     expect(summaries[0].title).toBe("契約プラン: SalonPack → 口コミプラン");
-    expect(summaries[0].details.join("\n")).toContain("ブログの個別設定(個別に許可)は残りますが、口コミプランの対象外のため効きません。");
-    expect(summaries[1]).toMatchObject({ title: "ブログ", revokes: true });
+    expect(summaries[0].details.join("\n")).toContain("ブログの個別の設定(利用中)は残りますが、口コミプランでは使えない機能のため効きません。");
+    expect(summaries[1]).toMatchObject({ title: "ブログ: 利用中 → 使えない", revokes: true });
+    expect(summaries[1].details[0]).toBe("理由: この契約プランでは使えません。");
   });
 
   it("変更が無ければ何も出さない", () => {
     expect(describeChanges({ planBefore: "salonpack", planAfter: "salonpack", features: [feature({ afterOverride: "inherit", after: { allowed: true, reason: "plan_default" } })] })).toEqual([]);
+  });
+});
+
+describe("残っていた個別の設定だけを戻す", () => {
+  it("使えるかどうかが変わらない変更は、そう書く", () => {
+    const [s] = describeChanges({
+      planBefore: "reviews",
+      planAfter: "reviews",
+      features: [feature({ key: "blog", label: "ブログ", hasRuntime: false, beforeOverride: "deny", afterOverride: "inherit", before: { allowed: false, reason: "not_in_plan" }, after: { allowed: false, reason: "not_in_plan" } })],
+    });
+    expect(s).toMatchObject({ title: "ブログ: 残っていた個別の設定を標準に戻す", revokes: false, details: ["使えるかどうかは変わりません。"] });
   });
 });

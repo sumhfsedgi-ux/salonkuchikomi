@@ -11,16 +11,18 @@ import Input from "@/components/ui/Input";
 import { ReviewIcon, BlogIcon, BellIcon, InboxIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/cn";
 import type { SalonPlan } from "@/lib/access/plan";
-import { ENTITLEMENT_REASON_LABELS, LIFECYCLE_LABELS, OVERRIDE_LABELS, type EntitlementReason, type FeatureLifecycle, type OverrideMode } from "@/lib/features/entitlements";
+import { OVERRIDE_LABELS, type EntitlementReason, type FeatureLifecycle, type OverrideMode } from "@/lib/features/entitlements";
 import type { FeatureCategory, FeatureIcon } from "@/lib/features/registry";
 import { previewAccess, type CatalogEntry, type PlanRules } from "@/lib/ops/preview";
 import { describeChanges } from "@/lib/ops/impact";
+import { differsFromDefault, isSwitchOn, overrideForSwitch } from "@/lib/ops/toggle";
 import { PLAN_LABELS } from "@/lib/ops/labels";
 import { saveEntitlementsAction } from "@/app/ops/salons/[id]/actions";
 
-// 契約と利用許可の編集。スイッチ(選択肢)を変えただけでは保存せず、「変更を保存」で確認を出し、
-// 変更内容・影響を見てから保存する。保存の可否と保存後の値は DB が決め、保存後は DB から読み直した値を出す。
-// 設定値(プランに従う/個別に許可/個別に利用不可)と、最終的な利用可否・理由を分けて文字で出す(色だけに頼らない)。
+// 契約と利用許可の編集。機能ごとのスイッチ(利用中/停止)は押しただけでは保存せず(下書き)、「変更を保存」で
+// 変更内容と影響を確認してから保存する。保存の可否と保存後の値は DB が決め、保存後は DB から読み直した値を出す。
+// スイッチと保存する個別設定の対応は lib/ops/toggle.ts。状態は色だけでなく文字でも出す。
+// 普段は使わない情報(提供状態・プランの標準・理由)は出さず、例外(対象外・準備中・権限による停止)のときだけ出す。
 
 export interface EditorFeature {
   key: string;
@@ -51,12 +53,7 @@ interface Props {
 }
 
 const ICONS = { review: ReviewIcon, blog: BlogIcon, bell: BellIcon, inbox: InboxIcon } as const;
-const MODES: OverrideMode[] = ["inherit", "allow", "deny"];
 const SEARCH_THRESHOLD = 8;
-
-function accessLabel(a: { allowed: boolean; reason: EntitlementReason }) {
-  return a.allowed ? "利用可" : "利用不可";
-}
 
 export default function EntitlementEditor({ salonId, version, plan, features, categories, catalog, rules, reservationStarted }: Props) {
   const router = useRouter();
@@ -92,7 +89,7 @@ export default function EntitlementEditor({ salonId, version, plan, features, ca
   const rows = features.map((f) => {
     const draftOverride = draftOverrides[f.key] ?? "inherit";
     const after = previewAccess(catalog[f.key], rules, draftPlan, f.key, draftOverride);
-    return { f, draftOverride, after, inPlan: rules[draftPlan]?.[f.key] !== undefined };
+    return { f, draftOverride, after, inPlan: rules[draftPlan]?.[f.key] !== undefined, defaultOn: rules[draftPlan]?.[f.key] === true };
   });
   const changedOverrides = rows.filter((r) => r.draftOverride !== r.f.override);
   const dirty = draftPlan !== plan || changedOverrides.length > 0;
@@ -200,11 +197,16 @@ export default function EntitlementEditor({ salonId, version, plan, features, ca
             <h3 id={`cat-${cat.key}`} className="text-sm font-semibold text-ink-muted">
               {cat.label}
             </h3>
-            {items.map(({ f, draftOverride, after, inPlan }) => {
+            {items.map(({ f, draftOverride, after, inPlan, defaultOn }) => {
               const Icon = ICONS[f.icon];
-              const changed = draftOverride !== f.override || after.allowed !== f.allowed || after.reason !== f.reason;
+              const available = f.lifecycle === "available";
+              // 対象プランの外・準備中・提供終了の機能は、スイッチを押せない(個別の設定では解除できない)。
+              const locked = !inPlan || !available;
+              const on = !locked && isSwitchOn(draftOverride, defaultOn);
+              const changed = draftOverride !== f.override || after.allowed !== f.allowed;
+              const otherPlans = (["reviews", "salonpack"] as const).filter((p) => p !== draftPlan && rules[p]?.[f.key] !== undefined);
               return (
-                <Card key={f.key} className="flex flex-col gap-4" data-feature={f.key}>
+                <Card key={f.key} className="flex flex-col gap-3" data-feature={f.key}>
                   <div className="flex items-start gap-3">
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sage-soft text-sage-dark" aria-hidden="true">
                       <Icon className="h-5 w-5" />
@@ -212,74 +214,66 @@ export default function EntitlementEditor({ salonId, version, plan, features, ca
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="text-base font-semibold text-ink">{f.label}</h4>
-                        <Badge variant={f.allowed ? "success" : "neutral"}>{`現在: ${accessLabel(f)}`}</Badge>
+                        {inPlan && differsFromDefault(draftOverride, defaultOn) && <Badge variant="neutral">標準と異なる設定</Badge>}
                         {f.holdOpen && <Badge variant="warning">権限による停止中</Badge>}
                       </div>
                       <p className="mt-1 text-sm text-ink-muted">{f.description}</p>
-                      <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs text-ink-muted sm:grid-cols-2">
-                        <div>
-                          <dt className="inline">提供状態: </dt>
-                          <dd className="inline text-ink">{LIFECYCLE_LABELS[f.lifecycle]}</dd>
-                        </div>
-                        <div>
-                          <dt className="inline">{PLAN_LABELS[draftPlan]}の標準: </dt>
-                          <dd className="inline text-ink">
-                            {!inPlan ? "対象外" : rules[draftPlan]?.[f.key] ? "利用可" : "利用不可"}
-                          </dd>
-                        </div>
-                        {f.prerequisites.length > 0 && (
-                          <div className="sm:col-span-2">
-                            <dt className="inline">前提条件: </dt>
-                            <dd className="inline text-ink">{f.prerequisites.join("・")}</dd>
-                          </div>
+                    </div>
+                    {/* 押しただけでは保存しない(下書き)。「変更を保存」で確認のうえ保存する。 */}
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className={cn("text-sm font-medium", on ? "text-sage-dark" : "text-ink-muted")} aria-hidden="true">
+                        {locked ? "使えません" : on ? "利用中" : "停止"}
+                      </span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={on}
+                        aria-label={`${f.label}を利用中にする`}
+                        disabled={locked || busy}
+                        onClick={() =>
+                          setDraftOverrides((d) => ({ ...d, [f.key]: overrideForSwitch(!on, defaultOn, savedOverrides[f.key] ?? "inherit") }))
+                        }
+                        className={cn(
+                          "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage/50 focus-visible:ring-offset-2",
+                          on ? "border-sage bg-sage" : "border-greige bg-beige",
+                          (locked || busy) && "cursor-not-allowed opacity-50",
                         )}
-                      </dl>
-                      <p className="mt-2 text-sm text-ink">
-                        現在の理由: {ENTITLEMENT_REASON_LABELS[f.reason]}
-                      </p>
+                      >
+                        <span className={cn("inline-block h-5 w-5 rounded-full bg-white shadow transition", on ? "translate-x-6" : "translate-x-1")} />
+                      </button>
                     </div>
                   </div>
 
-                  <fieldset>
-                    <legend className="sr-only">{f.label}の個別設定</legend>
-                    <div className="grid gap-2 sm:grid-cols-3">
-                      {MODES.map((m) => {
-                        // 対象プランの外では、個別の許可・利用不可を新しく選べない(プランに従うへ戻すことはできる)。
-                        const disabled = m !== "inherit" && !inPlan && f.override !== m;
-                        return (
-                          <label
-                            key={m}
-                            className={cn(
-                              "flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-sm",
-                              disabled ? "cursor-not-allowed border-border bg-beige/50 text-ink-muted" : "cursor-pointer border-border bg-white text-ink",
-                              draftOverride === m && "border-sage bg-sage-soft",
-                            )}
-                          >
-                            <input
-                              type="radio"
-                              name={`override-${f.key}`}
-                              value={m}
-                              checked={draftOverride === m}
-                              disabled={disabled || busy}
-                              onChange={() => setDraftOverrides((d) => ({ ...d, [f.key]: m }))}
-                              className="accent-sage"
-                            />
-                            {OVERRIDE_LABELS[m]}
-                          </label>
-                        );
-                      })}
+                  {(locked || f.holdOpen || f.prerequisites.length > 0) && (
+                    <ul className="flex flex-col gap-1 pl-[3.25rem] text-xs text-ink-muted">
+                      {!inPlan && (
+                        <li>
+                          {PLAN_LABELS[draftPlan]}では使えません{otherPlans.length > 0 ? `(${otherPlans.map((p) => PLAN_LABELS[p]).join("・")}で利用できます)` : ""}。
+                        </li>
+                      )}
+                      {inPlan && !available && <li>{f.lifecycle === "ended" ? "提供を終了したため、使えません。" : "準備中のため、使えません。"}</li>}
+                      {f.holdOpen && <li>再開するには、下の「連携と稼働状況」で停止を解除してください(スイッチを利用中にしただけでは再開しません)。</li>}
+                      {f.prerequisites.length > 0 && <li>利用には、{f.prerequisites.join("・")}が必要です。</li>}
+                    </ul>
+                  )}
+
+                  {!inPlan && draftOverride !== "inherit" && (
+                    <div className="flex flex-wrap items-center gap-2 pl-[3.25rem] text-xs text-ink-muted">
+                      <span>以前の個別の設定({OVERRIDE_LABELS[draftOverride]})が残っています。このプランでは効きません。</span>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setDraftOverrides((d) => ({ ...d, [f.key]: "inherit" }))}
+                        className="text-sage-dark underline underline-offset-2"
+                      >
+                        標準に戻す
+                      </button>
                     </div>
-                    {!inPlan && (
-                      <p className="mt-2 text-xs text-ink-muted">
-                        {PLAN_LABELS[draftPlan]}の対象外のため、個別に許可・利用不可にできません
-                        {draftOverride !== "inherit" ? "(残っている個別設定は効きません)" : ""}。
-                      </p>
-                    )}
-                  </fieldset>
+                  )}
 
                   {changed && (
                     <p className="rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning" role="status">
-                      保存すると: {accessLabel(after)}({ENTITLEMENT_REASON_LABELS[after.reason]})
+                      未保存: 保存すると{after.allowed ? "利用中" : after.reason === "override_deny" ? "停止" : "使えない状態"}になります。
                     </p>
                   )}
                 </Card>
@@ -320,7 +314,7 @@ export default function EntitlementEditor({ salonId, version, plan, features, ca
               {summaries.map((s) => (
                 <li key={s.title} className={cn("rounded-xl border p-3", s.revokes ? "border-warning/40 bg-warning-soft/40" : "border-border")}>
                   <p className="text-sm font-semibold text-ink">
-                    {s.revokes && <span className="mr-1">【利用不可になります】</span>}
+                    {s.revokes && <span className="mr-1">【使えなくなります】</span>}
                     {s.title}
                   </p>
                   <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm text-ink">
