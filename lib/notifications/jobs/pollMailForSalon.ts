@@ -48,8 +48,11 @@ export interface PollDependencies {
   provider: MailProvider;
   scanStore: ScanStore;
   sendLine: (destinationId: string, text: string, retryKey: string, options?: LineSendOptions) => Promise<LineSendResult>;
-  /** 予約通知を含む契約プラン(lib/access/plan.ts の plansIncluding)。 */
-  allowedPlans: string[];
+  /**
+   * 旧アプリとの互換のための対象プランの配列。null(通常)なら、契約・個別設定・提供状態・権限による停止を
+   * DB の判定(0024 の salon_feature_entitled)だけで確かめる。
+   */
+  allowedPlans: string[] | null;
   now?: () => Date;
   maxDeliveriesPerTick?: number;
   maxBacklogPages?: number;

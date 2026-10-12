@@ -6,9 +6,15 @@ import type { GoogleFeature } from "@/lib/google/scopes";
 // (画面・Server Action・定期処理は lib/features/featureState.ts の判定を共通で使う)。
 // 機能名・説明は既存の画面の表記に合わせる。
 //
-// ここで扱うのは「お客様が使う機能の選択」と「設定の完了」。契約上の利用権限は salons.plan
-// (lib/access/plan.ts)、Google の許可は google_accounts / salon_google_bindings、
-// 予約通知の運用状態は reservation_notification_operations が正で、ここでは変えない。
+// ここで扱うのは、機能の表示(名前・説明・アイコン・分類・表示順)と「設定の完了」。
+// 利用権限(対象プラン・プラン内の標準・提供状態・サロンごとの個別設定)は、entitlement が "catalog" の機能は
+// DB の機能カタログ(supabase/migrations/0024 の feature_catalog・plan_feature_rules・salon_feature_overrides)が正で、
+// 画面・API・通知処理は同じ DB の関数(salon_feature_access)の結果を使う(lib/features/entitlements.ts)。
+// "code" の機能(届いた口コミ)は、今まで通り lib/access/plan.ts と availability で判定する。
+// Google の許可は google_accounts / salon_google_bindings、予約通知の運用状態は reservation_notification_operations が正で、
+// ここでは変えない。
+// 機能を足すときは、ここに1件足し、DB の機能カタログには migration で coming_soon として足す(既存店舗に自動で開放しない)。
+// 利用許可とメニューの配置は分ける(メニューの配置は components/layout/navItems.ts)。
 
 export type FeatureKey = "reviews" | "blog" | "reservation_notifications" | "google_reviews";
 
@@ -22,7 +28,19 @@ export type SetupItemKey =
   | "google_gbp"
   | "gbp_location";
 
+export type FeatureCategory = "customer_voice" | "marketing" | "operations";
+
+export const FEATURE_CATEGORIES: ReadonlyArray<{ key: FeatureCategory; label: string }> = [
+  { key: "customer_voice", label: "口コミ" },
+  { key: "marketing", label: "集客・発信" },
+  { key: "operations", label: "店舗運営" },
+];
+
+/** アイコンの種類(画面側で components/ui/icons の部品に対応させる)。 */
+export type FeatureIcon = "review" | "blog" | "bell" | "inbox";
+
 export interface FeatureDefinition {
+  /** 変えない機能ID(DB の feature_key と同じ)。 */
   key: FeatureKey;
   label: string;
   description: string;
@@ -34,13 +52,24 @@ export interface FeatureDefinition {
   /** LINE の送信先が必要か(予約通知だけ。口コミだけのお客様には LINE を必須にしない)。 */
   requiresLine: boolean;
   setupItems: SetupItemKey[];
-  /** 'coming_soon' は選択・接続できない(準備中と表示する)。 */
+  /**
+   * 'coming_soon' は選択・接続できない(準備中と表示する)。entitlement が "code" の機能だけが使う
+   * ("catalog" の機能の提供状態は DB の feature_catalog.lifecycle が正。ここの値は判定に使わない)。
+   */
   availability: "available" | "coming_soon";
   /**
    * 画面(ホーム・メニュー・Google連携・サロン設定の案内)に出すか。false の機能は、利用権限の判定・内部の処理は
    * そのままで、画面にだけ出さない(届いた口コミは、受信箱などの中身と一緒に入れるまで出さない)。
    */
   listed: boolean;
+  category: FeatureCategory;
+  /** 分類の中での表示順(小さいほど先)。 */
+  sortOrder: number;
+  icon: FeatureIcon;
+  /**
+   * 利用権限の判定元。"catalog" は DB の機能カタログ・個別設定(運営管理で扱う)、"code" は lib/access/plan.ts と availability。
+   */
+  entitlement: "catalog" | "code";
 }
 
 export const FEATURE_REGISTRY: readonly FeatureDefinition[] = [
@@ -55,6 +84,10 @@ export const FEATURE_REGISTRY: readonly FeatureDefinition[] = [
     setupItems: ["review_survey", "review_google_url"],
     availability: "available",
     listed: true,
+    category: "customer_voice",
+    sortOrder: 10,
+    icon: "review",
+    entitlement: "catalog",
   },
   {
     key: "blog",
@@ -67,6 +100,10 @@ export const FEATURE_REGISTRY: readonly FeatureDefinition[] = [
     setupItems: ["blog_settings"],
     availability: "available",
     listed: true,
+    category: "marketing",
+    sortOrder: 10,
+    icon: "blog",
+    entitlement: "catalog",
   },
   {
     key: "reservation_notifications",
@@ -79,6 +116,10 @@ export const FEATURE_REGISTRY: readonly FeatureDefinition[] = [
     setupItems: ["google_gmail", "line_recipients", "reservation_start"],
     availability: "available",
     listed: true,
+    category: "operations",
+    sortOrder: 10,
+    icon: "bell",
+    entitlement: "catalog",
   },
   {
     key: "google_reviews",
@@ -92,6 +133,10 @@ export const FEATURE_REGISTRY: readonly FeatureDefinition[] = [
     availability: "coming_soon",
     // 受信箱・返信の画面(feature/reviews-d1-reply-engine)を取り込むときに、口コミと一緒に画面へ出す。
     listed: false,
+    category: "customer_voice",
+    sortOrder: 20,
+    icon: "inbox",
+    entitlement: "code",
   },
 ];
 

@@ -1,5 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { entitlementsFor } from "../../helpers/entitlements";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import FeatureCard from "@/components/dashboard/FeatureCard";
 import { ReviewIcon } from "@/components/ui/icons";
@@ -10,8 +11,10 @@ import { reviewsDirectDestination, toHomeCard } from "@/lib/features/homeCards";
 // 状態は作れないため、ここで利用権限の入力を差し替えて、カードの割り当てと描いた HTML を確かめる(テスト用の条件)。
 
 function ctx(overrides: Partial<SetupContext> = {}): SetupContext {
+  const plan = overrides.plan ?? "salonpack";
   return {
-    plan: "salonpack",
+    plan,
+    entitlements: entitlementsFor(plan),
     reservationSwitch: null,
     hasActiveSurvey: true,
     onboardingCompleted: true,

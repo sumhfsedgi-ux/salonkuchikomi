@@ -56,7 +56,7 @@ async function salonWithPendingDelivery() {
   const line = await createTestLineConnection(salon.salonId, { label: "スタッフ" });
   await admin.from("salon_feature_selections").upsert({ salon_id: salon.salonId, feature_key: "reservation_notifications", selected: true }, { onConflict: "salon_id,feature_key" });
   await connectGoogle({ ...google, salonId: salon.salonId, userId: salon.userId, features: ["gmail"], sub: SUBS[nextSub++] });
-  expect(await customerStartReservationNotifications({ salonId: salon.salonId, userId: salon.userId, allowedPlans: ["salonpack"] })).toBe("started");
+  expect(await customerStartReservationNotifications({ salonId: salon.salonId, userId: salon.userId })).toBe("started");
   const { data: lc } = await admin.from("line_connections").select("destination_id").eq("id", line).single();
   const { data, error } = await admin
     .from("notification_deliveries")

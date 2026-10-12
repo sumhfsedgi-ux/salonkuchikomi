@@ -1,5 +1,4 @@
 import { isFeatureServedByMode } from "@/lib/appMode";
-import { plansIncluding } from "@/lib/access/plan";
 import { obtainGoogleAccessToken } from "@/lib/google/accessToken";
 import type { GoogleOAuthConfig } from "@/lib/google/config";
 import { getGoogleAccount, recordGoogleAuthResult, type AuthResult } from "@/lib/google/db/accounts";
@@ -136,9 +135,11 @@ export async function pollMailForAllSalons(deps: CronDependencies): Promise<Cron
 async function runAllSalons(deps: CronDependencies, deadline: Deadline): Promise<CronSummary> {
   const sendLine = deps.sendLine ?? pushText;
   const createProvider = deps.createProvider ?? ((token: string) => new GmailProvider(token));
-  const allowedPlans = isFeatureServedByMode("notifications") ? plansIncluding("notifications") : [];
+  // このデプロイが予約通知を提供しないなら、どの店舗も読まない。提供するなら、店舗ごとの利用可否・権限による停止は
+  // DB の判定(0024。管理画面・お客様の画面と同じ関数)だけで決める(null を渡す)。
+  const allowedPlans = null;
   const summary: CronSummary = { salonsProcessed: 0, salonsFailed: 0, salonsSkipped: 0, salonsDeferred: 0, results: [] };
-  const salons = allowedPlans.length > 0 ? await listPollableSalons(allowedPlans) : [];
+  const salons = isFeatureServedByMode("notifications") ? await listPollableSalons(allowedPlans) : [];
 
   const runId = await startCronRun();
   const tokens = new Map<string, TokenOutcome>();

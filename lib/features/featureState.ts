@@ -1,6 +1,7 @@
 import type { GoogleAuthState } from "@/lib/google/db/accounts";
 import type { SalonPlan } from "@/lib/access/plan";
 import { resolveFeatureAccess, type FeatureAccessStatus } from "@/lib/features/access";
+import type { SalonEntitlements } from "@/lib/features/entitlements";
 import {
   FEATURE_REGISTRY,
   SETUP_ITEMS,
@@ -43,6 +44,8 @@ export interface ReservationSwitchSnapshot {
 
 export interface SetupContext {
   plan: SalonPlan;
+  /** DB から読んだ機能ごとの利用権限(lib/features/loadEntitlements.ts。権限による停止の有無も含む)。 */
+  entitlements: SalonEntitlements;
   reservationSwitch: ReservationSwitchSnapshot | null;
   hasActiveSurvey: boolean;
   onboardingCompleted: boolean;
@@ -76,6 +79,8 @@ export interface ReservationOpsSnapshot {
 export type FeatureStatus =
   | "not_allowed"
   | "coming_soon"
+  | "ended"
+  | "suspended"
   | "setup_required"
   | "google_connect_required"
   | "reconnect_required"
@@ -92,6 +97,8 @@ export type FeatureStatus =
 export const FEATURE_STATUS_LABELS: Record<FeatureStatus, string> = {
   not_allowed: "ご契約外",
   coming_soon: "準備中",
+  ended: "提供終了",
+  suspended: "利用停止中",
   setup_required: "設定が必要",
   google_connect_required: "Google接続待ち",
   reconnect_required: "再接続が必要",
@@ -108,6 +115,8 @@ export const FEATURE_STATUS_LABELS: Record<FeatureStatus, string> = {
 export const MAIL_CHECK_STALE_MS = 15 * 60 * 1000;
 
 export const SETUP_COMPLETE_MESSAGE = "Googleとの連携が完了しました。\nお客様の操作は以上です。LINEの再登録は不要です。";
+
+export const RESERVATION_HELD_MESSAGE = "予約通知を停止しています。再開については運営にお問い合わせください。";
 
 export const RESERVATION_STOPPED_MESSAGE =
   "予約通知の利用を停止しています。再開すると、再開したあとに届いた予約から通知します(停止中に届いた予約は通知しません)。";
@@ -207,6 +216,11 @@ function reservationStatus(ctx: SetupContext): StatusResult {
     }
     return { status: "paused", message: "予約通知を一時停止しています。詳しくは運営にお問い合わせください。", suggestSupport: true };
   }
+  // 権限による停止(運営が利用不可にしたあと、まだ運営が解除していない)。再び許可しただけでは再開しない。
+  // お客様の「再開」では解除できないため、お問い合わせを案内する(契約・運営内部の事情は書かない)。
+  if (ctx.entitlements.reservation_notifications?.holdOpen) {
+    return { status: "paused", message: RESERVATION_HELD_MESSAGE, suggestSupport: true };
+  }
   // 運営による停止・確認中より後、稼働中の判定より先に見る(お客様の停止を「稼働中」と出さない)。
   if (isReservationStoppedByCustomer(ctx)) return { status: "stopped", message: RESERVATION_STOPPED_MESSAGE };
   if (ops?.state === "active") {
@@ -258,7 +272,7 @@ function googleReviewsStatus(ctx: SetupContext): { status: FeatureStatus; messag
 export function resolveFeatureStates(ctx: SetupContext): { states: FeatureState[] } {
   const states: FeatureState[] = [];
   for (const def of FEATURE_REGISTRY) {
-    const access = resolveFeatureAccess(def, { plan: ctx.plan, googleReviewsAvailable: ctx.googleReviewsAvailable });
+    const access = resolveFeatureAccess(def, { plan: ctx.plan, googleReviewsAvailable: ctx.googleReviewsAvailable, entitlements: ctx.entitlements });
     const setupItems: SetupItemState[] = def.setupItems.map((key) => {
       const item = { ...SETUP_ITEMS[key], complete: itemComplete(key, ctx) };
       // LINE の通知先を招待で追加できない間は、押せないボタンへ案内しない(運営への問い合わせを案内する)。

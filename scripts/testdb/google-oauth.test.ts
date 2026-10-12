@@ -70,6 +70,11 @@ describe("ブラウザからのアクセス拒否(RLS・権限の取り消し)",
       "gmail_scan_state",
       "notification_deliveries",
       "salon_plan_changes",
+      // 0024: 運営管理・利用権限の表(ブラウザのロールから読み書きできない)
+      "operator_admins",
+      "operator_audit_log",
+      "salon_entitlement_state",
+      "salon_feature_holds",
     ];
     for (const client of [anon, user]) {
       for (const table of tables) {
@@ -78,7 +83,17 @@ describe("ブラウザからのアクセス拒否(RLS・権限の取り消し)",
         const { error: insertError } = await client.from(table).insert({});
         expect(insertError, `${table} insert`).toBeTruthy();
       }
-      for (const fn of ["google_consume_oauth_state", "google_bind_features", "reservation_ops_customer_start", "notifications_claim_delivery_v2", "reservation_ops_activate"]) {
+      for (const fn of [
+        "google_consume_oauth_state",
+        "google_bind_features",
+        "reservation_ops_customer_start",
+        "notifications_claim_delivery_v2",
+        "reservation_ops_activate",
+        "admin_update_salon_entitlements",
+        "feature_hold_release",
+        "admin_list_salons",
+        "salon_feature_access_all",
+      ]) {
         const { error } = await client.rpc(fn, {});
         expect(error, fn).toBeTruthy();
       }

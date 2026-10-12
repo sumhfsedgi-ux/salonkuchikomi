@@ -12,7 +12,6 @@ import { customerStartReservationNotifications } from "@/lib/notifications/db/op
 import { resumeReservation, startReservation, type ReservationControlDeps } from "@/lib/notifications/reservationControl";
 import { loadSetupContext } from "@/lib/features/setupContext";
 import { turnOnReservationSwitch } from "@/lib/features/featureSwitch";
-import { plansIncluding } from "@/lib/access/plan";
 import type { OwnerSalon } from "@/lib/types";
 
 // 認証済みユーザー -> getCurrentSalon() -> salon.id の順で必ず解決する(lib/notifications/access.ts)。
@@ -130,7 +129,7 @@ function reservationControlDeps(salon: OwnerSalon, userId: string): ReservationC
     loadContext: () => loadSetupContext(salon),
     turnOnSwitch: (expected) => turnOnReservationSwitch({ salonId: salon.id, userId, expected }),
     customerStart: () =>
-      customerStartReservationNotifications({ salonId: salon.id, userId, allowedPlans: plansIncluding("notifications") }),
+      customerStartReservationNotifications({ salonId: salon.id, userId }),
   };
 }
 

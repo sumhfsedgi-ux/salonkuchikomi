@@ -255,7 +255,7 @@ describe("切り替えの通し(Lavi を先に切り替え、ayana は旧側で�
     });
     expect(row.firstConnectedAt).toBeInstanceOf(Date);
 
-    expect(await customerStartReservationNotifications({ salonId: salon.salonId, userId: salon.userId, allowedPlans: ["salonpack"] })).toBe("legacy_salon");
+    expect(await customerStartReservationNotifications({ salonId: salon.salonId, userId: salon.userId })).toBe("legacy_salon");
     await expect(ops.activate(sql, { salonId: salon.salonId, mailFetchSince: new Date(), reason: "x", apply: true, by: BY, log })).rejects.toThrow(/legacy_stop_not_confirmed/);
 
     mails["m-before"] = reservationMail(new Date());

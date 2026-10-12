@@ -1,9 +1,11 @@
 /**
  * 店舗の契約(salons.plan)を、運営が契約を確認したうえで変更する(運営専用)。
- * 新規店舗は常に reviews で作られる(app/dashboard/actions.ts)。予約通知・ブログを契約したお客様は、
- * この CLI で salonpack に変更すると、画面の「利用する機能」から予約通知を選べるようになる。
+ * 通常は運営管理の画面(/ops/salons/<id> の「契約と利用許可」)で変更する。この CLI は画面が使えないときの代わり。
+ * 新規店舗は常に reviews で作られる(app/dashboard/actions.ts)。
  * 料金・請求はこの CLI では扱わない(契約の確認は運営の手順で行う)。
- * 変更は salon_plan_changes に記録され、予約通知を含まない契約の間は停止期間として記録される(0022)。
+ * 変更は salon_plan_changes と操作履歴(operator_audit_log。画面の「変更履歴」)に記録される(0022・0024)。
+ * 画面と同じ規則になる(0024): 予約通知が使えなくなる変更では「権限による停止」を記録し、salonpack に戻しても
+ * 自動では再開しない(運営が画面から停止を解除する)。開いたままの管理画面からの古い内容での保存は、版数で拒否される。
  *
  *   npx tsx scripts/salon-contract.ts show --salon-id=<uuid>
  *   npx tsx scripts/salon-contract.ts set-plan --salon-id=<uuid> --plan=reviews|salonpack --note=<契約の確認内容> [--apply] --by=<作業者>
@@ -38,8 +40,13 @@ void runCli(async (sql) => {
     return;
   }
   await sql.begin(async (tx) => {
-    await tx`select set_config('salonpack.change_note', ${note}, true)`;
+    await tx`select set_config('salonpack.change_note', ${note}, true), set_config('salonpack.actor_label', ${operatorName()}, true)`;
     await tx`update public.salons set plan = ${plan}, updated_at = now() where id = ${salonId}`;
   });
-  console.log("契約を変更しました。お客様の「利用する機能」に反映されます(データ・Google連携は変わりません)。");
+  console.log("契約を変更しました。お客様の画面・メニューに反映されます(データ・Google連携は変わりません)。");
+  const [hold] = await sql<{ n: number }[]>`
+    select count(*)::int as n from public.salon_feature_holds where salon_id = ${salonId} and released_at is null`;
+  if (hold.n > 0) {
+    console.log("権限による停止が開いています(予約通知など)。再開するには、運営管理の画面で利用許可を確認してから停止を解除してください。");
+  }
 });

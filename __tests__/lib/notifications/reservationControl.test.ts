@@ -1,3 +1,4 @@
+import { entitlementsFor } from "../../helpers/entitlements";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SetupContext } from "@/lib/features/featureState";
 import { resumeReservation, startReservation, STATE_CHANGED_ERROR, type ReservationControlDeps } from "@/lib/notifications/reservationControl";
@@ -11,8 +12,10 @@ const switchOff = { selected: false, updatedAt: "2026-10-02T00:00:00.123456+00:0
 const switchOn = { selected: true, updatedAt: "2026-10-01T00:00:00.123456+00:00" };
 
 function ctx(overrides: Partial<SetupContext> = {}): SetupContext {
+  const plan = overrides.plan ?? "salonpack";
   return {
-    plan: "salonpack",
+    plan,
+    entitlements: entitlementsFor(plan),
     reservationSwitch: null,
     hasActiveSurvey: true,
     onboardingCompleted: true,

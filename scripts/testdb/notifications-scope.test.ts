@@ -76,7 +76,7 @@ beforeAll(async () => {
   expect(result.status).toBe("connected");
   const { data } = await admin.from("google_accounts").select("id").eq("google_sub", sub).single();
   accountId = data!.id as string;
-  expect(await customerStartReservationNotifications({ salonId: salon.salonId, userId: salon.userId, allowedPlans: ["salonpack"] })).toBe("started");
+  expect(await customerStartReservationNotifications({ salonId: salon.salonId, userId: salon.userId })).toBe("started");
   boxes.set(salon.salonId, inbox(mails, { failWith: (op) => (op === "list" ? failList : null) }));
 });
 

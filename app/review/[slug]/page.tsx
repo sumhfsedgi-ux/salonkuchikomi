@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { TEXT_ANSWER_MAX_LENGTH } from "@/lib/constants";
 import type { SurveyQuestion } from "@/lib/types";
 import ReviewFlow from "@/components/review/ReviewFlow";
+import ReviewUnavailable from "@/components/review/ReviewUnavailable";
 
 interface QuestionRow {
   id: string;
@@ -28,10 +29,13 @@ const getSalonAndQuestions = cache(async (slug: string) => {
 
   const { data: salon } = await supabase
     .from("salon_public")
-    .select("id, name, slug, google_review_url, description, business_type")
+    .select("id, name, slug, google_review_url, description, business_type, reviews_available")
     .eq("slug", slug)
     .maybeSingle();
   if (!salon) return null;
+  // 運営が口コミの利用を止めている店舗(0024 の salon_public.reviews_available)。アンケートは読まず、
+  // 「現在ご利用いただけません」だけを出す(契約・運営内部の事情は出さない。アンケート等のデータは消さない)。
+  if (salon.reviews_available !== true) return { unavailable: true as const };
 
   const { data: survey } = await supabase
     .from("surveys")
@@ -98,6 +102,7 @@ const getSalonAndQuestions = cache(async (slug: string) => {
   });
 
   return {
+    unavailable: false as const,
     salon: {
       id: salon.id as string,
       name: salon.name as string,
@@ -114,7 +119,7 @@ export async function generateMetadata({
   const { slug } = await params;
   const data = await getSalonAndQuestions(slug);
   return {
-    title: data ? `${data.salon.name} | 口コミ作成` : "店舗が見つかりません",
+    title: !data ? "店舗が見つかりません" : data.unavailable ? "現在ご利用いただけません" : `${data.salon.name} | 口コミ作成`,
   };
 }
 
@@ -124,6 +129,7 @@ export default async function ReviewPage({
   const { slug } = await params;
   const data = await getSalonAndQuestions(slug);
   if (!data) notFound();
+  if (data.unavailable) return <ReviewUnavailable />;
 
   return <ReviewFlow salon={data.salon} questions={data.questions} />;
 }

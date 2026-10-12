@@ -1,7 +1,6 @@
 import { timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { isFeatureServedByMode } from "@/lib/appMode";
-import { plansIncluding } from "@/lib/access/plan";
 import { getGoogleFlowDeps } from "@/lib/google/runtime";
 import { listPollableSalons } from "@/lib/notifications/db/operations";
 import { pollMailForAllSalons } from "@/lib/notifications/jobs/pollMailForAllSalons";
@@ -34,8 +33,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (request.nextUrl.searchParams.get("dryRun") === "1") {
-    const plans = isFeatureServedByMode("notifications") ? plansIncluding("notifications") : [];
-    const salons = plans.length > 0 ? await listPollableSalons(plans) : [];
+    const salons = isFeatureServedByMode("notifications") ? await listPollableSalons(null) : [];
     return NextResponse.json({ dryRun: true, pollableSalons: salons.length });
   }
 

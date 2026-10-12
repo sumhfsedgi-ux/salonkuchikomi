@@ -24,6 +24,8 @@ vi.mock("@/lib/reviewGeneration/validateAnswers", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/reviewGeneration/validateAnswers")>()),
   loadActiveSurvey: vi.fn(),
 }));
+let reviewsAvailable = true;
+vi.mock("@/lib/reviewGeneration/availability", () => ({ loadReviewsAvailable: vi.fn(async () => reviewsAvailable) }));
 vi.mock("@/lib/reviewGeneration/pipeline", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/reviewGeneration/pipeline")>()),
   runReviewPipeline: vi.fn(),
@@ -39,6 +41,7 @@ const { runReviewPipeline, runShadowVerification, ReviewGenerationError } = awai
 const { checkGenerationRateLimit } = await import("@/lib/reviewGeneration/rateLimit");
 const { recordGenerationEvent } = await import("@/lib/reviewGeneration/events");
 const { getSupabaseAdmin } = await import("@/lib/supabase/admin");
+const { loadReviewsAvailable } = await import("@/lib/reviewGeneration/availability");
 
 const SALON_ID = "11111111-1111-4111-8111-111111111111";
 const Q_FREE = "44444444-4444-4444-8444-444444444444";
@@ -90,6 +93,8 @@ function recordedEvents() {
 
 beforeEach(() => {
   vi.mocked(loadActiveSurvey).mockResolvedValue(SURVEY);
+  reviewsAvailable = true;
+  vi.mocked(loadReviewsAvailable).mockImplementation(async () => reviewsAvailable);
   for (const method of ["log", "warn", "error"] as const) vi.spyOn(console, method).mockImplementation(() => {});
 });
 
@@ -115,6 +120,16 @@ describe("POST /api/generate-review: リクエストと照合", () => {
     expect((await POST(post(VALID_BODY))).status).toBe(404);
     vi.mocked(loadActiveSurvey).mockRejectedValueOnce(new Error("db"));
     expect((await POST(post(VALID_BODY))).status).toBe(503);
+  });
+
+  it("運営が口コミの利用を止めている店舗は 403(理由は返さず、生成もレート制限の記録もしない)", async () => {
+    reviewsAvailable = false;
+    const res = await POST(post(VALID_BODY));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "現在ご利用いただけません。" });
+    expect(generateReviewV1).not.toHaveBeenCalled();
+    expect(runReviewPipeline).not.toHaveBeenCalled();
+    expect(checkGenerationRateLimit).not.toHaveBeenCalled();
   });
 
   it("アンケートと照合できない回答は 409(レート制限の回数にも数えない)", async () => {

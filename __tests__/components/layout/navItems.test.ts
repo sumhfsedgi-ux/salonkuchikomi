@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getNavItems, isSettingsActive } from "@/components/layout/navItems";
-import { featureAccessInputFor, getPlanExperience, listUsableFeatureKeys } from "@/lib/features/access";
+import { getPlanExperience, listUsableFeatureKeys } from "@/lib/features/access";
+import { isGoogleReviewsOAuthEnabled } from "@/lib/google/config";
+import { entitlementsFor } from "../../helpers/entitlements";
 import type { SalonPlan } from "@/lib/access/plan";
 
 const hrefs = (items: { href: string }[]) => items.map((item) => item.href);
 
 // app/dashboard/layout.tsx と同じ組み立て(契約プランごとの画面の作り × 利用できる機能)。
 function navFor(plan: SalonPlan) {
-  return getNavItems(getPlanExperience(plan), listUsableFeatureKeys(featureAccessInputFor({ plan })));
+  const input = { plan, googleReviewsAvailable: isGoogleReviewsOAuthEnabled(), entitlements: entitlementsFor(plan) };
+  return getNavItems(getPlanExperience(plan), listUsableFeatureKeys(input));
 }
 
 afterEach(() => vi.unstubAllEnvs());

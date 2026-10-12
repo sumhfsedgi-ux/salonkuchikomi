@@ -46,7 +46,7 @@ export async function classifyEmail(params: {
   return data as number;
 }
 
-export async function claimDelivery(salonId: string, allowedPlans: string[]): Promise<ClaimedDelivery | null> {
+export async function claimDelivery(salonId: string, allowedPlans: string[] | null): Promise<ClaimedDelivery | null> {
   const { data, error } = await getNotificationsSupabaseAdmin().rpc("notifications_claim_delivery_v2", {
     p_salon_id: salonId,
     p_allowed_plans: allowedPlans,
@@ -82,7 +82,7 @@ interface BeginRow {
   line_connection_id: string | null;
 }
 
-export async function beginSend(delivery: ClaimedDelivery, allowedPlans: string[]): Promise<BeginSendDecision> {
+export async function beginSend(delivery: ClaimedDelivery, allowedPlans: string[] | null): Promise<BeginSendDecision> {
   const { data, error } = await getNotificationsSupabaseAdmin().rpc("notifications_begin_send", {
     p_id: delivery.id,
     p_claim_token: delivery.claimToken,

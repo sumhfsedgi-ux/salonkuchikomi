@@ -23,7 +23,7 @@ interface FeatureCardProps {
 // 非活性のボタンは理由の文と aria-describedby でつなぐ(lib/features/homeCards.ts)。
 export default function FeatureCard({ icon: Icon, card, secondaryAction }: FeatureCardProps) {
   const reasonId = `feature-${card.key}-reason`;
-  const muted = card.kind === "not_allowed" || card.kind === "coming_soon";
+  const muted = card.kind === "not_allowed" || card.kind === "coming_soon" || card.kind === "suspended";
 
   return (
     <Card tone={muted ? "muted" : "default"} className="flex flex-col gap-4" data-feature={card.key} data-kind={card.kind}>

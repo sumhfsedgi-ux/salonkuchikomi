@@ -60,7 +60,8 @@ export interface PollableSalon {
   openAutoStops: AutoStopKind[];
 }
 
-export async function listPollableSalons(allowedPlans: string[]): Promise<PollableSalon[]> {
+/** allowedPlans は旧アプリとの互換のための引数。null なら DB の利用権限の判定(0024)だけを使う。 */
+export async function listPollableSalons(allowedPlans: string[] | null): Promise<PollableSalon[]> {
   const { data, error } = await getNotificationsSupabaseAdmin().rpc("notifications_list_pollable_salons", {
     p_allowed_plans: allowedPlans,
   });
@@ -108,20 +109,20 @@ export type CustomerStartResult =
   | "already_active"
   | "paused_by_operator"
   | "plan_not_allowed"
+  | "entitlement_hold"
   | "not_selected"
   | "gmail_not_connected"
   | "no_line_recipients";
 
-/** お客様による開始(旧サービスを使っていない店舗だけ。DB 側で再確認する)。 */
-export async function customerStartReservationNotifications(params: {
-  salonId: string;
-  userId: string;
-  allowedPlans: string[];
-}): Promise<CustomerStartResult> {
+/**
+ * お客様による開始(旧サービスを使っていない店舗だけ。DB 側で再確認する)。契約・個別設定・提供状態・権限による停止は
+ * DB の判定(0024 の salon_feature_entitled)だけを使う(p_allowed_plans は旧アプリとの互換のための引数で、null を渡す)。
+ */
+export async function customerStartReservationNotifications(params: { salonId: string; userId: string }): Promise<CustomerStartResult> {
   const { data, error } = await getNotificationsSupabaseAdmin().rpc("reservation_ops_customer_start", {
     p_salon_id: params.salonId,
     p_user_id: params.userId,
-    p_allowed_plans: params.allowedPlans,
+    p_allowed_plans: null,
   });
   if (error) throw new Error("予約通知の開始に失敗しました。");
   return data as CustomerStartResult;

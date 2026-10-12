@@ -19,6 +19,7 @@ import {
 } from "@/lib/reviewGeneration/pipeline";
 import { checkGenerationRateLimit, clientIp } from "@/lib/reviewGeneration/rateLimit";
 import { createRequestTimer, serverTimingHeader, type RequestTimer } from "@/lib/reviewGeneration/timing";
+import { loadReviewsAvailable } from "@/lib/reviewGeneration/availability";
 import {
   loadActiveSurvey,
   parseGenerateRequest,
@@ -33,6 +34,7 @@ const GENERIC_ERROR = "口コミの作成に失敗しました。もう一度お
 const STALE_ERROR =
   "アンケートの内容が更新されました。お手数ですが、ページを再読み込みしてからもう一度お試しください。";
 const BAD_REQUEST_ERROR = "リクエストの形式が正しくありません。";
+const UNAVAILABLE_ERROR = "現在ご利用いただけません。";
 const CONFIG_ERROR = "サーバー設定エラーが発生しました。しばらくしてから再度お試しください。";
 const RATE_LIMITED_ERROR = "短い時間に続けて作成されたため、少し時間をおいてからもう一度お試しください。";
 
@@ -95,11 +97,20 @@ export async function POST(request: Request) {
   const pipeline = pipelineVersion();
 
   let survey;
+  let reviewsAvailable: boolean;
   try {
-    survey = await timer.measure("survey", async () => loadActiveSurvey(await createClient(), salonId));
+    // 口コミを今使えるか(運営による利用停止)を、アンケートと同時に読む(待ち時間は増やさない)。
+    [survey, reviewsAvailable] = await timer.measure("survey", async () => {
+      const client = await createClient();
+      return Promise.all([loadActiveSurvey(client, salonId), loadReviewsAvailable(client, salonId)]);
+    });
   } catch {
     console.error("generate-review: failed to load survey", { salonId });
     return finish(timer, NextResponse.json({ error: GENERIC_ERROR }, { status: 503 }), { outcome: "survey_error", salonId });
+  }
+  // 運営が口コミの利用を止めている店舗は、画面を通さない呼び出しでも生成しない(理由は返さない)。
+  if (survey && !reviewsAvailable) {
+    return finish(timer, NextResponse.json({ error: UNAVAILABLE_ERROR }, { status: 403 }), { outcome: "unavailable", salonId });
   }
   if (!survey) {
     return finish(timer, NextResponse.json({ error: "店舗またはアンケートが見つかりません。" }, { status: 404 }), {

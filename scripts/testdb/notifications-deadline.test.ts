@@ -49,7 +49,7 @@ async function startSalon(staff: number) {
   await admin.from("salon_feature_selections").upsert({ salon_id: salon.salonId, feature_key: "reservation_notifications", selected: true }, { onConflict: "salon_id,feature_key" });
   const { result } = await connectGoogle({ ...google, salonId: salon.salonId, userId: salon.userId, features: ["gmail"], sub: SUBS[nextSub++] });
   expect(result.status).toBe("connected");
-  expect(await customerStartReservationNotifications({ salonId: salon.salonId, userId: salon.userId, allowedPlans: ["salonpack"] })).toBe("started");
+  expect(await customerStartReservationNotifications({ salonId: salon.salonId, userId: salon.userId })).toBe("started");
   return { salon, lines };
 }
 

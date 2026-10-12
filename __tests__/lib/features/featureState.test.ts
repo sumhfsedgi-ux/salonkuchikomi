@@ -1,3 +1,4 @@
+import { entitlementsFor } from "../../helpers/entitlements";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveFeatureStates, type SetupContext } from "@/lib/features/featureState";
 import { FEATURE_REGISTRY } from "@/lib/features/registry";
@@ -7,8 +8,10 @@ import { isFeatureEnabledForPlan } from "@/lib/access/plan";
 // お客様が機能を選ぶ仕組みは廃止したため、状態は選択に関係なく、全機能について出る。
 
 function ctx(overrides: Partial<SetupContext> = {}): SetupContext {
+  const plan = overrides.plan ?? "salonpack";
   return {
-    plan: "salonpack",
+    plan,
+    entitlements: entitlementsFor(plan),
     reservationSwitch: null,
     hasActiveSurvey: false,
     onboardingCompleted: false,
