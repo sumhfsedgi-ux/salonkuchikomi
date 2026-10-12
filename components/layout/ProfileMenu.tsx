@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { SettingsIcon, LogOutIcon, UserCircleIcon } from "@/components/ui/icons";
-import { isReviewsOnly } from "@/lib/appMode";
 import { logoutAction } from "@/app/dashboard/actions";
+import type { PlanExperience } from "@/lib/features/access";
 
 // Mobile-only: サロン設定・ログアウトの入口を、常時表示のボトムナビから
 // 切り離してここに集約する (design brief: "サロン設定・アカウント等は
 // プロフィールメニューなどに配置して構わない").
-export default function ProfileMenu() {
+export default function ProfileMenu({ experience }: { experience: PlanExperience }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -51,9 +51,9 @@ export default function ProfileMenu() {
           role="menu"
           className="absolute right-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-xl border border-border bg-white py-1 shadow-md"
         >
-          {/* reviewsモードはBottomNavに常時「設定」タブがあるため、ここに
-              同じ遷移先を重複させない(SalonPackモードのみ表示)。 */}
-          {!isReviewsOnly() && (
+          {/* 口コミプランはBottomNavに常時「設定」タブがあるため、ここに
+              同じ遷移先を重複させない(SalonPackのみ表示)。 */}
+          {experience !== "reviews_direct" && (
             <Link
               href="/dashboard/settings"
               role="menuitem"

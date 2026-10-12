@@ -383,36 +383,23 @@ async function main() {
     // 運営が契約を確認して、予約通知を含む契約に変える(scripts/salon-contract.ts set-plan に相当)。
     await admin.from("salons").update({ plan: "salonpack" }).eq("id", salonId);
     await page.goto(`${BASE}/dashboard`);
-    await page.getByText("使う機能を選びましょう").waitFor({ timeout: 60_000 });
-    const selection = await text(page);
-    check("機能の選択: 契約上使える機能を複数選べる(固定の3択ではない)", ["口コミ", "ブログ", "予約通知", "届いた口コミ"].every((l) => selection.includes(l)));
-    const reviewsBox = page.locator("label", { hasText: "届いた口コミ" }).locator("input[type=checkbox]");
-    await shot(page, "02-feature-selection");
-    await page.locator("label", { hasText: "予約通知" }).locator("input[type=checkbox]").check();
-    await page.locator("label", { hasText: "ブログ" }).locator("input[type=checkbox]").check();
-    if (reviewsEnabled && (await reviewsBox.count()) > 0) await reviewsBox.check();
-    await page.getByRole("button", { name: "次へ" }).click();
-    await page.getByText("設定が必要な項目").waitFor({ timeout: 60_000 });
+    await page.locator("[data-feature=reservation_notifications]").waitFor({ timeout: 60_000 });
     const home = await text(page);
-    await shot(page, "03-checklist");
-    check("選んだ機能の未設定の項目だけを案内(口コミのアンケートは求めない)", home.includes("Googleと連携") && home.includes("LINEの通知先") && !home.includes("アンケート"));
+    await shot(page, "02-home-all-features");
+    check("ホーム: 機能を選ぶ画面を出さず、全機能を並べる", !home.includes("使う機能を選びましょう") && ["口コミ", "ブログ", "予約通知"].every((l) => home.includes(l)));
     check(
-      invitesDisabled ? "LINE ログイン未有効: LINE の項目は運営への問い合わせを案内(押せないボタンへ誘導しない)" : "LINE の項目は「通知先を追加」へ案内",
-      invitesDisabled ? home.includes("運営にお問い合わせください") : home.includes("LINEの通知先を追加")
+      "ホーム: 予約通知は「設定が必要」で押せる(非活性にしない)",
+      (await page.locator("[data-feature=reservation_notifications][data-kind=setup_required]").getByRole("link", { name: "設定へ進む" }).count()) === 1
     );
+    check("ホーム: 届いた口コミは、中身と一緒に入れるまで出さない", (await page.locator("[data-feature=google_reviews]").count()) === 0 && !home.includes("届いた口コミ"));
     const { data: opsBefore } = await admin.from("reservation_notification_operations").select("state").eq("salon_id", salonId).maybeSingle();
-    check("機能を選んだだけでは予約通知は始まらない", !opsBefore || opsBefore.state === "setup_pending");
+    check("ホームに表示しただけでは予約通知は始まらない", !opsBefore);
 
-    await page.locator("li", { hasText: "Googleと連携" }).getByRole("link", { name: "設定する" }).click();
+    await page.locator("[data-feature=reservation_notifications]").getByRole("link", { name: "設定へ進む" }).click();
     await page.waitForURL(/\/dashboard\/settings\/google/, { timeout: 60_000 });
     await page.getByText("Googleアカウント").first().waitFor({ timeout: 60_000 });
-    if (reviewsEnabled) {
-      const before = await text(page);
-      check("予約通知と届いた口コミ: 同じアカウントでまとめて連携・別々に連携を選べる", before.includes("同じGoogleアカウントでまとめて連携") && before.includes("別々のアカウント"));
-      await page.getByRole("button", { name: "同じGoogleアカウントでまとめて連携" }).click();
-    } else {
-      await page.getByRole("button", { name: "Googleと連携する" }).first().click();
-    }
+    check("Google連携の画面: 届いた口コミのカードは出さない", !(await text(page)).includes("届いた口コミ"));
+    await page.getByRole("button", { name: "Googleと連携する" }).first().click();
     const consent = await approveOnSimulatedGoogle(page, "owner@example.test");
     check("同意画面は prompt なし(通常の接続で同意を強制しない)", consent.includes("prompt: (なし)"));
     await page.getByText("Googleとの連携が完了しました").first().waitFor({ timeout: 60_000 });
@@ -423,9 +410,6 @@ async function main() {
       "接続後: 同意できたことと通知の開始を混同させない(次は LINE の通知先)",
       invitesDisabled ? reservationCard.includes("LINEの通知先の追加は、運営にお問い合わせください") : reservationCard.includes("LINEの通知先を追加してください")
     );
-    if (reviewsEnabled) {
-      check("届いた口コミ: 認証後も店舗の選択を省略しない", (await featureCardText(page, "届いた口コミ")).includes("口コミを受け取る店舗の選択が必要"));
-    }
 
     await page.goto(`${BASE}/dashboard/notifications`);
     await page.getByText("LINEの通知先").first().waitFor({ timeout: 60_000 });
@@ -528,10 +512,6 @@ async function main() {
     await page.getByText("Googleアカウント").first().waitFor({ timeout: 60_000 });
     const missing = await featureCardText(page, "予約通知");
     check("Gmail だけの権限不足: 予約通知のカードは「権限が不足しています」「権限を追加する」", missing.includes("権限が不足しています") && missing.includes("権限を追加する") && missing.includes("Gmailの権限が足りません"));
-    if (reviewsEnabled) {
-      const reviewsCard = await featureCardText(page, "届いた口コミ");
-      check("同じアカウントの届いた口コミは巻き込まない(再接続を求めない)", reviewsCard.includes("許可済み") && !reviewsCard.includes("権限が不足") && !reviewsCard.includes("再接続"));
-    }
     await page.getByRole("button", { name: "権限を追加する" }).click();
     await approveOnSimulatedGoogle(page, "owner@example.test");
     await page.getByText("Googleとの連携が完了しました").first().waitFor({ timeout: 60_000 });
@@ -562,7 +542,10 @@ async function main() {
     check("既存店舗: 内部の「切り替え待ち」は表示しない", !(await text(legacyPage)).includes("切り替え待ち"));
     await legacyPage.goto(`${BASE}/dashboard`);
     await legacyPage.waitForLoadState("networkidle");
-    check("既存店舗: ホームで未完了の設定として繰り返し案内しない", !(await text(legacyPage)).includes("設定が必要な項目"));
+    check(
+      "既存店舗: ホームで予約通知を「設定が必要」として繰り返し案内しない(設定完了)",
+      (await legacyPage.locator("[data-feature=reservation_notifications][data-kind=available]", { hasText: "設定完了" }).count()) === 1
+    );
     await legacyPage.goto(`${BASE}/dashboard/notifications`);
     await legacyPage.getByText("設定完了").first().waitFor({ timeout: 60_000 });
     await shot(legacyPage, "12-legacy-notifications");

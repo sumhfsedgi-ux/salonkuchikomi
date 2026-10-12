@@ -5,9 +5,9 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
 import Logo from "@/components/ui/Logo";
 import { SettingsIcon, LogOutIcon } from "@/components/ui/icons";
-import { getNavItems, filterNavItemsByPlan, isNavItemActive } from "@/components/layout/navItems";
-import { getAppMode } from "@/lib/appMode";
-import type { SalonPlan } from "@/lib/access/plan";
+import { getNavItems, isNavItemActive, isSettingsActive } from "@/components/layout/navItems";
+import type { PlanExperience } from "@/lib/features/access";
+import type { FeatureKey } from "@/lib/features/registry";
 import { logoutAction } from "@/app/dashboard/actions";
 
 // The PC navigation surface: always-visible left sidebar, per the design
@@ -26,14 +26,13 @@ import { logoutAction } from "@/app/dashboard/actions";
 // /dashboard/** page. md:overflow-y-auto is a safety net for short/zoomed
 // viewports where even this one-viewport box can't fit logo+nav+footer --
 // it scrolls internally instead of clipping, independent of main's scroll.
-export default function Sidebar({ plan }: { plan: SalonPlan }) {
+export default function Sidebar({ experience, usableFeatures }: { experience: PlanExperience; usableFeatures: FeatureKey[] }) {
   const pathname = usePathname();
-  const settingsActive = isNavItemActive(pathname, "/dashboard/settings");
-  const mode = getAppMode();
-  const navItems = filterNavItemsByPlan(getNavItems(mode), plan);
-  // reviewsモードは/dashboardが結局/dashboard/reviewsへredirectするだけなので、
+  const navItems = getNavItems(experience, usableFeatures);
+  const settingsActive = isSettingsActive(pathname, navItems);
+  // 口コミプランは/dashboardが結局/dashboard/reviewsへredirectするだけなので、
   // ロゴのリンク先は直接そこへ向ける(遠回りのredirectを挟まない)。
-  const homeHref = mode === "reviews" ? "/dashboard/reviews" : "/dashboard";
+  const homeHref = experience === "reviews_direct" ? "/dashboard/reviews" : "/dashboard";
 
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-white md:flex md:h-dvh md:sticky md:top-0 md:self-start md:overflow-y-auto">

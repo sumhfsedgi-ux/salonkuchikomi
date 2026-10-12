@@ -8,8 +8,12 @@ import { listLineConnections } from "@/lib/notifications/db/lineConnections";
 import { recordNotification, hasRecentTestNotification } from "@/lib/notifications/db/notificationHistory";
 import { pushText, LineSendBlockedError, LineSendError } from "@/lib/notifications/line/LineClient";
 import { isRealLineSendAllowed, resolveLineSendPolicy } from "@/lib/notifications/line/sendPolicy";
-import { customerStartReservationNotifications, type CustomerStartResult } from "@/lib/notifications/db/operations";
+import { customerStartReservationNotifications } from "@/lib/notifications/db/operations";
+import { resumeReservation, startReservation, type ReservationControlDeps } from "@/lib/notifications/reservationControl";
+import { loadSetupContext } from "@/lib/features/setupContext";
+import { turnOnReservationSwitch } from "@/lib/features/featureSwitch";
 import { plansIncluding } from "@/lib/access/plan";
+import type { OwnerSalon } from "@/lib/types";
 
 // 認証済みユーザー -> getCurrentSalon() -> salon.id の順で必ず解決する(lib/notifications/access.ts)。
 // salonIdはクライアントから一切受け取らない。通知先・招待の操作は ./recipientActions.ts。
@@ -121,36 +125,52 @@ export async function sendTestNotificationAction(): Promise<{ ok: boolean; error
     : { ok: false, error: lastErrorMessage ?? "LINEへの通知送信に失敗しました" };
 }
 
-const START_ERRORS: Record<Exclude<CustomerStartResult, "started" | "already_active">, string> = {
-  legacy_salon: "この店舗の予約通知は運営側で開始します。お客様の操作は不要です。",
-  paused_by_operator: "予約通知は運営側で停止中です。お問い合わせください。",
-  plan_not_allowed: "この機能はご契約に含まれていません。",
-  not_selected: "利用する機能で「予約通知」を選んでください。",
-  gmail_not_connected: "先にGoogleと連携してください。",
-  no_line_recipients: "LINEの送信先が登録されていません。",
-};
+function reservationControlDeps(salon: OwnerSalon, userId: string): ReservationControlDeps {
+  return {
+    loadContext: () => loadSetupContext(salon),
+    turnOnSwitch: (expected) => turnOnReservationSwitch({ salonId: salon.id, userId, expected }),
+    customerStart: () =>
+      customerStartReservationNotifications({ salonId: salon.id, userId, allowedPlans: plansIncluding("notifications") }),
+  };
+}
 
 /**
  * 旧サービスを使っていない店舗だけが、画面から予約通知を開始できる。Google に接続しただけでは
  * 始まらない。開始の可否は DB の関数(reservation_ops_customer_start)とトリガーが確かめる
- * (画面の操作だけで旧側停止の確認を飛ばせない)。
+ * (画面の操作だけで旧側停止の確認を飛ばせない)。予約通知の内部スイッチも、この操作で ON にする
+ * (lib/notifications/reservationControl.ts)。
  */
 export async function startReservationNotificationsAction(): Promise<{ ok: boolean; error?: string }> {
   const resolved = await resolveAccessibleSalon();
   if (!resolved.ok) return resolved;
 
-  let result: CustomerStartResult;
+  let result;
   try {
-    result = await customerStartReservationNotifications({
-      salonId: resolved.salon.id,
-      userId: resolved.userId,
-      allowedPlans: plansIncluding("notifications"),
-    });
+    result = await startReservation(reservationControlDeps(resolved.salon, resolved.userId));
   } catch {
     return { ok: false, error: "開始できませんでした。もう一度お試しください。" };
   }
   revalidatePath("/dashboard/notifications");
   revalidatePath("/dashboard");
-  if (result === "started" || result === "already_active") return { ok: true };
-  return { ok: false, error: START_ERRORS[result] };
+  return result;
+}
+
+/**
+ * Google連携の画面の「予約通知の利用を停止する」で止めた予約通知を再開する。内部スイッチを ON に戻すだけで、
+ * 運用状態・旧側の停止確認・受信の ON/OFF・運営による停止は変えない。停止中に届いた予約は送らない。
+ */
+export async function resumeReservationNotificationsAction(): Promise<{ ok: boolean; error?: string }> {
+  const resolved = await resolveAccessibleSalon();
+  if (!resolved.ok) return resolved;
+
+  let result;
+  try {
+    result = await resumeReservation(reservationControlDeps(resolved.salon, resolved.userId));
+  } catch {
+    return { ok: false, error: "再開できませんでした。もう一度お試しください。" };
+  }
+  revalidatePath("/dashboard/notifications");
+  revalidatePath("/dashboard/settings/google");
+  revalidatePath("/dashboard");
+  return result;
 }

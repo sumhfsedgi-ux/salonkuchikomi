@@ -103,20 +103,7 @@ async function approveGoogle(
 
 async function main() {
 const { createTestSalon, notificationsTestAdminClient } = await import("./notificationsFixtures");
-const { FEATURE_REGISTRY } = await import("@/lib/features/registry");
 const { startGoogleConnect } = await import("@/lib/google/oauthFlow");
-// lib/features/selection.ts と同じ書き方(server-only のため Next の外からは import しない)。
-async function saveFeatureSelection(params: { salonId: string; userId: string; selected: string[] }) {
-  const db = notificationsTestAdminClient();
-  await db.from("salon_feature_selections").upsert(
-    FEATURE_REGISTRY.map((def) => ({ salon_id: params.salonId, feature_key: def.key, selected: params.selected.includes(def.key), updated_by: params.userId })),
-    { onConflict: "salon_id,feature_key" }
-  );
-  await db.from("salon_setup_state").upsert({ salon_id: params.salonId, feature_selection_saved_at: new Date().toISOString() }, { onConflict: "salon_id" });
-  if (params.selected.includes("reservation_notifications")) {
-    await db.from("reservation_notification_operations").upsert({ salon_id: params.salonId }, { onConflict: "salon_id", ignoreDuplicates: true });
-  }
-}
 const { getGoogleFlowDeps } = await import("@/lib/google/runtime");
 const server = startServer();
 const admin = notificationsTestAdminClient();
@@ -125,31 +112,30 @@ try {
   await waitForServer();
   console.log(`開発サーバー起動(テスト用DB・擬似Google・届いた口コミ ${reviewsEnabled ? "有効" : "準備中"})`);
 
-  // ---- 新規の店舗(契約: salonpack): 機能の選択 → 未設定の項目の案内 ----
+  // ---- 新規の店舗(契約: salonpack): ホームに全機能を並べ、未設定の機能は「設定が必要」----
   const salon = await createTestSalon({ plan: "salonpack" });
   cleanups.push(salon.cleanup);
   const cookie = await loginCookie(salon.email, salon.password);
 
   const home1 = await page("/dashboard", cookie);
-  check("初回: 契約上使える機能から複数選ぶ画面(固定の3択ではない)", home1.includes("使う機能を選びましょう") && home1.includes("ブログ") && home1.includes("予約通知") && home1.includes("口コミ"));
-  check(`届いた口コミは${reviewsEnabled ? "選べる" : "準備中"}`, reviewsEnabled ? !/届いた口コミ[\s\S]{0,200}準備中/.test(home1) : /届いた口コミ[\s\S]{0,300}準備中/.test(home1));
+  check(
+    "初回: ホームに全機能を並べる(機能を選ぶ画面は出さない)",
+    !home1.includes("使う機能を選びましょう") && ["口コミ", "ブログ", "予約通知"].every((label) => home1.includes(label))
+  );
+  check("届いた口コミは、受信箱などの中身と一緒に入れるまでホームに出さない(提供フラグに関係なく)", !home1.includes("届いた口コミ"));
+  check("未設定の機能は「設定が必要」から設定へ進める(予約通知は Google 連携へ)", home1.includes("設定が必要") && home1.includes("設定へ進む") && home1.includes("Googleと連携(予約メール)"));
+  const { data: opsAfterHome } = await admin.from("reservation_notification_operations").select("state").eq("salon_id", salon.salonId).maybeSingle();
+  const { data: switchAfterHome } = await admin.from("salon_feature_selections").select("selected").eq("salon_id", salon.salonId);
+  check("ホームを表示しただけでは、予約通知の運用状態・内部スイッチを作らない", !opsAfterHome && (switchAfterHome ?? []).length === 0);
 
-  const selected = reviewsEnabled ? (["reservation_notifications", "google_reviews"] as const) : (["reservation_notifications", "blog"] as const);
-  await saveFeatureSelection({ salonId: salon.salonId, userId: salon.userId, selected: [...selected] });
-  const home2 = await page("/dashboard", cookie);
-  check("選んだ機能の未設定の項目だけを案内(口コミのアンケートは求めない)", home2.includes("設定が必要な項目") && home2.includes("Googleと連携") && !home2.includes("アンケートを作成"));
-  check("LINE の通知先(スタッフ本人が連携)を案内", home2.includes("LINEの通知先"));
-
-  // 旧サービス利用店舗として、切り替え待ちにしておく(運営の静的移行に相当)。
+  // 旧サービス利用店舗として、切り替え待ちにしておく(運営の静的移行に相当。運営の移行は予約通知の行を ON で作る)。
+  await admin.from("salon_feature_selections").insert({ salon_id: salon.salonId, feature_key: "reservation_notifications", selected: true });
+  await admin.from("reservation_notification_operations").insert({ salon_id: salon.salonId });
   await admin.from("line_connections").insert({ id: crypto.randomUUID(), salon_id: salon.salonId, destination_id: "U_walk_staff", status: "connected", migrated_from_hmail_salon_id: "walk-legacy" });
   await admin.from("reservation_notification_operations").update({ state: "awaiting_cutover", legacy_source: "hmail" }).eq("salon_id", salon.salonId);
 
   const google1 = await page("/dashboard/settings/google", cookie);
-  if (reviewsEnabled) {
-    check("両方を使う場合、同じアカウントでまとめて連携・別々に連携を選べる", google1.includes("同じGoogleアカウントでまとめて連携") && google1.includes("別々のアカウント"));
-  } else {
-    check("Google連携の画面: 予約通知に「Googleと連携する」、届いた口コミは準備中", google1.includes("Googleと連携する") && google1.includes("準備中"));
-  }
+  check("Google連携の画面: 予約通知に「Googleと連携する」、届いた口コミのカードは出さない", google1.includes("Googleと連携する") && !google1.includes("届いた口コミ"));
 
   // ---- Google 連携(擬似 Google の同意画面 → コールバック)----
   const deps = getGoogleFlowDeps();
@@ -162,7 +148,7 @@ try {
   const google2 = await page("/dashboard/settings/google?google=connected", cookie);
   check("連携後: アカウントと権限を機能ごとに表示", google2.includes("Googleとの連携が完了しました") && google2.includes("owner@example.test") && google2.includes("許可済み"));
   check("通常利用では接続ボタンを出さない", !google2.includes("Googleと連携する</button>") && !google2.includes(">Googleと連携する<"));
-  if (reviewsEnabled) check("届いた口コミ: 認証後も店舗の選択を省略しない", google2.includes("口コミを受け取る店舗の選択が必要"));
+  check("届いた口コミは、連携のあとも Google連携の画面に出さない", !google2.includes("届いた口コミ"));
 
   const notifications = await page("/dashboard/notifications", cookie);
   check(
@@ -187,7 +173,6 @@ try {
   const fresh = await createTestSalon({ plan: "salonpack" });
   cleanups.push(fresh.cleanup);
   const freshCookie = await loginCookie(fresh.email, fresh.password);
-  await saveFeatureSelection({ salonId: fresh.salonId, userId: fresh.userId, selected: ["reservation_notifications"] });
   await admin.from("line_connections").insert({ salon_id: fresh.salonId, destination_id: "U_walk_new", status: "connected" });
   // 同じ受信箱(1つ目の店舗の Gmail)は別の店舗の予約通知には使えない。
   const sameInbox = await startGoogleConnect({ salonId: fresh.salonId, userId: fresh.userId, features: ["gmail"], purpose: "connect" }, deps);

@@ -5,6 +5,7 @@ import SupportContact from "@/components/support/SupportContact";
 import type { FeatureState, GoogleConnectionSnapshot } from "@/lib/features/featureState";
 import type { SupportContact as Contact } from "@/lib/support/contact";
 import StartReservationButton from "@/components/notifications/StartReservationButton";
+import ResumeReservationButton from "@/components/notifications/ResumeReservationButton";
 
 interface Props {
   reservation: FeatureState;
@@ -20,17 +21,18 @@ const STATUS_VARIANT: Record<string, "success" | "warning" | "neutral"> = {
   ready_to_start: "warning",
   reconnect_required: "warning",
   checking: "warning",
+  stopped: "neutral",
   paused: "neutral",
   setup_required: "neutral",
   google_connect_required: "neutral",
-  not_selected: "neutral",
+  not_allowed: "neutral",
   coming_soon: "neutral",
 };
 
 // 予約通知の画面の上部。Google との接続(認証)・LINE の通知先・予約通知の状態(実際に通知しているか)を
 // 分けて表示する(Google に接続できたことと、通知が始まったことを混同させない)。旧サービスからの切り替えの
 // 内部状態は表示しない。運営による停止・動作を確認できない状態では、運営への問い合わせの導線を出す。
-// 開始ボタンは、お客様が自分で開始できる店舗(新規店舗)だけ。
+// 開始ボタンは、お客様が自分で開始できる店舗(新規店舗)だけ。再開ボタンは「予約通知の利用を停止する」で止めた店舗だけ。
 export default function ConnectionStatusCards({ reservation, gmail, lineRecipientCount, supportContact }: Props) {
   const needsGoogleAction = !gmail.bound || gmail.authState !== "active" || !gmail.scopeGranted;
 
@@ -46,6 +48,7 @@ export default function ConnectionStatusCards({ reservation, gmail, lineRecipien
         {reservation.message && <p className="whitespace-pre-line text-sm text-ink-muted">{reservation.message}</p>}
         {reservation.suggestSupport && <SupportContact contact={supportContact} />}
         {reservation.status === "ready_to_start" && <StartReservationButton />}
+        {reservation.status === "stopped" && <ResumeReservationButton />}
       </Card>
 
       <div className="grid gap-4 sm:grid-cols-2">

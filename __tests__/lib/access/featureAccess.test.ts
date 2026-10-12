@@ -76,13 +76,17 @@ describe("canAccessFeature(APP_MODE × 契約プラン)", () => {
     }
   });
 
-  it("口コミ系の新機能はどのモード・プランの組み合わせでも使える", async () => {
+  it("口コミ系の新機能はどのモード・プランの組み合わせでも使える(届いた口コミは提供を始めてから)", async () => {
     for (const mode of MODES) {
       vi.stubEnv("NEXT_PUBLIC_APP_MODE", mode);
       for (const plan of PLANS) {
+        vi.stubEnv("GOOGLE_REVIEWS_OAUTH_ENABLED", "1");
         for (const feature of REVIEW_SUITE) {
           expect(await canAccessFeature(salon(plan), "user-1", feature)).toBe(true);
         }
+        vi.stubEnv("GOOGLE_REVIEWS_OAUTH_ENABLED", "");
+        expect(await canAccessFeature(salon(plan), "user-1", "google_reviews")).toBe(false);
+        expect(await canAccessFeature(salon(plan), "user-1", "review_replies")).toBe(true);
       }
     }
   });

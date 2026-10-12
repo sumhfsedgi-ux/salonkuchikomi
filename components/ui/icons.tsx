@@ -52,6 +52,16 @@ export function BellIcon(props: IconProps) {
   );
 }
 
+// 届いた口コミ(受け取った口コミの受信箱)。
+export function InboxIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M4 13.5 6.2 5.6A1.5 1.5 0 0 1 7.6 4.5h8.8a1.5 1.5 0 0 1 1.4 1.1L20 13.5v5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-5Z" />
+      <path d="M4 13.5h4.5l1.5 2.5h4l1.5-2.5H20" />
+    </svg>
+  );
+}
+
 export function SettingsIcon(props: IconProps) {
   return (
     <svg {...base} {...props}>

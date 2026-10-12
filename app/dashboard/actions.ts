@@ -6,6 +6,8 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentSalon, applyDefaultBusinessType } from "@/lib/supabase/queries";
 import { generateRandomSlug } from "@/lib/generateSlug";
+import { resolveFeatureSalon } from "@/lib/access/featureAccess";
+import { getPlanExperience } from "@/lib/features/access";
 import type { OwnerSalon } from "@/lib/types";
 
 export async function logoutAction() {
@@ -114,6 +116,9 @@ export async function startSurveyAction(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "ログインが必要です。" };
+  // 口コミ(アンケート)を使える店舗だけ(契約・提供状況の判定は lib/features/access.ts と共通)。
+  const access = await resolveFeatureSalon(supabase, "reviews");
+  if (!access.ok) return { error: access.error };
 
   // Uses restart_survey_from_template (not create_survey_from_template)
   // because the onboarding wizard lets the owner go back to STEP2 and pick a
@@ -152,8 +157,9 @@ export async function completeOnboardingAction(
   googleReviewUrl: string,
 ): Promise<{ error?: string }> {
   const supabase = await createClient();
-  const salon = await getCurrentSalon(supabase);
-  if (!salon) return { error: "店舗情報が見つかりません。" };
+  const access = await resolveFeatureSalon(supabase, "reviews");
+  if (!access.ok) return { error: access.error };
+  const { salon } = access;
 
   const trimmed = googleReviewUrl.trim();
   if (trimmed.length > 500) {
@@ -175,5 +181,6 @@ export async function completeOnboardingAction(
   }
 
   revalidatePath("/dashboard");
-  redirect("/dashboard?onboarded=1");
+  // 口コミプランは機能一覧のホームを使わず、口コミの設定画面へ進む(SalonPack はホームへ)。
+  redirect(getPlanExperience(salon.plan) === "reviews_direct" ? "/dashboard/reviews?onboarded=1" : "/dashboard?onboarded=1");
 }

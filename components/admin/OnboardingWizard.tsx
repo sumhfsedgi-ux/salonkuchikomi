@@ -144,7 +144,8 @@ function ReviewsSetup({ templates, salon, initialStep, surveyId, surveyQuestions
     e.preventDefault();
     setStep4Saving(true);
     setStep4Error(null);
-    // 成功時はサーバー側で /dashboard?onboarded=1 へ移動するため、通常は戻ってこない。
+    // 成功時はサーバー側で移動する(SalonPack は /dashboard?onboarded=1、口コミプランは
+    // /dashboard/reviews?onboarded=1)ため、通常は戻ってこない。
     const result = await completeOnboardingAction(googleReviewUrl);
     setStep4Saving(false);
     if (result?.error) setStep4Error(result.error);

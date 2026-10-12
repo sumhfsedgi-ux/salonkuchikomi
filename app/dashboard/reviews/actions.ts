@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentSalon, applyDefaultBusinessType } from "@/lib/supabase/queries";
+import { applyDefaultBusinessType } from "@/lib/supabase/queries";
+import { resolveFeatureSalon } from "@/lib/access/featureAccess";
 
 // Every action below re-resolves "my own salon" and "my own survey" from the
 // authenticated session (never a client-supplied id), then scopes every
@@ -24,8 +25,9 @@ export async function updateGoogleReviewUrlAction(
   formData: FormData,
 ): Promise<{ error?: string; success?: boolean }> {
   const supabase = await createClient();
-  const salon = await getCurrentSalon(supabase);
-  if (!salon) return { error: "店舗情報が見つかりません。" };
+  const access = await resolveFeatureSalon(supabase, "reviews");
+  if (!access.ok) return { error: access.error };
+  const { salon } = access;
 
   const raw = String(formData.get("google_review_url") ?? "").trim();
   const parsed = googleReviewUrlSchema.safeParse(raw);
@@ -64,8 +66,9 @@ export async function restartSurveyAction(
   templateId: string | null,
 ): Promise<{ error?: string }> {
   const supabase = await createClient();
-  const salon = await getCurrentSalon(supabase);
-  if (!salon) return { error: "店舗情報が見つかりません。" };
+  const access = await resolveFeatureSalon(supabase, "reviews");
+  if (!access.ok) return { error: access.error };
+  const { salon } = access;
 
   const { error } = await supabase.rpc("restart_survey_from_template", {
     p_salon_id: salon.id,
@@ -124,8 +127,9 @@ export async function saveSurveyAction(
   questions: SaveSurveyQuestionInput[],
 ): Promise<{ error?: string }> {
   const supabase = await createClient();
-  const salon = await getCurrentSalon(supabase);
-  if (!salon) return { error: "店舗情報が見つかりません。" };
+  const access = await resolveFeatureSalon(supabase, "reviews");
+  if (!access.ok) return { error: access.error };
+  const { salon } = access;
   const surveyId = await getCurrentSurveyId(supabase, salon.id);
   if (!surveyId) return { error: "アンケートが見つかりません。" };
 

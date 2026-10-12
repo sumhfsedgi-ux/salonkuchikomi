@@ -36,6 +36,11 @@ export interface FeatureDefinition {
   setupItems: SetupItemKey[];
   /** 'coming_soon' は選択・接続できない(準備中と表示する)。 */
   availability: "available" | "coming_soon";
+  /**
+   * 画面(ホーム・メニュー・Google連携・サロン設定の案内)に出すか。false の機能は、利用権限の判定・内部の処理は
+   * そのままで、画面にだけ出さない(届いた口コミは、受信箱などの中身と一緒に入れるまで出さない)。
+   */
+  listed: boolean;
 }
 
 export const FEATURE_REGISTRY: readonly FeatureDefinition[] = [
@@ -49,6 +54,7 @@ export const FEATURE_REGISTRY: readonly FeatureDefinition[] = [
     requiresLine: false,
     setupItems: ["review_survey", "review_google_url"],
     availability: "available",
+    listed: true,
   },
   {
     key: "blog",
@@ -60,6 +66,7 @@ export const FEATURE_REGISTRY: readonly FeatureDefinition[] = [
     requiresLine: false,
     setupItems: ["blog_settings"],
     availability: "available",
+    listed: true,
   },
   {
     key: "reservation_notifications",
@@ -71,6 +78,7 @@ export const FEATURE_REGISTRY: readonly FeatureDefinition[] = [
     requiresLine: true,
     setupItems: ["google_gmail", "line_recipients", "reservation_start"],
     availability: "available",
+    listed: true,
   },
   {
     key: "google_reviews",
@@ -82,6 +90,8 @@ export const FEATURE_REGISTRY: readonly FeatureDefinition[] = [
     requiresLine: false,
     setupItems: ["google_gbp", "gbp_location"],
     availability: "coming_soon",
+    // 受信箱・返信の画面(feature/reviews-d1-reply-engine)を取り込むときに、口コミと一緒に画面へ出す。
+    listed: false,
   },
 ];
 

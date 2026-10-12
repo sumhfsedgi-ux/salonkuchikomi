@@ -4,29 +4,29 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
 import { SettingsIcon } from "@/components/ui/icons";
-import { getNavItems, filterNavItemsByPlan, isNavItemActive } from "@/components/layout/navItems";
-import { getAppMode } from "@/lib/appMode";
-import type { SalonPlan } from "@/lib/access/plan";
+import { getNavItems, isNavItemActive } from "@/components/layout/navItems";
+import type { PlanExperience } from "@/lib/features/access";
+import type { FeatureKey } from "@/lib/features/registry";
 
 // grid-cols-Nはtailwindが動的クラス名を解決できないため、項目数からの
-// ルックアップで静的なクラス名を選ぶ(navItemsは現状2件(reviewsモード)か
-// 4件(salonpackモード)のどちらか)。
+// ルックアップで静的なクラス名を選ぶ(項目は店舗が利用できる機能の数で1〜4件)。
 const GRID_COLS_CLASS: Record<number, string> = {
+  1: "grid-cols-1",
   2: "grid-cols-2",
+  3: "grid-cols-3",
   4: "grid-cols-4",
 };
 
 // The mobile navigation surface: a fixed bottom bar (per the design brief's
 // "5個以上を無理に並べない" rule)。SalonPackモードではサロン設定/アカウント/
-// ログアウトはProfileMenuの方に置いている(MobileHeaderから開く)。reviewsモードは
+// ログアウトはProfileMenuの方に置いている(MobileHeaderから開く)。口コミプランは
 // 主要機能が口コミ1つだけなので、常時アクセスできるよう「設定」をここに直接
-// 表示する(ProfileMenu側の「サロン設定」はreviewsモードでは非表示にして
+// 表示する(ProfileMenu側の「サロン設定」は口コミプランでは非表示にして
 // 導線の重複を避けている -- components/layout/ProfileMenu.tsx参照)。
-export default function BottomNav({ plan }: { plan: SalonPlan }) {
+export default function BottomNav({ experience, usableFeatures }: { experience: PlanExperience; usableFeatures: FeatureKey[] }) {
   const pathname = usePathname();
-  const mode = getAppMode();
-  const navItems = filterNavItemsByPlan(getNavItems(mode), plan);
-  if (mode === "reviews") {
+  const navItems = getNavItems(experience, usableFeatures);
+  if (experience === "reviews_direct") {
     navItems.push({ href: "/dashboard/settings", label: "設定", icon: SettingsIcon });
   }
 

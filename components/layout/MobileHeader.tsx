@@ -1,12 +1,13 @@
 import Logo from "@/components/ui/Logo";
 import ProfileMenu from "@/components/layout/ProfileMenu";
+import type { PlanExperience } from "@/lib/features/access";
 
-export default function MobileHeader({ salonName }: { salonName: string }) {
+export default function MobileHeader({ salonName, experience }: { salonName: string; experience: PlanExperience }) {
   return (
     <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-white/95 px-4 py-3 backdrop-blur md:hidden">
       <Logo markOnly />
       <p className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{salonName}</p>
-      <ProfileMenu />
+      <ProfileMenu experience={experience} />
     </header>
   );
 }

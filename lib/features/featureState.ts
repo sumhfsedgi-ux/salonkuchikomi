@@ -1,6 +1,6 @@
-import { isFeatureServedByMode } from "@/lib/appMode";
-import { isFeatureEnabledForPlan, type SalonPlan } from "@/lib/access/plan";
 import type { GoogleAuthState } from "@/lib/google/db/accounts";
+import type { SalonPlan } from "@/lib/access/plan";
+import { resolveFeatureAccess, type FeatureAccessStatus } from "@/lib/features/access";
 import {
   FEATURE_REGISTRY,
   SETUP_ITEMS,
@@ -10,9 +10,11 @@ import {
 } from "@/lib/features/registry";
 
 // 機能ごとの状態の判定(DBに触れない純粋な関数。画面・Server Action・定期処理で共通に使う)。
-// 次の5つを混同しないように、それぞれ別の入力から判定する:
-//   契約上の利用権限(plan × APP_MODE)/ お客様が選んだ機能 / 設定の完了 /
-//   外部サービス(Google)の接続と許可 / 実際の稼働状態(予約通知の運用状態)
+// 次の4つを混同しないように、それぞれ別の入力から判定する:
+//   契約上の利用権限・提供状況(lib/features/access.ts)/ 設定の完了 /
+//   外部サービス(Google)の接続と許可 / 実際の稼働状態(予約通知の運用状態・内部スイッチ)
+// お客様が「使う機能」を選ぶ仕組みは廃止した。ホームへの表示や利用権限だけでは、
+// 予約通知のメール確認・送信は始まらない(運用状態と内部スイッチは別に持つ)。
 
 export type ReservationOpsState = "setup_pending" | "awaiting_cutover" | "active" | "paused";
 
@@ -28,18 +30,25 @@ export interface GoogleConnectionSnapshot {
   selectionState?: "selection_pending" | "selected" | null;
 }
 
+/**
+ * 予約通知の内部スイッチ(salon_feature_selections の予約通知の行)。DB はメール確認・送信のたびに
+ * 「運用状態が稼働中 AND 契約 AND このスイッチ」を確かめる。「予約通知の利用を停止する」で false、
+ * 開始・再開の操作で true にする。行が無い店舗は null(DB は OFF として扱う)。
+ * updatedAt は、比べてから書く(読んだあとに別の操作で変わっていたら書かない)ために使う。
+ */
+export interface ReservationSwitchSnapshot {
+  selected: boolean;
+  updatedAt: string;
+}
+
 export interface SetupContext {
   plan: SalonPlan;
-  /** salon_feature_selections の行(保存したことがある機能だけ)。 */
-  explicitSelections: Partial<Record<FeatureKey, boolean>>;
-  selectionSavedAt: string | null;
+  reservationSwitch: ReservationSwitchSnapshot | null;
   hasActiveSurvey: boolean;
   onboardingCompleted: boolean;
   googleReviewUrl: string | null;
-  hasSalonSettingsRow: boolean;
   hasBlogSettings: boolean;
   lineRecipientCount: number;
-  hasAnyLineConnection: boolean;
   gmail: GoogleConnectionSnapshot;
   gbp: GoogleConnectionSnapshot;
   reservationOps: ReservationOpsSnapshot | null;
@@ -64,10 +73,8 @@ export interface ReservationOpsSnapshot {
   lastMailCheckAt?: string | null;
 }
 
-export type SelectionSource = "explicit" | "implicit" | "single" | "none";
-
 export type FeatureStatus =
-  | "not_selected"
+  | "not_allowed"
   | "coming_soon"
   | "setup_required"
   | "google_connect_required"
@@ -75,6 +82,7 @@ export type FeatureStatus =
   | "setup_complete"
   | "ready_to_start"
   | "active"
+  | "stopped"
   | "paused"
   | "checking"
   | "ready";
@@ -82,7 +90,7 @@ export type FeatureStatus =
 // お客様向けの表示。旧サービスからの切り替えの内部状態(切り替え待ち・旧側停止・照合)はここに出さない
 // (運営の CLI の list・DB の状態には残る)。
 export const FEATURE_STATUS_LABELS: Record<FeatureStatus, string> = {
-  not_selected: "未選択",
+  not_allowed: "ご契約外",
   coming_soon: "準備中",
   setup_required: "設定が必要",
   google_connect_required: "Google接続待ち",
@@ -90,6 +98,7 @@ export const FEATURE_STATUS_LABELS: Record<FeatureStatus, string> = {
   setup_complete: "設定完了",
   ready_to_start: "開始待ち",
   active: "稼働中",
+  stopped: "停止中",
   paused: "停止中",
   checking: "確認中",
   ready: "利用中",
@@ -99,6 +108,9 @@ export const FEATURE_STATUS_LABELS: Record<FeatureStatus, string> = {
 export const MAIL_CHECK_STALE_MS = 15 * 60 * 1000;
 
 export const SETUP_COMPLETE_MESSAGE = "Googleとの連携が完了しました。\nお客様の操作は以上です。LINEの再登録は不要です。";
+
+export const RESERVATION_STOPPED_MESSAGE =
+  "予約通知の利用を停止しています。再開すると、再開したあとに届いた予約から通知します(停止中に届いた予約は通知しません)。";
 
 export interface SetupItemState {
   key: SetupItemKey;
@@ -113,9 +125,8 @@ export interface SetupItemState {
 export interface FeatureState {
   key: FeatureKey;
   definition: FeatureDefinition;
-  entitled: boolean;
-  available: boolean;
-  selected: boolean;
+  /** 契約上の利用権限と提供状況(lib/features/access.ts)。allowed 以外は status も同じ値になる。 */
+  access: FeatureAccessStatus;
   status: FeatureStatus;
   statusLabel: string;
   /** 画面に出す一文(同意できたことと、通知が始まったことを混同させない書き方にする)。 */
@@ -123,38 +134,6 @@ export interface FeatureState {
   /** 運営への問い合わせの導線を一緒に出すべきか(運営による停止・動作を確認できない状態・設定を変更できない間)。 */
   suggestSupport: boolean;
   setupItems: SetupItemState[];
-}
-
-export function isFeatureEntitled(plan: SalonPlan, def: FeatureDefinition): boolean {
-  return isFeatureEnabledForPlan(plan, def.accessFeature) && isFeatureServedByMode(def.accessFeature);
-}
-
-export function isFeatureAvailable(def: FeatureDefinition, ctx: Pick<SetupContext, "googleReviewsAvailable">): boolean {
-  if (def.availability === "available") return true;
-  return def.key === "google_reviews" && ctx.googleReviewsAvailable;
-}
-
-/**
- * お客様が選んだ機能。一度でも保存した店舗は保存した行だけを使い、推定しない
- * (OFFにした機能が推定で再びONにならない。後から登録した新機能は「未選択」)。
- * 保存したことが無い既存の店舗だけ、使っている形跡から推定する(初期設定のやり直しを求めない)。
- */
-export function resolveSelection(ctx: SetupContext): { selected: Set<FeatureKey>; source: SelectionSource } {
-  const selectable = FEATURE_REGISTRY.filter((def) => isFeatureEntitled(ctx.plan, def) && isFeatureAvailable(def, ctx));
-  if (ctx.selectionSavedAt) {
-    const selected = new Set<FeatureKey>();
-    for (const def of selectable) if (ctx.explicitSelections[def.key] === true) selected.add(def.key);
-    return { selected, source: "explicit" };
-  }
-  const inferred = new Set<FeatureKey>();
-  for (const def of selectable) {
-    if (def.key === "reviews" && ctx.hasActiveSurvey) inferred.add(def.key);
-    if (def.key === "blog" && ctx.hasSalonSettingsRow) inferred.add(def.key);
-    if (def.key === "reservation_notifications" && (ctx.hasAnyLineConnection || ctx.reservationOps)) inferred.add(def.key);
-  }
-  if (inferred.size > 0) return { selected: inferred, source: "implicit" };
-  if (selectable.length === 1) return { selected: new Set([selectable[0].key]), source: "single" };
-  return { selected: new Set(), source: "none" };
 }
 
 function googleIssue(conn: GoogleConnectionSnapshot): "not_connected" | "reconnect" | null {
@@ -196,9 +175,18 @@ function lineRecipientGuidance(ctx: SetupContext): StatusResult {
     : { status: "setup_required", message: "Googleとの連携が完了しました。LINEの通知先の追加は、運営にお問い合わせください。", suggestSupport: true };
 }
 
+/**
+ * お客様が「予約通知の利用を停止する」で止めている(内部スイッチが OFF で、開始済み・切り替え待ち)。
+ * まだ開始していない店舗の OFF(行が無い・開始前)は停止として扱わず、通常の設定の流れにする。
+ */
+export function isReservationStoppedByCustomer(ctx: Pick<SetupContext, "reservationSwitch" | "reservationOps">): boolean {
+  const state = ctx.reservationOps?.state;
+  return ctx.reservationSwitch?.selected === false && (state === "active" || state === "awaiting_cutover");
+}
+
 // 予約通知のお客様向けの状態。旧サービスからの切り替え(運営の作業)の内部状態は出さない。
 // 「新側が実際に通知しているか」を基準にし、未稼働なのに「稼働中」と出さない。停止が確定している状態
-// (お客様の OFF・運営の停止)と、動作を確認できない状態(監視による停止・予約メールの確認が止まっている)を分け、
+// (お客様の停止・受信 OFF・運営の停止)と、動作を確認できない状態(監視による停止・予約メールの確認が止まっている)を分け、
 // 旧側が通知を続けているとは断定しない。
 function reservationStatus(ctx: SetupContext): StatusResult {
   const google = googleIssue(ctx.gmail);
@@ -219,6 +207,8 @@ function reservationStatus(ctx: SetupContext): StatusResult {
     }
     return { status: "paused", message: "予約通知を一時停止しています。詳しくは運営にお問い合わせください。", suggestSupport: true };
   }
+  // 運営による停止・確認中より後、稼働中の判定より先に見る(お客様の停止を「稼働中」と出さない)。
+  if (isReservationStoppedByCustomer(ctx)) return { status: "stopped", message: RESERVATION_STOPPED_MESSAGE };
   if (ops?.state === "active") {
     if (!ctx.masterEnabled) return { status: "paused", message: "予約通知を受け取る設定がOFFになっています。" };
     if (ctx.lineRecipientCount === 0) {
@@ -264,14 +254,11 @@ function googleReviewsStatus(ctx: SetupContext): { status: FeatureStatus; messag
   return { status: "ready", message: null };
 }
 
-export function resolveFeatureStates(ctx: SetupContext): { states: FeatureState[]; selectionSource: SelectionSource } {
-  const { selected, source } = resolveSelection(ctx);
+/** 全機能の状態(registry の順)。契約外・準備中の機能も含める(画面ごとに出す範囲は lib/features/access.ts で決める)。 */
+export function resolveFeatureStates(ctx: SetupContext): { states: FeatureState[] } {
   const states: FeatureState[] = [];
   for (const def of FEATURE_REGISTRY) {
-    const entitled = isFeatureEntitled(ctx.plan, def);
-    if (!entitled) continue;
-    const available = isFeatureAvailable(def, ctx);
-    const isSelected = available && selected.has(def.key);
+    const access = resolveFeatureAccess(def, { plan: ctx.plan, googleReviewsAvailable: ctx.googleReviewsAvailable });
     const setupItems: SetupItemState[] = def.setupItems.map((key) => {
       const item = { ...SETUP_ITEMS[key], complete: itemComplete(key, ctx) };
       // LINE の通知先を招待で追加できない間は、押せないボタンへ案内しない(運営への問い合わせを案内する)。
@@ -285,11 +272,9 @@ export function resolveFeatureStates(ctx: SetupContext): { states: FeatureState[
     let status: FeatureStatus;
     let message: string | null = null;
     let suggestSupport = false;
-    if (!available) {
-      status = "coming_soon";
-      message = def.key === "google_reviews" ? "Googleの承認を確認中のため、準備中です。" : null;
-    } else if (!isSelected) {
-      status = "not_selected";
+    if (access.status !== "allowed") {
+      status = access.status;
+      message = access.reason;
     } else if (def.key === "reservation_notifications") {
       const result = reservationStatus(ctx);
       ({ status, message } = result);
@@ -302,9 +287,7 @@ export function resolveFeatureStates(ctx: SetupContext): { states: FeatureState[
     states.push({
       key: def.key,
       definition: def,
-      entitled,
-      available,
-      selected: isSelected,
+      access: access.status,
       status,
       statusLabel: FEATURE_STATUS_LABELS[status],
       message,
@@ -312,49 +295,5 @@ export function resolveFeatureStates(ctx: SetupContext): { states: FeatureState[
       setupItems,
     });
   }
-  return { states, selectionSource: source };
-}
-
-export interface ChecklistEntry {
-  key: string;
-  label: string;
-  description: string;
-  href: string;
-  required: boolean;
-  features: string[];
-}
-
-/**
- * 選んだ機能の未完了の設定項目だけを並べる(必須を先に)。同じ画面でまとめて設定できる
- * Google 連携・LINE の送信先は1件にまとめる(完了済みの共通設定は再利用し、重ねて求めない)。
- */
-export function buildSetupChecklist(states: FeatureState[]): ChecklistEntry[] {
-  const entries = new Map<string, ChecklistEntry>();
-  for (const state of states) {
-    if (!state.selected) continue;
-    for (const item of state.setupItems) {
-      if (item.complete) continue;
-      // お客様の操作が完了した機能(既存店舗の設定完了など)は、未完了の設定として繰り返し案内しない。
-      if (state.status === "setup_complete") continue;
-      // 予約通知の「開始」は、お客様が自分で開始できる状態(Google と LINE がそろった新規店舗)のときだけ出す。
-      if (item.key === "reservation_start" && state.status !== "ready_to_start") continue;
-      if (item.key === "gbp_location" && state.status !== "setup_required") continue;
-      const groupKey = item.group ?? item.key;
-      const existing = entries.get(groupKey);
-      if (existing) {
-        if (!existing.features.includes(state.definition.label)) existing.features.push(state.definition.label);
-        existing.required = existing.required || item.required;
-        continue;
-      }
-      entries.set(groupKey, {
-        key: groupKey,
-        label: item.group === "google" ? "Googleと連携" : item.label,
-        description: item.description,
-        href: item.href,
-        required: item.required,
-        features: [state.definition.label],
-      });
-    }
-  }
-  return [...entries.values()].sort((a, b) => Number(b.required) - Number(a.required));
+  return { states };
 }

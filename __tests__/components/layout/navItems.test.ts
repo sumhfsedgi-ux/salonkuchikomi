@@ -1,28 +1,42 @@
-import { describe, expect, it } from "vitest";
-import { filterNavItemsByPlan, getNavItems } from "@/components/layout/navItems";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { getNavItems, isSettingsActive } from "@/components/layout/navItems";
+import { featureAccessInputFor, getPlanExperience, listUsableFeatureKeys } from "@/lib/features/access";
+import type { SalonPlan } from "@/lib/access/plan";
 
 const hrefs = (items: { href: string }[]) => items.map((item) => item.href);
 
-describe("ナビの契約プランによる出し分け", () => {
-  it("salonpack モードで reviews プランの店舗には、ブログ・予約通知を出さない", () => {
-    expect(hrefs(filterNavItemsByPlan(getNavItems("salonpack"), "reviews"))).toEqual([
-      "/dashboard",
-      "/dashboard/reviews",
-    ]);
+// app/dashboard/layout.tsx と同じ組み立て(契約プランごとの画面の作り × 利用できる機能)。
+function navFor(plan: SalonPlan) {
+  return getNavItems(getPlanExperience(plan), listUsableFeatureKeys(featureAccessInputFor({ plan })));
+}
+
+afterEach(() => vi.unstubAllEnvs());
+
+describe("メニューには、その店舗が利用できる機能だけを出す", () => {
+  it("口コミプラン: ホームを出さず、口コミだけ(サロン設定・ログアウトはメニューの下側に共通)", () => {
+    expect(hrefs(navFor("reviews"))).toEqual(["/dashboard/reviews"]);
   });
 
-  it("salonpack モードで salonpack プランの店舗にはすべて出す", () => {
-    expect(hrefs(filterNavItemsByPlan(getNavItems("salonpack"), "salonpack"))).toEqual([
-      "/dashboard",
-      "/dashboard/reviews",
-      "/dashboard/blog",
-      "/dashboard/notifications",
-    ]);
+  it("SalonPack: ホームと、利用できる機能", () => {
+    expect(hrefs(navFor("salonpack"))).toEqual(["/dashboard", "/dashboard/reviews", "/dashboard/blog", "/dashboard/notifications"]);
   });
 
-  it("reviews モードはどちらのプランでも口コミだけ", () => {
-    for (const plan of ["reviews", "salonpack"] as const) {
-      expect(hrefs(filterNavItemsByPlan(getNavItems("reviews"), plan))).toEqual(["/dashboard/reviews"]);
-    }
+  it("届いた口コミは、受信箱などの中身と一緒に入れるまで出さない(提供を始めても)", () => {
+    vi.stubEnv("GOOGLE_REVIEWS_OAUTH_ENABLED", "1");
+    expect(hrefs(navFor("salonpack"))).toEqual(["/dashboard", "/dashboard/reviews", "/dashboard/blog", "/dashboard/notifications"]);
+    expect(hrefs(navFor("reviews"))).toEqual(["/dashboard/reviews"]);
+  });
+
+  it("APP_MODE=reviews のデプロイは、契約にかかわらず口コミだけ(ホームなし)", () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_MODE", "reviews");
+    for (const plan of ["reviews", "salonpack"] as const) expect(hrefs(navFor(plan))).toEqual(["/dashboard/reviews"]);
+  });
+});
+
+describe("サロン設定の選択中の表示", () => {
+  it("Google連携の画面はサロン設定の配下(サロン設定を選択中にする)", () => {
+    expect(isSettingsActive("/dashboard/settings", navFor("salonpack"))).toBe(true);
+    expect(isSettingsActive("/dashboard/settings/google", navFor("salonpack"))).toBe(true);
+    expect(isSettingsActive("/dashboard/reviews", navFor("salonpack"))).toBe(false);
   });
 });

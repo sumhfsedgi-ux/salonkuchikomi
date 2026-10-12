@@ -2,11 +2,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentSalon } from "@/lib/supabase/queries";
-import { loadSetupContext } from "@/lib/features/setupContext";
-import { resolveFeatureStates } from "@/lib/features/featureState";
-import { toFeatureOptions } from "@/lib/features/viewModel";
+import { featureAccessInputFor, getPlanExperience, isFeatureIntroduced, resolveAllFeatureAccess } from "@/lib/features/access";
 import SalonSettingsForm from "@/components/admin/SalonSettingsForm";
-import FeatureSelectionForm from "@/components/features/FeatureSelectionForm";
 import PageHeader from "@/components/ui/PageHeader";
 import Card from "@/components/ui/Card";
 
@@ -15,9 +12,12 @@ export default async function DashboardSettingsPage() {
   const salon = await getCurrentSalon(supabase);
   if (!salon) redirect("/dashboard");
 
-  const ctx = await loadSetupContext(salon);
-  const { states } = resolveFeatureStates(ctx);
-  const usesGoogle = states.some((s) => s.definition.googleFeature && (s.selected || s.status === "coming_soon"));
+  // Google連携の案内は、その店舗に紹介してよい機能(lib/features/access.ts)のうち、Google が必要なものだけ。
+  // 口コミプランでは、提供中でない機能・契約外の機能を案内しない。
+  const experience = getPlanExperience(salon.plan);
+  const googleLabels = resolveAllFeatureAccess(featureAccessInputFor(salon))
+    .filter((a) => a.definition.googleFeature && isFeatureIntroduced(a, experience, "guide"))
+    .map((a) => a.definition.label);
 
   return (
     <div className="flex flex-col gap-6">
@@ -26,16 +26,9 @@ export default async function DashboardSettingsPage() {
         <SalonSettingsForm salon={salon} />
       </Card>
 
-      <section id="features" className="flex max-w-xl flex-col gap-3">
-        <h2 className="text-sm font-semibold text-ink">利用する機能</h2>
-        <Card>
-          <FeatureSelectionForm options={toFeatureOptions(states)} submitLabel="保存する" />
-        </Card>
-      </section>
-
-      {usesGoogle && (
+      {googleLabels.length > 0 && (
         <p className="text-sm text-ink-muted">
-          予約通知・届いた口コミのGoogleアカウントは
+          {googleLabels.join("・")}のGoogleアカウントは
           <Link href="/dashboard/settings/google" className="text-sage-dark underline underline-offset-2">
             Google連携
           </Link>

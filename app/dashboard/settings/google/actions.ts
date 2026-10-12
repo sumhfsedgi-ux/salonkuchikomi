@@ -5,10 +5,9 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentSalon } from "@/lib/supabase/queries";
 import { canAccessFeature } from "@/lib/access/featureAccess";
-import { loadSetupContext } from "@/lib/features/setupContext";
-import { resolveSelection } from "@/lib/features/featureState";
-import { FEATURE_REGISTRY, type FeatureKey } from "@/lib/features/registry";
-import { saveFeatureSelection } from "@/lib/features/selection";
+import { featureAccessInputFor, resolveFeatureAccess } from "@/lib/features/access";
+import { FEATURE_REGISTRY, type FeatureDefinition } from "@/lib/features/registry";
+import { turnOffFeatureSwitch } from "@/lib/features/featureSwitch";
 import { listSalonGoogleBindings, unbindGoogleFeatures } from "@/lib/google/db/bindings";
 import { GoogleConnectInputError, startGoogleConnect } from "@/lib/google/oauthFlow";
 import { processGoogleRevocations } from "@/lib/google/revocations";
@@ -16,6 +15,7 @@ import { getGoogleFlowDeps } from "@/lib/google/runtime";
 import { logSafeError } from "@/lib/google/safeError";
 import { isGoogleFeature, type GoogleFeature } from "@/lib/google/scopes";
 import type { OAuthPurpose } from "@/lib/google/db/oauthStates";
+import type { OwnerSalon } from "@/lib/types";
 
 // Google連携の画面の操作。店舗はセッションから解決し、クライアントからは受け取らない。
 // 3つの操作を分ける:
@@ -24,8 +24,8 @@ import type { OAuthPurpose } from "@/lib/google/db/oauthStates";
 
 const PURPOSES: OAuthPurpose[] = ["connect", "add_scope", "reauth", "switch_account"];
 
-function featureKeyFor(google: GoogleFeature): FeatureKey {
-  return FEATURE_REGISTRY.find((f) => f.googleFeature === google)!.key;
+function definitionFor(google: GoogleFeature): FeatureDefinition {
+  return FEATURE_REGISTRY.find((f) => f.googleFeature === google)!;
 }
 
 async function resolveContext() {
@@ -39,6 +39,17 @@ async function resolveContext() {
   return { salon, user };
 }
 
+/** その Google 権限を使う機能を、この店舗が使えるか(契約・APP_MODE・提供状況・ユーザー権限)。使えなければ結果の表示へ戻す。 */
+async function requireGoogleFeatureAccess(salon: OwnerSalon, userId: string, google: GoogleFeature): Promise<FeatureDefinition> {
+  const def = definitionFor(google);
+  const access = resolveFeatureAccess(def, featureAccessInputFor(salon));
+  if (access.status === "coming_soon") redirect("/dashboard/settings/google?google=not_available");
+  if (access.status !== "allowed" || !(await canAccessFeature(salon, userId, def.accessFeature))) {
+    redirect("/dashboard/settings/google?google=feature_not_allowed");
+  }
+  return def;
+}
+
 export async function startGoogleConnectAction(formData: FormData): Promise<void> {
   const { salon, user } = await resolveContext();
   const features = String(formData.get("features") ?? "")
@@ -47,15 +58,8 @@ export async function startGoogleConnectAction(formData: FormData): Promise<void
   const purposeRaw = String(formData.get("purpose") ?? "connect");
   const purpose = (PURPOSES as string[]).includes(purposeRaw) ? (purposeRaw as OAuthPurpose) : "connect";
 
-  // 契約上利用でき、お客様がその機能を選んでいる場合だけ、その機能の権限を要求する。
-  const ctx = await loadSetupContext(salon);
-  const { selected } = resolveSelection(ctx);
-  for (const feature of features) {
-    const def = FEATURE_REGISTRY.find((f) => f.googleFeature === feature)!;
-    if (!selected.has(def.key) || !(await canAccessFeature(salon, user.id, def.accessFeature))) {
-      redirect("/dashboard/settings/google?google=feature_not_selected");
-    }
-  }
+  // 契約上利用でき、提供中の機能の権限だけを要求する(Google に接続しただけでは予約通知は始まらない)。
+  for (const feature of features) await requireGoogleFeatureAccess(salon, user.id, feature);
 
   // 再認証・権限追加は、接続中のアカウントと同じアカウントでだけ行う(違えばコールバックで拒否)。
   let expectedGoogleSub: string | null = null;
@@ -83,21 +87,22 @@ export async function startGoogleConnectAction(formData: FormData): Promise<void
   redirect(url);
 }
 
-/** その機能の利用を停止する(選択を OFF。共有の Google 認可は取り消さない)。 */
+/**
+ * その機能の利用を停止する(その機能の内部スイッチだけを OFF。共有の Google 認可は取り消さない)。
+ * 予約通知は、DB がメール確認・送信をしなくなる。再開は予約通知の画面の「予約通知を再開する」から。
+ */
 export async function stopFeatureAction(formData: FormData): Promise<void> {
   const { salon, user } = await resolveContext();
   const google = String(formData.get("feature") ?? "");
   if (!isGoogleFeature(google)) redirect("/dashboard/settings/google");
-  const ctx = await loadSetupContext(salon);
-  const { selected } = resolveSelection(ctx);
-  const target = featureKeyFor(google);
-  selected.delete(target);
-  await saveFeatureSelection({ salonId: salon.id, userId: user.id, selected: [...selected] });
+  const def = await requireGoogleFeatureAccess(salon, user.id, google);
+  await turnOffFeatureSwitch({ salonId: salon.id, userId: user.id, key: def.key });
   if (google === "gbp") {
     // 口コミの利用停止: 口コミの結び付けだけを外す(予約メールの Gmail はそのまま)。
     await unbindGoogleFeatures({ salonId: salon.id, features: ["gbp"], userId: user.id, revokeIfUnreferenced: false });
   }
   revalidatePath("/dashboard/settings/google");
+  revalidatePath("/dashboard/notifications");
   revalidatePath("/dashboard");
   redirect(`/dashboard/settings/google?google=stopped_${google}`);
 }
