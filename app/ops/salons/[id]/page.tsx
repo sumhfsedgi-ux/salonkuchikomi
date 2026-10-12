@@ -2,8 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { requireOperator } from "@/lib/ops/operator";
-import { getSalonDetail, listAuditLog, type AuditEntry, type SalonDetail } from "@/lib/ops/queries";
-import { ACTOR_KIND_LABELS, AUTH_STATE_LABELS, OPS_STATE_LABELS, PLAN_LABELS, STOP_KIND_LABELS, formatJst } from "@/lib/ops/labels";
+import { getSalonDetail, listAuditLog, type AuditEntry } from "@/lib/ops/queries";
+import { ACTOR_KIND_LABELS, PLAN_LABELS, formatJst } from "@/lib/ops/labels";
 import { FEATURE_CATEGORIES, FEATURE_REGISTRY, getFeatureDefinition, isFeatureKey } from "@/lib/features/registry";
 import { OVERRIDE_LABELS, LIFECYCLE_LABELS } from "@/lib/features/entitlements";
 import PageHeader from "@/components/ui/PageHeader";
@@ -13,6 +13,7 @@ import Alert from "@/components/ui/Alert";
 import { buttonClassName } from "@/components/ui/Button";
 import EntitlementEditor, { type EditorFeature } from "@/components/ops/EntitlementEditor";
 import HoldReleasePanel from "@/components/ops/HoldReleasePanel";
+import { remainingAfterRelease, summarizeReservation } from "@/lib/ops/reservationSummary";
 
 // サロン詳細(運営管理)。基本情報・連携と稼働状況は閲覧のみ(秘密の値は読まない・出さない)。
 // 契約と利用許可は EntitlementEditor で、確認のうえ保存する。権限による停止の解除は、利用許可の保存とは別の操作。
@@ -51,28 +52,13 @@ function prerequisites(key: string): string[] {
   return out;
 }
 
-function reservationBlockers(d: SalonDetail): string[] {
-  const r = d.reservation;
-  const out: string[] = [];
-  if (r.state === "paused") out.push("運営による停止");
-  if (r.state === "awaiting_cutover") out.push("旧サービスからの切り替え待ち");
-  if (r.state === "setup_pending" || r.state === null) out.push("お客様による開始前");
-  if (!r.masterEnabled) out.push("受信OFF");
-  if (r.customerSwitchOn === false) out.push("お客様の利用停止");
-  const gmail = d.google.find((g) => g.feature === "gmail");
-  if (!gmail) out.push("Google連携なし");
-  else if (gmail.authState !== "active" || gmail.scopeMissingSince) out.push("Google連携の再接続が必要");
-  if (r.lineRecipients === 0) out.push("LINEの通知先なし");
-  return out;
-}
-
 function auditTarget(target: string): string {
   if (target === "plan") return "契約プラン";
   const [kind, key, extra] = target.split(":");
   const label = key && isFeatureKey(key) ? getFeatureDefinition(key).label : key;
   switch (kind) {
     case "feature":
-      return `${label}の個別設定`;
+      return `${label}の設定`;
     case "hold":
       return `${label}の権限による停止`;
     case "catalog":
@@ -142,8 +128,13 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
   });
   const r = detail.reservation;
   const reservationStarted = r.state !== null && r.state !== "setup_pending";
-  const gmail = detail.google.find((g) => g.feature === "gmail");
-  const gbp = detail.google.find((g) => g.feature === "gbp");
+  const gmail = detail.google.find((g) => g.feature === "gmail") ?? null;
+  const reservation = summarizeReservation({
+    entitled: Boolean(detail.entitlements.reservation_notifications?.allowed),
+    holdOpen: detail.holds.some((h) => h.featureKey === "reservation_notifications"),
+    reservation: r,
+    gmail,
+  });
 
   return (
     <div className="flex flex-col gap-8">
@@ -197,60 +188,43 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
         />
       </Section>
 
-      <Section id="integrations" title="連携と稼働状況" description="閲覧のみです(権限による停止の解除を除く)。お客様の設定・運用の状態は変更しません。">
+      <Section id="integrations" title="連携と稼働状況" description="閲覧のみです(権限による停止の解除を除く)。">
         {released && !detail.holds.some((h) => h.featureKey === released.key) && (
           <Alert variant="success">
             {released.label}の権限による停止を解除しました。
-            {released.key === "reservation_notifications" && reservationBlockers(detail).length > 0
-              ? `次の停止は残っています: ${reservationBlockers(detail).join("・")}`
-              : "ほかの停止はありません。"}
+            {released.key === "reservation_notifications" && remainingAfterRelease(reservation).length > 0
+              ? `次の理由で、まだ通知していません: ${remainingAfterRelease(reservation).join(" ")}`
+              : "ほかに止まっている理由はありません。"}
           </Alert>
         )}
-        <Card>
-          <h3 className="text-base font-semibold text-ink">Google連携</h3>
-          <dl className="mt-2 divide-y divide-border">
+        <Card className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-base font-semibold text-ink">予約通知</h3>
+            <Badge variant={reservation.sending ? "success" : "neutral"} dot={reservation.sending}>
+              {reservation.sending ? "通知しています" : "通知していません"}
+            </Badge>
+          </div>
+          {reservation.reasons.length > 0 && (
+            <div>
+              <p className="text-sm text-ink-muted">止まっている理由</p>
+              <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-ink">
+                {reservation.reasons.map((reason) => (
+                  <li key={reason.key}>{reason.text}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <dl className="divide-y divide-border">
             <Row label="予約受信用のGmail">
-              {gmail ? (
-                <>
-                  {gmail.accountEmail ?? "—"}
-                  <span className="ml-2 text-ink-muted">
-                    状態: {AUTH_STATE_LABELS[gmail.authState] ?? gmail.authState}
-                    {gmail.scopeMissingSince ? `・Gmailの権限不足(${formatJst(gmail.scopeMissingSince)}から)` : ""}
-                  </span>
-                  <span className="block text-xs text-ink-muted">接続 {formatJst(gmail.firstConnectedAt)}・再接続 {formatJst(gmail.lastReconnectedAt)}</span>
-                </>
-              ) : (
-                "未連携"
-              )}
+              {gmail ? `${gmail.accountEmail ?? "—"}(${gmail.authState === "active" && !gmail.scopeMissingSince ? "連携済み" : "再接続が必要"})` : "未連携"}
             </Row>
-            <Row label="Googleビジネスプロフィール">
-              {gbp ? `${gbp.accountEmail ?? "—"}(${AUTH_STATE_LABELS[gbp.authState] ?? gbp.authState})` : "未連携"}
-            </Row>
-          </dl>
-          <p className="mt-2 text-xs text-ink-muted">予約受信用のGmailは、ログイン用の登録メールアドレスとは別のものです。</p>
-        </Card>
-
-        <Card>
-          <h3 className="text-base font-semibold text-ink">LINE・予約通知</h3>
-          <dl className="mt-2 divide-y divide-border">
             <Row label="LINEの通知先">{r.lineRecipients}人</Row>
-            <Row label="運用状態">
-              {r.state ? OPS_STATE_LABELS[r.state] : "未開始(記録なし)"}
-              {r.legacy && <span className="ml-2 text-ink-muted">(旧サービスから切り替える店舗)</span>}
-              {r.state === "paused" && r.pauseReason && <span className="block text-xs text-ink-muted">停止の理由: {r.pauseReason}({formatJst(r.pausedAt)})</span>}
-            </Row>
-            {r.legacy && (
-              <Row label="旧側の受信用Gmail・停止確認">
-                {r.legacyMailbox ?? "—"}・{r.legacyStopConfirmedAt ? `停止確認 ${formatJst(r.legacyStopConfirmedAt)}` : "停止確認前"}
-              </Row>
+            {r.state === "active" && (
+              <>
+                <Row label="通知の開始">{formatJst(r.activatedAt)}</Row>
+                <Row label="最後に予約メールを確認">{formatJst(r.lastMailCheckAt)}</Row>
+              </>
             )}
-            <Row label="受信ON/OFF(お客様の設定)">{r.masterEnabled ? "ON" : "OFF"}</Row>
-            <Row label="利用停止(お客様の操作)">{r.customerSwitchOn === false ? "停止中" : r.customerSwitchOn === true ? "利用中" : "記録なし"}</Row>
-            <Row label="開始日時">{formatJst(r.activatedAt)}</Row>
-            <Row label="最後に予約メールを確認">{formatJst(r.lastMailCheckAt)}</Row>
-            <Row label="開いている停止期間">
-              {r.openStops.length === 0 ? "なし" : r.openStops.map((s) => `${STOP_KIND_LABELS[s.kind] ?? s.kind}(${formatJst(s.startedAt)}から)`).join("・")}
-            </Row>
           </dl>
         </Card>
 
@@ -272,7 +246,7 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
                 featureLabel={def.label}
                 holdId={h.id}
                 entitled={Boolean(e?.allowed)}
-                remaining={h.featureKey === "reservation_notifications" ? reservationBlockers(detail) : []}
+                remaining={h.featureKey === "reservation_notifications" ? remainingAfterRelease(reservation) : []}
               />
             </Card>
           );

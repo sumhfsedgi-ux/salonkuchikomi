@@ -81,16 +81,11 @@ export interface GoogleBindingSummary {
 
 export interface ReservationOpsSummary {
   state: "setup_pending" | "awaiting_cutover" | "active" | "paused" | null;
-  legacy: boolean;
   pauseReason: string | null;
-  pausedAt: string | null;
   activatedAt: string | null;
-  legacyStopConfirmedAt: string | null;
-  legacyMailbox: string | null;
   masterEnabled: boolean;
   /** お客様の「利用を停止する」(内部スイッチ)。行が無ければ null。 */
   customerSwitchOn: boolean | null;
-  openStops: Array<{ kind: string; startedAt: string }>;
   lastMailCheckAt: string | null;
   lineRecipients: number;
 }
@@ -118,7 +113,7 @@ export interface SalonDetail {
 
 export async function getSalonDetail(salonId: string): Promise<SalonDetail | null> {
   const db = getSupabaseAdmin();
-  const [salon, access, catalog, rules, holds, bindings, ops, master, sw, stops, scan, lines, mapping] = await Promise.all([
+  const [salon, access, catalog, rules, holds, bindings, ops, master, sw, scan, lines] = await Promise.all([
     db.rpc("admin_get_salon", { p_salon_id: salonId }),
     db.rpc("salon_feature_access_all", { p_salon_id: salonId }),
     db.from("feature_catalog").select("feature_key, lifecycle, has_runtime"),
@@ -130,17 +125,15 @@ export async function getSalonDetail(salonId: string): Promise<SalonDetail | nul
       .eq("salon_id", salonId),
     db
       .from("reservation_notification_operations")
-      .select("state, legacy_source, pause_reason, paused_at, activated_at, legacy_stop_confirmed_at")
+      .select("state, pause_reason, activated_at")
       .eq("salon_id", salonId)
       .maybeSingle(),
     db.from("notification_settings").select("master_enabled").eq("salon_id", salonId).maybeSingle(),
     db.from("salon_feature_selections").select("selected").eq("salon_id", salonId).eq("feature_key", "reservation_notifications").maybeSingle(),
-    db.from("reservation_stop_intervals").select("kind, started_at").eq("salon_id", salonId).is("ended_at", null).order("started_at"),
     db.from("gmail_scan_state").select("last_tick_at").eq("salon_id", salonId).maybeSingle(),
     db.from("line_connections").select("status, destination_id, removed_at").eq("salon_id", salonId),
-    db.from("legacy_salon_mappings").select("legacy_mailbox").eq("salon_id", salonId).maybeSingle(),
   ]);
-  for (const r of [salon, access, catalog, rules, holds, bindings, ops, master, sw, stops, scan, lines, mapping]) {
+  for (const r of [salon, access, catalog, rules, holds, bindings, ops, master, sw, scan, lines]) {
     if (r.error) throw new Error("サロンの詳細の取得に失敗しました。");
   }
   const base = ((salon.data ?? []) as Array<Record<string, unknown>>)[0];
@@ -196,15 +189,10 @@ export async function getSalonDetail(salonId: string): Promise<SalonDetail | nul
     }),
     reservation: {
       state: (opsRow?.state as ReservationOpsSummary["state"]) ?? null,
-      legacy: Boolean(opsRow?.legacy_source),
       pauseReason: opsRow?.pause_reason ?? null,
-      pausedAt: opsRow?.paused_at ?? null,
       activatedAt: opsRow?.activated_at ?? null,
-      legacyStopConfirmedAt: opsRow?.legacy_stop_confirmed_at ?? null,
-      legacyMailbox: (mapping.data as { legacy_mailbox: string } | null)?.legacy_mailbox ?? null,
       masterEnabled: (master.data as { master_enabled: boolean } | null)?.master_enabled ?? true,
       customerSwitchOn: (sw.data as { selected: boolean } | null)?.selected ?? null,
-      openStops: ((stops.data ?? []) as Array<{ kind: string; started_at: string }>).map((s) => ({ kind: s.kind, startedAt: s.started_at })),
       lastMailCheckAt: (scan.data as { last_tick_at: string | null } | null)?.last_tick_at ?? null,
       lineRecipients: lineRows.filter((r) => r.status === "connected" && r.destination_id && !r.removed_at).length,
     },
