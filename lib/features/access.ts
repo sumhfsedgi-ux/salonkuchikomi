@@ -32,12 +32,11 @@ export interface FeatureAccessInput {
 
 /**
  * - allowed: 利用できる
- * - not_allowed: 契約プランの対象外・プランの標準で使えない
+ * - not_allowed: 契約に含まれていない(対象プランの外・プランの標準で使えない・運営が個別に利用不可にした)
  * - coming_soon: 提供開始前
  * - ended: 提供終了
- * - suspended: 運営が、この店舗の利用を停止している(個別に利用不可)
  */
-export type FeatureAccessStatus = "allowed" | "not_allowed" | "coming_soon" | "ended" | "suspended";
+export type FeatureAccessStatus = "allowed" | "not_allowed" | "coming_soon" | "ended";
 
 export interface FeatureAccess {
   key: FeatureKey;
@@ -48,7 +47,6 @@ export interface FeatureAccess {
 }
 
 export const NOT_ALLOWED_REASON = "ご契約のプランに含まれていません。";
-export const SUSPENDED_REASON = "現在、この機能はご利用いただけません。詳しくは運営にお問い合わせください。";
 const COMING_SOON_REASON = "提供開始前のため、準備中です。";
 const ENDED_REASON = "この機能の提供は終了しました。";
 const GOOGLE_REVIEWS_COMING_SOON_REASON = "Googleの承認を確認中のため、準備中です。";
@@ -80,9 +78,8 @@ function resolveCatalogAccess(def: FeatureDefinition, input: FeatureAccessInput)
       return result(def, "coming_soon", COMING_SOON_REASON);
     case "lifecycle_ended":
       return result(def, "ended", ENDED_REASON);
-    case "override_deny":
-      return result(def, "suspended", SUSPENDED_REASON);
     default:
+      // 運営が個別に利用不可にした機能も、サロンには契約外と同じに見せる(SalonPack でも使えない機能はある)。
       return result(def, "not_allowed", NOT_ALLOWED_REASON);
   }
 }
@@ -110,7 +107,7 @@ export function listUsableFeatureKeys(input: FeatureAccessInput): FeatureKey[] {
 
 /**
  * 画面で紹介してよい機能(registry の listed が false の機能は、どこにも出さない)。
- *   - "home": ホームのカード。SalonPack は全機能(契約外・準備中・停止中も)、口コミプランは機能一覧のホームを使わない
+ *   - "home": ホームのカード。SalonPack は全機能(契約外・準備中・提供終了も)、口コミプランは機能一覧のホームを使わない
  *   - "guide": サロン設定・Google連携などの案内。利用できる機能と、SalonPack の準備中の機能だけ出す
  */
 export function isFeatureIntroduced(

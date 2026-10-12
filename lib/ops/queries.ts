@@ -2,7 +2,7 @@ import "server-only";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import type { SalonPlan } from "@/lib/access/plan";
 import { isFeatureKey, type FeatureKey } from "@/lib/features/registry";
-import { toSalonEntitlements, type EntitlementRow, type FeatureLifecycle, type OverrideMode, type SalonEntitlements } from "@/lib/features/entitlements";
+import { toSalonEntitlements, type EntitlementRow, type FeatureLifecycle, type SalonEntitlements } from "@/lib/features/entitlements";
 import type { CatalogEntry, PlanRules } from "@/lib/ops/preview";
 
 // 運営管理の画面が読むデータ。service role で読む(呼び出し側は必ず requireOperator() のあとで呼ぶ)。
@@ -16,7 +16,6 @@ export interface SalonListRow {
   createdAt: string;
   ownerEmail: string | null;
   entitled: Partial<Record<FeatureKey, boolean>>;
-  overrides: Partial<Record<FeatureKey, Exclude<OverrideMode, "inherit">>>;
   openHolds: FeatureKey[];
 }
 
@@ -53,7 +52,6 @@ export async function listSalons(params: {
     createdAt: r.created_at as string,
     ownerEmail: (r.owner_email as string | null) ?? null,
     entitled: (r.entitled ?? {}) as SalonListRow["entitled"],
-    overrides: (r.overrides ?? {}) as SalonListRow["overrides"],
     openHolds: ((r.open_holds as string[] | null) ?? []).filter(isFeatureKey),
   }));
   const rows = all.slice(0, SALON_PAGE_SIZE);

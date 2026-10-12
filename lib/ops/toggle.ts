@@ -22,8 +22,3 @@ export function overrideForSwitch(on: boolean, defaultOn: boolean, saved: Overri
   if (on === defaultOn) return "inherit";
   return on ? "allow" : "deny";
 }
-
-/** プランの標準と違う側になっている(「標準と異なる設定です」と表示する)。 */
-export function differsFromDefault(override: OverrideMode, defaultOn: boolean): boolean {
-  return isSwitchOn(override, defaultOn) !== defaultOn;
-}

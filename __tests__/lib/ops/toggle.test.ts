@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { differsFromDefault, isSwitchOn, overrideForSwitch } from "@/lib/ops/toggle";
+import { isSwitchOn, overrideForSwitch } from "@/lib/ops/toggle";
 import type { OverrideMode } from "@/lib/features/entitlements";
 
 // 管理画面のスイッチ(利用中/停止)と、保存する個別設定の対応。
@@ -22,12 +22,6 @@ describe("プランの標準で使える機能(今の3機能)", () => {
     expect(off).toBe("deny");
     expect(overrideForSwitch(true, true, "allow")).toBe("allow");
   });
-
-  it("標準と違う側だけを「標準と異なる設定」とする", () => {
-    expect(differsFromDefault("inherit", true)).toBe(false);
-    expect(differsFromDefault("allow", true)).toBe(false);
-    expect(differsFromDefault("deny", true)).toBe(true);
-  });
 });
 
 describe("プランの標準では使えない機能(将来)", () => {
@@ -35,6 +29,5 @@ describe("プランの標準では使えない機能(将来)", () => {
     expect(overrideForSwitch(true, false, "inherit")).toBe("allow");
     expect(overrideForSwitch(false, false, "allow")).toBe("inherit");
     expect(isSwitchOn("inherit", false)).toBe(false);
-    expect(differsFromDefault("allow", false)).toBe(true);
   });
 });

@@ -141,15 +141,23 @@ describe("ページの入口(requireFeatureAccess)", () => {
   });
 });
 
-describe("運営による利用停止(個別に利用不可)", () => {
-  it("口コミを停止すると、画面は停止中の案内(404 にしない)、操作の入口は拒否", async () => {
+describe("運営が個別に利用不可にした機能(サロンには契約外と同じに見せる)", () => {
+  it("口コミプランで口コミを使えないと、口コミの画面は「利用できる機能が無い」案内(404 にしない)、操作の入口は拒否", async () => {
     currentSalon = salon("reviews");
     entitlementOverrides = { reviews: "deny" };
     const { requireFeaturePage, requireFeatureAccess, resolveFeatureSalon } = await import("@/lib/access/featureAccess");
     const supabase = (await (await import("@/lib/supabase/server")).createClient()) as never;
-    await expect(requireFeaturePage(supabase, "reviews")).resolves.toMatchObject({ status: "suspended", salon: { id: "salon-1" } });
+    await expect(requireFeaturePage(supabase, "reviews")).resolves.toMatchObject({ status: "no_features", salon: { id: "salon-1" } });
     await expect(requireFeatureAccess(supabase, "reviews")).rejects.toThrow("NOT_FOUND");
     expect(await resolveFeatureSalon(supabase, "reviews")).toEqual({ ok: false, error: "この機能は利用できません。" });
+  });
+
+  it("SalonPack で口コミを使えないときは、ほかの契約外の機能と同じく404(ホームから他の機能を使える)", async () => {
+    currentSalon = salon("salonpack");
+    entitlementOverrides = { reviews: "deny" };
+    const { requireFeaturePage } = await import("@/lib/access/featureAccess");
+    const supabase = (await (await import("@/lib/supabase/server")).createClient()) as never;
+    await expect(requireFeaturePage(supabase, "reviews")).rejects.toThrow("NOT_FOUND");
   });
 
   it("予約通知を停止すると、Google連携の開始・停止の操作も受け付けない", async () => {
