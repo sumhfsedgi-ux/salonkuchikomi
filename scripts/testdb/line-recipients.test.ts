@@ -481,11 +481,14 @@ describe("解除・再登録: 解除前の配信を、再登録のあとに送�
       return { created, messageId: data!.provider_message_id as string };
     };
     expect((await classifyWith(new Date())).created).toBe(0);
-    const beforeReRegistration = new Date();
-    await new Promise((r) => setTimeout(r, 50));
-    await reRegister(salon);
-    expect((await classifyWith(beforeReRegistration)).created).toBe(0); // 登録より前に届いたメール
-    const after = await classifyWith(new Date(Date.now() + 1000));
+    // 再登録の前後は、PC の時計ではなく DB が記録した登録日時(line_connections.recipient_since)を基準にする
+    // (PC と DB の時計のずれで結果が変わらないように)。
+    expect(await reRegister(salon)).toMatchObject({ kind: "outcome", outcome: "registered" });
+    const [row] = await connectionsOf(salon.salonId);
+    expect(row.recipient_since).toBeTruthy();
+    const recipientSince = new Date(row.recipient_since as string).getTime();
+    expect((await classifyWith(new Date(recipientSince - 1000))).created).toBe(0); // 登録より前に届いたメール
+    const after = await classifyWith(new Date(recipientSince + 1000));
     expect(after.created).toBe(1);
     const { data: d } = await admin.from("notification_deliveries").select("recipient_generation").eq("provider_message_id", after.messageId).single();
     expect(d!.recipient_generation).toBe(2);
