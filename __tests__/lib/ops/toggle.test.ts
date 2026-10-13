@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSwitchOn, overrideForSwitch, switchLabel } from "@/lib/ops/toggle";
+import { isSwitchOn, overrideForSwitch } from "@/lib/ops/toggle";
 import type { OverrideMode } from "@/lib/features/entitlements";
 
 // 管理画面のスイッチ(利用中/停止)と、保存する個別設定の対応。
@@ -29,19 +29,5 @@ describe("プランの標準では使えない機能(将来)", () => {
     expect(overrideForSwitch(true, false, "inherit")).toBe("allow");
     expect(overrideForSwitch(false, false, "allow")).toBe("inherit");
     expect(isSwitchOn("inherit", false)).toBe(false);
-  });
-});
-
-describe("変更履歴の表示(スイッチと同じ言葉)", () => {
-  it("標準で使える機能: 標準どおり・個別に許可は「利用中」、個別に利用不可は「停止」", () => {
-    expect(switchLabel("inherit", true)).toBe("利用中");
-    expect(switchLabel("allow", true)).toBe("利用中");
-    expect(switchLabel("deny", true)).toBe("停止");
-  });
-
-  it("標準では使えない機能(将来): 個別に許可だけ「利用中」", () => {
-    expect(switchLabel("inherit", false)).toBe("停止");
-    expect(switchLabel("allow", false)).toBe("利用中");
-    expect(switchLabel("deny", false)).toBe("停止");
   });
 });

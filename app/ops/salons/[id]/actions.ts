@@ -109,7 +109,7 @@ export async function releaseHoldAction(input: z.input<typeof releaseSchema>): P
   revalidatePath("/ops/salons");
   switch (data as string) {
     case "released":
-      return { ok: true, message: "権限による停止を解除しました。ほかの停止(受信OFF・お客様の利用停止・運営による停止など)は、そのまま残っています。" };
+      return { ok: true, message: "権限による停止を解除しました。ほかの停止(受信OFF・サロンによる利用停止・運営による停止など)は、そのまま残っています。" };
     case "not_entitled":
       return { ok: false, error: "この機能は今、利用許可がないため解除できません。先に利用許可を保存してください。" };
     case "no_hold":

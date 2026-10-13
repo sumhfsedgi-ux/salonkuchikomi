@@ -79,6 +79,8 @@ export interface GoogleBindingSummary {
 
 export interface ReservationOpsSummary {
   state: "setup_pending" | "awaiting_cutover" | "active" | "paused" | null;
+  /** 旧サービスから移る店舗か(開始・切り替えは運営が行う)。 */
+  legacy: boolean;
   pauseReason: string | null;
   activatedAt: string | null;
   masterEnabled: boolean;
@@ -123,7 +125,7 @@ export async function getSalonDetail(salonId: string): Promise<SalonDetail | nul
       .eq("salon_id", salonId),
     db
       .from("reservation_notification_operations")
-      .select("state, pause_reason, activated_at")
+      .select("state, pause_reason, activated_at, legacy_source")
       .eq("salon_id", salonId)
       .maybeSingle(),
     db.from("notification_settings").select("master_enabled").eq("salon_id", salonId).maybeSingle(),
@@ -187,6 +189,7 @@ export async function getSalonDetail(salonId: string): Promise<SalonDetail | nul
     }),
     reservation: {
       state: (opsRow?.state as ReservationOpsSummary["state"]) ?? null,
+      legacy: Boolean(opsRow?.legacy_source),
       pauseReason: opsRow?.pause_reason ?? null,
       activatedAt: opsRow?.activated_at ?? null,
       masterEnabled: (master.data as { master_enabled: boolean } | null)?.master_enabled ?? true,
