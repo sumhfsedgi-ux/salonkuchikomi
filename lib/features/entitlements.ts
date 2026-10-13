@@ -81,8 +81,8 @@ export const ENTITLEMENT_REASON_LABELS: Record<EntitlementReason, string> = {
   lifecycle_ended: "提供を終了したため使えません",
   override_deny: "停止にしています",
   override_allow: "利用中にしています",
-  plan_default: "プランの標準で利用中",
-  plan_default_off: "プランの標準では使えません",
+  plan_default: "利用中",
+  plan_default_off: "このプランでは、利用中にするまで使えません",
 };
 
 export const LIFECYCLE_LABELS: Record<FeatureLifecycle, string> = {
@@ -91,9 +91,11 @@ export const LIFECYCLE_LABELS: Record<FeatureLifecycle, string> = {
   ended: "提供終了",
 };
 
-/** 保存する個別設定の表示名(管理画面ではスイッチの「利用中/停止」として扱う。lib/ops/toggle.ts)。 */
-export const OVERRIDE_LABELS: Record<OverrideMode, string> = {
-  inherit: "標準どおり",
+/**
+ * 保存した個別設定(許可・利用不可)の表示名。管理画面ではスイッチの「利用中/停止」と同じ言葉にする。
+ * 「プランに従う」(inherit)は、プランによって利用中にも停止にもなるため、ここでは名前を付けない(lib/ops/toggle.ts の switchLabel)。
+ */
+export const OVERRIDE_LABELS: Record<Exclude<OverrideMode, "inherit">, string> = {
   allow: "利用中",
   deny: "停止",
 };

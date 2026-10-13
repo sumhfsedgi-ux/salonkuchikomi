@@ -83,7 +83,7 @@ export function describeChanges(params: { planBefore: SalonPlan; planAfter: Salo
     ];
     for (const f of params.features) {
       if (f.afterOverride !== "inherit" && f.after.reason === "not_in_plan") {
-        details.push(`${f.label}の個別の設定(${OVERRIDE_LABELS[f.afterOverride]})は残りますが、${PLAN_LABELS[params.planAfter]}では使えない機能のため効きません。`);
+        details.push(`${f.label}は${PLAN_LABELS[params.planAfter]}では使えません。${PLAN_LABELS[params.planBefore]}に戻した場合は「${OVERRIDE_LABELS[f.afterOverride]}」のままです。`);
       }
     }
     out.push({ title: `契約プラン: ${PLAN_LABELS[params.planBefore]} → ${PLAN_LABELS[params.planAfter]}`, details, revokes: false });
@@ -92,11 +92,7 @@ export function describeChanges(params: { planBefore: SalonPlan; planAfter: Salo
     const settingChanged = f.beforeOverride !== f.afterOverride;
     const accessChanged = f.before.allowed !== f.after.allowed;
     if (!settingChanged && !accessChanged) continue;
-    const title = accessChanged
-      ? `${f.label}: ${stateText(f.before)} → ${stateText(f.after)}`
-      : f.afterOverride === "inherit"
-        ? `${f.label}: 残っていた個別の設定を標準に戻す`
-        : `${f.label}: 個別の設定を変更`;
+    const title = accessChanged ? `${f.label}: ${stateText(f.before)} → ${stateText(f.after)}` : `${f.label}: 設定を変更`;
     const details: string[] = [];
     // 停止(個別)以外の理由で使えなくなるときは、理由を添える(例: プランを変えたため)。
     if (accessChanged && !f.after.allowed && f.after.reason !== "override_deny") details.push(`理由: ${ENTITLEMENT_REASON_LABELS[f.after.reason]}。`);

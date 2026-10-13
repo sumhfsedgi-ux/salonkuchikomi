@@ -177,7 +177,7 @@ export default function EntitlementEditor({ salonId, version, plan, features, ca
             ))}
           </div>
           <p className="mt-2 text-xs text-ink-muted">
-            口コミプランで使えるのは口コミだけです。ブログ・予約通知を使う場合は SalonPack に変更してください(口コミプランのまま個別に許可することはできません)。
+            口コミプランで使えるのは口コミだけです。ブログ・予約通知を使う場合は SalonPack に変更してください。
           </p>
         </fieldset>
       </Card>
@@ -250,24 +250,16 @@ export default function EntitlementEditor({ salonId, version, plan, features, ca
                           {PLAN_LABELS[draftPlan]}では使えません{otherPlans.length > 0 ? `(${otherPlans.map((p) => PLAN_LABELS[p]).join("・")}で利用できます)` : ""}。
                         </li>
                       )}
+                      {/* プランを変えても利用中/停止の設定は残り、そのプランに戻すと元の状態に戻る。 */}
+                      {!inPlan && draftOverride !== "inherit" && otherPlans.length > 0 && (
+                        <li>
+                          {otherPlans.map((p) => PLAN_LABELS[p]).join("・")}に戻した場合は「{OVERRIDE_LABELS[draftOverride]}」のままです。
+                        </li>
+                      )}
                       {inPlan && !available && <li>{f.lifecycle === "ended" ? "提供を終了したため、使えません。" : "準備中のため、使えません。"}</li>}
                       {f.holdOpen && <li>再開するには、下の「連携と稼働状況」で停止を解除してください(スイッチを利用中にしただけでは再開しません)。</li>}
                       {f.prerequisites.length > 0 && <li>利用には、{f.prerequisites.join("・")}が必要です。</li>}
                     </ul>
-                  )}
-
-                  {!inPlan && draftOverride !== "inherit" && (
-                    <div className="flex flex-wrap items-center gap-2 pl-[3.25rem] text-xs text-ink-muted">
-                      <span>以前の個別の設定({OVERRIDE_LABELS[draftOverride]})が残っています。このプランでは効きません。</span>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => setDraftOverrides((d) => ({ ...d, [f.key]: "inherit" }))}
-                        className="text-sage-dark underline underline-offset-2"
-                      >
-                        標準に戻す
-                      </button>
-                    </div>
                   )}
 
                   {changed && (

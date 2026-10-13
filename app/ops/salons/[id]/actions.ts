@@ -74,7 +74,7 @@ export async function saveEntitlementsAction(input: SaveEntitlementsInput): Prom
       return { ok: false, error: "サロンが見つかりません。" };
     case "invalid":
       if (r.detail?.startsWith("not_in_plan:")) {
-        return { ok: false, error: `${labelOf(r.detail.slice("not_in_plan:".length))}は、この契約プランの対象外のため、個別に設定できません。` };
+        return { ok: false, error: `${labelOf(r.detail.slice("not_in_plan:".length))}は、この契約プランでは使えないため、変更できません。` };
       }
       return { ok: false, error: "保存できない内容が含まれています。画面を再読み込みしてください。" };
     default:

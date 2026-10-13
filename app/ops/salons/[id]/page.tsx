@@ -67,7 +67,7 @@ function auditTarget(target: string): string {
     case "catalog":
       return `${label}の提供状態(全体)`;
     case "plan_rule":
-      return `${extra && isFeatureKey(extra) ? getFeatureDefinition(extra).label : extra}のプラン標準(${key})`;
+      return `${extra && isFeatureKey(extra) ? getFeatureDefinition(extra).label : extra}の初期設定(${key === "reviews" || key === "salonpack" ? PLAN_LABELS[key] : key})`;
     default:
       return target;
   }
@@ -94,7 +94,7 @@ function auditValue(target: string, value: unknown, defaultOn: (key: string) => 
   if (typeof value === "object") {
     const v = value as Record<string, unknown>;
     if (typeof v.lifecycle === "string" && v.lifecycle in LIFECYCLE_LABELS) return LIFECYCLE_LABELS[v.lifecycle as keyof typeof LIFECYCLE_LABELS];
-    if (typeof v.default_enabled === "boolean") return v.default_enabled ? "標準で利用可" : "標準で利用不可";
+    if (typeof v.default_enabled === "boolean") return v.default_enabled ? "利用中" : "停止";
     if (typeof v.opened_at === "string") return `停止(${formatJst(v.opened_at)}から)`;
   }
   return JSON.stringify(value);
