@@ -74,7 +74,7 @@ export async function saveEntitlementsAction(input: SaveEntitlementsInput): Prom
       return { ok: false, error: "サロンが見つかりません。" };
     case "invalid":
       if (r.detail?.startsWith("not_in_plan:")) {
-        return { ok: false, error: `${labelOf(r.detail.slice("not_in_plan:".length))}は、この契約プランの対象外のため、個別に設定できません。` };
+        return { ok: false, error: `${labelOf(r.detail.slice("not_in_plan:".length))}は、この契約プランでは使えないため、変更できません。` };
       }
       return { ok: false, error: "保存できない内容が含まれています。画面を再読み込みしてください。" };
     default:
@@ -109,7 +109,7 @@ export async function releaseHoldAction(input: z.input<typeof releaseSchema>): P
   revalidatePath("/ops/salons");
   switch (data as string) {
     case "released":
-      return { ok: true, message: "権限による停止を解除しました。ほかの停止(受信OFF・お客様の利用停止・運営による停止など)は、そのまま残っています。" };
+      return { ok: true, message: "権限による停止を解除しました。ほかの停止(受信OFF・サロンによる利用停止・運営による停止など)は、そのまま残っています。" };
     case "not_entitled":
       return { ok: false, error: "この機能は今、利用許可がないため解除できません。先に利用許可を保存してください。" };
     case "no_hold":

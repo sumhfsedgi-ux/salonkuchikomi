@@ -29,7 +29,7 @@ export default function HoldReleasePanel({ salonId, featureKey, featureLabel, ho
   const [pending, startTransition] = useTransition();
 
   if (!entitled) {
-    return <p className="text-sm text-ink-muted">利用許可がないため、解除できません。先に「契約と利用許可」で利用許可を保存してください。</p>;
+    return <p className="text-sm text-ink-muted">利用を許可していないため、解除できません。先に「契約プラン・使える機能」で利用を許可して保存してください。</p>;
   }
 
   return (

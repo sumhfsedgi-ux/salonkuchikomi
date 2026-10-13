@@ -1,12 +1,12 @@
 import type { OverrideMode } from "@/lib/features/entitlements";
 
-// 管理画面のスイッチ(利用中/停止)と、DB に保存する個別設定(プランに従う=inherit / 個別に許可=allow /
+// 管理画面のスイッチ(利用を許可/利用を許可しない)と、DB に保存する個別設定(プランに従う=inherit / 個別に許可=allow /
 // 個別に利用不可=deny)の対応(DBに触れない)。画面は2択にし、保存する値は今まで通り3つのどれかにする。
-//   - プランの標準で使える機能: 利用中 = inherit、停止 = deny
-//   - プランの標準では使えない機能(将来): 利用中 = allow、停止 = inherit
+//   - プランの初期設定で許可している機能: 許可 = inherit、許可しない = deny
+//   - プランの初期設定では許可していない機能(将来): 許可 = allow、許可しない = inherit
 // 対象プランの外・準備中・提供終了の制限は、スイッチでは解除しない(画面ではスイッチを押せなくする。DB も拒否する)。
 
-/** その設定が「利用中」の側か(対象プラン・提供状態の制限は別に見る)。 */
+/** その設定が「利用を許可」の側か(対象プラン・提供状態の制限は別に見る)。 */
 export function isSwitchOn(override: OverrideMode, defaultOn: boolean): boolean {
   if (override === "allow") return true;
   if (override === "deny") return false;

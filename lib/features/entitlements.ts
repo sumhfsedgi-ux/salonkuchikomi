@@ -73,27 +73,10 @@ export function toSalonEntitlements(rows: EntitlementRow[], isKnownKey: (key: st
   return out;
 }
 
-/** 管理画面に出す、理由の説明(運営向け)。 */
-export const ENTITLEMENT_REASON_LABELS: Record<EntitlementReason, string> = {
-  unknown_feature: "機能カタログに登録されていません",
-  not_in_plan: "この契約プランでは使えません",
-  lifecycle_coming_soon: "準備中のため使えません",
-  lifecycle_ended: "提供を終了したため使えません",
-  override_deny: "停止にしています",
-  override_allow: "利用中にしています",
-  plan_default: "プランの標準で利用中",
-  plan_default_off: "プランの標準では使えません",
-};
+// 運営管理の画面での言葉(利用を許可/利用を許可しない/プラン対象外 など)は lib/ops/featureDisplay.ts。
 
 export const LIFECYCLE_LABELS: Record<FeatureLifecycle, string> = {
   coming_soon: "準備中",
   available: "提供中",
   ended: "提供終了",
-};
-
-/** 保存する個別設定の表示名(管理画面ではスイッチの「利用中/停止」として扱う。lib/ops/toggle.ts)。 */
-export const OVERRIDE_LABELS: Record<OverrideMode, string> = {
-  inherit: "標準どおり",
-  allow: "利用中",
-  deny: "停止",
 };

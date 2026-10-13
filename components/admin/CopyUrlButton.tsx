@@ -10,10 +10,12 @@ interface Props {
   url: string;
   /** "button" (default, prominent) for the reviews page, "link" for a compact inline use (e.g. the home feature card). */
   variant?: "button" | "link";
+  /** ボタンの文字(既定は「コピー」)。 */
+  label?: string;
   className?: string;
 }
 
-export default function CopyUrlButton({ url, variant = "button", className }: Props) {
+export default function CopyUrlButton({ url, variant = "button", label = "コピー", className }: Props) {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastVariant, setToastVariant] = useState<"success" | "error">("success");
 
@@ -27,7 +29,7 @@ export default function CopyUrlButton({ url, variant = "button", className }: Pr
     <>
       {variant === "button" ? (
         <Button type="button" onClick={handleCopy} size="sm" className={cn("shrink-0", className)}>
-          コピー
+          {label}
         </Button>
       ) : (
         <button
@@ -38,7 +40,7 @@ export default function CopyUrlButton({ url, variant = "button", className }: Pr
             className,
           )}
         >
-          コピー
+          {label}
         </button>
       )}
       <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} variant={toastVariant} />

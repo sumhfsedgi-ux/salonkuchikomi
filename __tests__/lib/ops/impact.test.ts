@@ -22,7 +22,7 @@ describe("予約通知", () => {
   it("稼働中に利用不可にすると、新しい送信を始めないこと・送信開始済みは続くこと・自動で再開しないことを出す", () => {
     const [s] = describeChanges({ planBefore: "salonpack", planAfter: "salonpack", features: [feature({})] });
     expect(s.revokes).toBe(true);
-    expect(s.title).toBe("予約通知: 利用中 → 停止");
+    expect(s.title).toBe("予約通知: 利用を許可 → 利用を許可しない");
     const text = s.details.join("\n");
     expect(text).toContain("新しい予約メールの確認と通知の送信を始めません");
     expect(text).toContain("送信を開始済みの通知は完了まで続きます");
@@ -51,7 +51,7 @@ describe("予約通知", () => {
       planAfter: "salonpack",
       features: [feature({ beforeOverride: "inherit", afterOverride: "inherit", before: { allowed: false, reason: "not_in_plan" }, after: { allowed: true, reason: "plan_default" }, runtimeStarted: false })],
     }).slice(1);
-    expect(s.title).toBe("予約通知: 使えない → 利用中");
+    expect(s.title).toBe("予約通知: プラン対象外 → 利用を許可");
     expect(s.details.join("\n")).toContain("この保存だけでは連携や通知を始めません");
   });
 });
@@ -69,7 +69,7 @@ describe("口コミ・プランの変更", () => {
     expect(text).toContain("削除しません");
   });
 
-  it("プランを変えると、対象外になる個別設定は残るが効かないと出す", () => {
+  it("プランを変えると、対象外になる機能の個別設定は消えずに残り、戻したときに適用されると出す", () => {
     const summaries = describeChanges({
       planBefore: "salonpack",
       planAfter: "reviews",
@@ -78,9 +78,25 @@ describe("口コミ・プランの変更", () => {
       ],
     });
     expect(summaries[0].title).toBe("契約プラン: SalonPack → 口コミプラン");
-    expect(summaries[0].details.join("\n")).toContain("ブログの個別の設定(利用中)は残りますが、口コミプランでは使えない機能のため効きません。");
-    expect(summaries[1]).toMatchObject({ title: "ブログ: 利用中 → 使えない", revokes: true });
-    expect(summaries[1].details[0]).toBe("理由: この契約プランでは使えません。");
+    expect(summaries[0].details.join("\n")).toContain("ブログの個別設定「利用を許可」は削除されずに残り、SalonPackへ戻したときに適用されます。");
+    expect(summaries[0].details.join("\n")).not.toMatch(/標準/);
+    // 見出しが理由(プラン対象外)を兼ねる。同じ理由を本文で繰り返さない。
+    expect(summaries[1]).toMatchObject({ title: "ブログ: 利用を許可 → プラン対象外", revokes: true });
+    expect(summaries[1].details.join("\n")).not.toContain("理由:");
+  });
+
+  it("SalonPack に戻しても、保存されている「利用を許可しない」・提供状態で許可されない機能は、そう出す(必ず使えるとは書かない)", () => {
+    const [plan] = describeChanges({
+      planBefore: "reviews",
+      planAfter: "salonpack",
+      features: [
+        feature({ key: "blog", label: "ブログ", hasRuntime: false, beforeOverride: "deny", afterOverride: "deny", before: { allowed: false, reason: "not_in_plan" }, after: { allowed: false, reason: "override_deny" } }),
+        feature({ beforeOverride: "inherit", afterOverride: "inherit", before: { allowed: false, reason: "not_in_plan" }, after: { allowed: false, reason: "lifecycle_coming_soon" } }),
+      ],
+    });
+    const text = plan.details.join("\n");
+    expect(text).toContain("ブログは対象プランになりますが、保存されている個別設定「利用を許可しない」のため利用は許可されません。");
+    expect(text).toContain("予約通知は対象プランになりますが、準備中のため利用は許可されません。");
   });
 
   it("変更が無ければ何も出さない", () => {
@@ -88,13 +104,13 @@ describe("口コミ・プランの変更", () => {
   });
 });
 
-describe("残っていた個別の設定だけを戻す", () => {
-  it("使えるかどうかが変わらない変更は、そう書く", () => {
+describe("利用できるかどうかが変わらない設定の変更", () => {
+  it("「プランの設定に戻す」は、今は変わらないことを書く", () => {
     const [s] = describeChanges({
       planBefore: "reviews",
       planAfter: "reviews",
       features: [feature({ key: "blog", label: "ブログ", hasRuntime: false, beforeOverride: "deny", afterOverride: "inherit", before: { allowed: false, reason: "not_in_plan" }, after: { allowed: false, reason: "not_in_plan" } })],
     });
-    expect(s).toMatchObject({ title: "ブログ: 残っていた個別の設定を標準に戻す", revokes: false, details: ["使えるかどうかは変わりません。"] });
+    expect(s).toMatchObject({ title: "ブログ: 以前の個別設定を外し、プランの設定に戻す", revokes: false, details: ["利用できるかどうかは今は変わりません。"] });
   });
 });

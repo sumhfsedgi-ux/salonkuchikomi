@@ -11,18 +11,28 @@ import Input from "@/components/ui/Input";
 import { ReviewIcon, BlogIcon, BellIcon, InboxIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/cn";
 import type { SalonPlan } from "@/lib/access/plan";
-import { OVERRIDE_LABELS, type EntitlementReason, type FeatureLifecycle, type OverrideMode } from "@/lib/features/entitlements";
+import type { EntitlementReason, FeatureLifecycle, OverrideMode } from "@/lib/features/entitlements";
 import type { FeatureCategory, FeatureIcon } from "@/lib/features/registry";
 import { previewAccess, type CatalogEntry, type PlanRules } from "@/lib/ops/preview";
 import { describeChanges } from "@/lib/ops/impact";
 import { isSwitchOn, overrideForSwitch } from "@/lib/ops/toggle";
 import { PLAN_LABELS } from "@/lib/ops/labels";
+import {
+  ACCESS_STATE_LABELS,
+  accessState,
+  notInPlanHint,
+  planNote,
+  plansIncluding,
+  retainedOverrideText,
+  startNote,
+  unsavedChangeText,
+} from "@/lib/ops/featureDisplay";
 import { saveEntitlementsAction } from "@/app/ops/salons/[id]/actions";
 
-// 契約と利用許可の編集。機能ごとのスイッチ(利用中/停止)は押しただけでは保存せず(下書き)、「変更を保存」で
-// 変更内容と影響を確認してから保存する。保存の可否と保存後の値は DB が決め、保存後は DB から読み直した値を出す。
-// スイッチと保存する個別設定の対応は lib/ops/toggle.ts。状態は色だけでなく文字でも出す。
-// 普段は使わない情報(提供状態・プランの標準・理由)は出さず、例外(対象外・準備中・権限による停止)のときだけ出す。
+// 契約プランと、機能ごとの利用許可の編集。スイッチ(利用を許可/利用を許可しない)は押しただけでは保存せず(下書き)、
+// 「変更内容を確認」で変更内容と影響を確認してから保存する。保存の可否と保存後の値は DB が決め、保存後は DB から読み直した値を出す。
+// ここで扱うのは利用許可だけで、実際に動いているか(通知中など)は「連携と稼働状況」で出す。
+// スイッチと保存する個別設定の対応は lib/ops/toggle.ts、言葉は lib/ops/featureDisplay.ts。状態は色だけでなく文字でも出す。
 
 export interface EditorFeature {
   key: string;
@@ -68,7 +78,8 @@ export default function EntitlementEditor({ salonId, version, plan, features, ca
   const [pending, startTransition] = useTransition();
   // 保存できたあと、DB から読み直した内容(新しい版数)が届くまでは操作させない(古い表示のまま選ばせない)。
   const [refreshingFrom, setRefreshingFrom] = useState<number | null>(null);
-  const busy = pending || refreshingFrom !== null;
+  const refreshing = refreshingFrom !== null;
+  const busy = pending || refreshing;
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
@@ -92,6 +103,7 @@ export default function EntitlementEditor({ salonId, version, plan, features, ca
     return { f, draftOverride, after, inPlan: rules[draftPlan]?.[f.key] !== undefined, defaultOn: rules[draftPlan]?.[f.key] === true };
   });
   const changedOverrides = rows.filter((r) => r.draftOverride !== r.f.override);
+  const planDescription = planNote(features, rules);
   const dirty = draftPlan !== plan || changedOverrides.length > 0;
   const summaries = describeChanges({
     planBefore: plan,
@@ -176,9 +188,7 @@ export default function EntitlementEditor({ salonId, version, plan, features, ca
               </label>
             ))}
           </div>
-          <p className="mt-2 text-xs text-ink-muted">
-            口コミプランで使えるのは口コミだけです。ブログ・予約通知を使う場合は SalonPack に変更してください(口コミプランのまま個別に許可することはできません)。
-          </p>
+          <p className="mt-2 text-xs text-ink-muted">{planDescription}</p>
         </fieldset>
       </Card>
 
@@ -203,31 +213,37 @@ export default function EntitlementEditor({ salonId, version, plan, features, ca
               // 対象プランの外・準備中・提供終了の機能は、スイッチを押せない(個別の設定では解除できない)。
               const locked = !inPlan || !available;
               const on = !locked && isSwitchOn(draftOverride, defaultOn);
-              const changed = draftOverride !== f.override || after.allowed !== f.allowed;
-              const otherPlans = (["reviews", "salonpack"] as const).filter((p) => p !== draftPlan && rules[p]?.[f.key] !== undefined);
+              const saved = { allowed: f.allowed, reason: f.reason };
+              const unsaved = unsavedChangeText({ label: f.label, before: saved, after, beforeOverride: f.override, afterOverride: draftOverride, holdOpen: f.holdOpen });
+              const plansWithFeature = plansIncluding(rules, f.key);
+              const start = inPlan && available ? startNote(f.label, f.prerequisites, f.hasRuntime) : null;
+              const stateLabel = ACCESS_STATE_LABELS[accessState(after)];
               return (
-                <Card key={f.key} className="flex flex-col gap-3" data-feature={f.key}>
-                  <div className="flex items-start gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sage-soft text-sage-dark" aria-hidden="true">
-                      <Icon className="h-5 w-5" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="text-base font-semibold text-ink">{f.label}</h4>
-                        {f.holdOpen && <Badge variant="warning">権限による停止中</Badge>}
+                <Card key={f.key} className="flex flex-col gap-3" data-feature={f.key} data-state={accessState(after)}>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sage-soft text-sage-dark" aria-hidden="true">
+                        <Icon className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-base font-semibold text-ink">{f.label}</h4>
+                          {f.holdOpen && <Badge variant="warning">権限による停止中</Badge>}
+                        </div>
+                        <p className="mt-1 text-sm text-ink-muted">{f.description}</p>
                       </div>
-                      <p className="mt-1 text-sm text-ink-muted">{f.description}</p>
                     </div>
-                    {/* 押しただけでは保存しない(下書き)。「変更を保存」で確認のうえ保存する。 */}
-                    <div className="flex shrink-0 items-center gap-2">
-                      <span className={cn("text-sm font-medium", on ? "text-sage-dark" : "text-ink-muted")} aria-hidden="true">
-                        {locked ? "使えません" : on ? "利用中" : "停止"}
+                    {/* 押しただけでは保存しない(下書き)。「変更内容を確認」で確認のうえ保存する。 */}
+                    <div className="flex shrink-0 items-center gap-2 pl-[3.25rem] sm:pl-0 sm:pt-1">
+                      <span className={cn("whitespace-nowrap text-sm font-medium", on ? "text-sage-dark" : "text-ink-muted")} aria-hidden="true">
+                        {stateLabel}
                       </span>
                       <button
                         type="button"
                         role="switch"
                         aria-checked={on}
-                        aria-label={`${f.label}を利用中にする`}
+                        aria-label={`${f.label}の利用を許可する`}
+                        aria-describedby={locked ? `${f.key}-locked` : undefined}
                         disabled={locked || busy}
                         onClick={() =>
                           setDraftOverrides((d) => ({ ...d, [f.key]: overrideForSwitch(!on, defaultOn, savedOverrides[f.key] ?? "inherit") }))
@@ -243,37 +259,43 @@ export default function EntitlementEditor({ salonId, version, plan, features, ca
                     </div>
                   </div>
 
-                  {(locked || f.holdOpen || f.prerequisites.length > 0) && (
-                    <ul className="flex flex-col gap-1 pl-[3.25rem] text-xs text-ink-muted">
+                  {(locked || f.holdOpen || start) && (
+                    <ul className="flex flex-col gap-1.5 pl-[3.25rem] text-xs text-ink-muted">
                       {!inPlan && (
-                        <li>
-                          {PLAN_LABELS[draftPlan]}では使えません{otherPlans.length > 0 ? `(${otherPlans.map((p) => PLAN_LABELS[p]).join("・")}で利用できます)` : ""}。
+                        <li id={`${f.key}-locked`}>
+                          {PLAN_LABELS[draftPlan]}の対象外です。{notInPlanHint(plansWithFeature, available) ?? ""}
                         </li>
                       )}
-                      {inPlan && !available && <li>{f.lifecycle === "ended" ? "提供を終了したため、使えません。" : "準備中のため、使えません。"}</li>}
-                      {f.holdOpen && <li>再開するには、下の「連携と稼働状況」で停止を解除してください(スイッチを利用中にしただけでは再開しません)。</li>}
-                      {f.prerequisites.length > 0 && <li>利用には、{f.prerequisites.join("・")}が必要です。</li>}
+                      {/* 対象プランの外に残っている個別設定は消さない。戻すときも未保存の変更として確認・保存する。 */}
+                      {!inPlan && draftOverride !== "inherit" && (
+                        <li className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span>{retainedOverrideText(draftOverride, plansWithFeature)}</span>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => setDraftOverrides((d) => ({ ...d, [f.key]: "inherit" }))}
+                            className="min-h-8 whitespace-nowrap text-sage-dark underline underline-offset-2"
+                          >
+                            プランの設定に戻す
+                          </button>
+                        </li>
+                      )}
+                      {inPlan && !available && (
+                        <li id={`${f.key}-locked`}>{f.lifecycle === "ended" ? "提供を終了したため、利用を許可できません。" : "準備中のため、利用を許可できません。"}</li>
+                      )}
+                      {f.holdOpen && <li>再開には、利用の許可に加えて「連携と稼働状況」での停止の解除が必要です。</li>}
+                      {start && <li>{start}</li>}
                     </ul>
                   )}
 
-                  {!inPlan && draftOverride !== "inherit" && (
-                    <div className="flex flex-wrap items-center gap-2 pl-[3.25rem] text-xs text-ink-muted">
-                      <span>以前の個別の設定({OVERRIDE_LABELS[draftOverride]})が残っています。このプランでは効きません。</span>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => setDraftOverrides((d) => ({ ...d, [f.key]: "inherit" }))}
-                        className="text-sage-dark underline underline-offset-2"
-                      >
-                        標準に戻す
-                      </button>
+                  {/* 保存前の変更があるときだけ出す。保存に成功したら、読み直した設定が届くまで出さない(届けば下書きが消える)。
+                      「現在の設定」は保存済みの利用許可(実際の通知の稼働状態ではない)。 */}
+                  {unsaved && !refreshing && (
+                    <div className="rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning" role="status" data-pending-change={f.key}>
+                      <p className="font-semibold">この変更はまだ反映されていません。</p>
+                      <p className="mt-0.5">{unsaved}</p>
+                      <p className="mt-0.5 text-xs">現在の設定：{ACCESS_STATE_LABELS[accessState(saved)]}</p>
                     </div>
-                  )}
-
-                  {changed && (
-                    <p className="rounded-lg bg-warning-soft px-3 py-2 text-sm text-warning" role="status">
-                      未保存: 保存すると{after.allowed ? "利用中" : after.reason === "override_deny" ? "停止" : "使えない状態"}になります。
-                    </p>
                   )}
                 </Card>
               );
@@ -282,14 +304,15 @@ export default function EntitlementEditor({ salonId, version, plan, features, ca
         );
       })}
 
-      <div className="sticky bottom-0 -mx-4 flex flex-wrap items-center gap-3 border-t border-border bg-ivory/95 px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-xl sm:border">
+      {/* 内容や操作を隠さないよう、保存欄は画面に固定しない(機能の一覧のすぐ下に置く)。 */}
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-white px-4 py-3">
         <Button type="button" disabled={!dirty || busy} onClick={() => setConfirming(true)}>
-          変更を保存
+          変更内容を確認
         </Button>
         <Button type="button" variant="secondary" disabled={!dirty || busy} onClick={reset}>
           変更を取り消す
         </Button>
-        <span className="text-xs text-ink-muted">{dirty ? "保存していない変更があります。" : "変更はありません。"}</span>
+        {!refreshing && <span className="text-xs text-ink-muted">{dirty ? "この変更はまだ反映されていません。" : "変更はありません。"}</span>}
       </div>
 
       {confirming && (
@@ -341,7 +364,7 @@ export default function EntitlementEditor({ salonId, version, plan, features, ca
                 戻る
               </Button>
               <Button type="button" disabled={pending} onClick={save}>
-                {pending ? "保存しています…" : "保存する"}
+                {pending ? "保存しています…" : "この内容で保存"}
               </Button>
             </div>
           </div>
