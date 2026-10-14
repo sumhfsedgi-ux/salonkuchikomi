@@ -12,6 +12,11 @@ let currentUser: { id: string; email: string } | null = null;
 let operators = new Set<string>();
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({}) }));
 vi.mock("@/lib/supabase/queries", () => ({ getAuthedUser: async () => currentUser }));
+// 0025: 管理画面は、信頼できるセッション(本人確認のあと・サインアウトしていない)でだけ使える。
+const sessionTrusted = true;
+vi.mock("@/lib/onboarding/accountState", () => ({
+  getAccountState: async () => ({ emailConfirmed: true, verified: true, verificationMode: "set_new", sessionTrusted, emailLinkSession: false, isOperator: true }),
+}));
 
 const rpc = vi.fn<(name: string, params: Record<string, unknown>) => Promise<{ data: unknown; error: null }>>(async () => ({
   data: { result: "saved", version: 1, inflight_sends: 0 },

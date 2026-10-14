@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { resetPasswordAction } from "@/app/auth/actions";
 import Label from "@/components/ui/Label";
 import Input from "@/components/ui/Input";
 import Alert from "@/components/ui/Alert";
@@ -70,11 +71,12 @@ export default function ResetPasswordForm({ mode }: { mode: Mode }) {
 
     setSaving(true);
     const supabase = createClient();
-    const { error: updateError } = await supabase.auth.updateUser({ password });
+    // 保存はサーバーで行う(パスワードの設定と、本人確認がまだのアカウントの本人確認の記録を、1つの処理で行う)。
+    const result = await resetPasswordAction({ password });
 
-    if (updateError) {
+    if (!result.ok) {
       setSaving(false);
-      setError("パスワードの設定に失敗しました。もう一度お試しください。");
+      setError(result.error);
       return;
     }
 

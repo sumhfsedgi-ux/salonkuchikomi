@@ -5,6 +5,7 @@ import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthedUser } from "@/lib/supabase/queries";
+import { getAccountState } from "@/lib/onboarding/accountState";
 
 // 運営管理(/ops)の利用者の判定。メールアドレスの文字列ではなく、サーバーで認証したユーザーの ID
 // (supabase.auth.getUser())が operator_admins に登録されていて、取り消されていないかで判定する。
@@ -33,6 +34,9 @@ export async function getOperator(supabase?: SupabaseClient): Promise<Operator |
   const user: User | null = await getAuthedUser(client);
   if (!user) return null;
   if (!(await isOperatorUser(user.id))) return null;
+  // サインアウトしたセッション・本人確認より前のセッションの古いトークンでは、管理画面を使わせない(0025。DB で判定)。
+  const account = await getAccountState(client).catch(() => null);
+  if (!account?.sessionTrusted) return null;
   return { userId: user.id, email: user.email ?? null };
 }
 

@@ -18,14 +18,14 @@ describe("認証の転送(Proxy)", () => {
     getClaims.mockReset();
   });
 
-  it.each(["/privacy", "/login", "/forgot-password"])("未ログインでも %s はログイン画面へ転送しない", async (pathname) => {
+  it.each(["/privacy", "/login", "/forgot-password", "/signup", "/auth/confirm", "/onboardingx"])("未ログインでも %s はログイン画面へ転送しない", async (pathname) => {
     getClaims.mockResolvedValue({ data: null });
     const response = await updateSession(request(pathname));
     expect(response.headers.get("location")).toBeNull();
     expect(response.status).toBe(200);
   });
 
-  it.each(["/dashboard", "/dashboard/notifications", "/dashboard/settings/google"])(
+  it.each(["/dashboard", "/dashboard/notifications", "/dashboard/settings/google", "/onboarding/salon", "/onboarding/status", "/auth/verify"])(
     "未ログインの %s は今まで通りログイン画面へ転送する",
     async (pathname) => {
       getClaims.mockResolvedValue({ data: null });
