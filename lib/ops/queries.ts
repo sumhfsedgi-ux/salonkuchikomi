@@ -4,6 +4,7 @@ import type { SalonPlan } from "@/lib/access/plan";
 import { isFeatureKey, type FeatureKey } from "@/lib/features/registry";
 import { toSalonEntitlements, type EntitlementRow, type FeatureLifecycle, type SalonEntitlements } from "@/lib/features/entitlements";
 import type { CatalogEntry, PlanRules } from "@/lib/ops/preview";
+import { isRegistrationSource, isServiceStatus, type RegistrationSource, type ServiceStatus } from "@/lib/onboarding/serviceStatus";
 
 // 運営管理の画面が読むデータ。service role で読む(呼び出し側は必ず requireOperator() のあとで呼ぶ)。
 // 秘密の値(リフレッシュトークン・暗号文・LINE の宛先 ID・パスワード)は select しない。
@@ -17,6 +18,11 @@ export interface SalonListRow {
   ownerEmail: string | null;
   entitled: Partial<Record<FeatureKey, boolean>>;
   openHolds: FeatureKey[];
+  serviceStatus: ServiceStatus;
+  registrationSource: RegistrationSource;
+  /** 運営が登録した店舗の招待の状態(none = 運営の登録ではない)。complete = メール確認済み・本人確認の記録あり。 */
+  invitationState: "none" | "incomplete" | "complete";
+  invitationLastResult: "sending" | "accepted" | "failed" | "simulated" | null;
 }
 
 export interface SalonListCursor {
@@ -32,6 +38,7 @@ export async function listSalons(params: {
   featureKey: FeatureKey | null;
   featureAllowed: boolean | null;
   after: SalonListCursor | null;
+  serviceStatus?: ServiceStatus | null;
 }): Promise<{ rows: SalonListRow[]; next: SalonListCursor | null }> {
   const { data, error } = await getSupabaseAdmin().rpc("admin_list_salons", {
     p_query: params.query,
@@ -42,6 +49,7 @@ export async function listSalons(params: {
     p_after_id: params.after?.id ?? null,
     // 次のページがあるかを知るため、1件多く読む。
     p_limit: SALON_PAGE_SIZE + 1,
+    p_service_status: params.serviceStatus ?? null,
   });
   if (error) throw new Error("サロンの一覧の取得に失敗しました。");
   const all = ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
@@ -53,6 +61,10 @@ export async function listSalons(params: {
     ownerEmail: (r.owner_email as string | null) ?? null,
     entitled: (r.entitled ?? {}) as SalonListRow["entitled"],
     openHolds: ((r.open_holds as string[] | null) ?? []).filter(isFeatureKey),
+    serviceStatus: isServiceStatus(r.service_status) ? r.service_status : "pending",
+    registrationSource: isRegistrationSource(r.registration_source) ? r.registration_source : "self_signup",
+    invitationState: (r.invitation_state === "complete" || r.invitation_state === "incomplete" ? r.invitation_state : "none") as SalonListRow["invitationState"],
+    invitationLastResult: (r.invitation_last_result as SalonListRow["invitationLastResult"]) ?? null,
   }));
   const rows = all.slice(0, SALON_PAGE_SIZE);
   const last = rows[rows.length - 1];
@@ -203,7 +215,7 @@ export async function getSalonDetail(salonId: string): Promise<SalonDetail | nul
 export interface AuditEntry {
   id: string;
   occurredAt: string;
-  actorKind: "operator" | "cli" | "sql" | "system";
+  actorKind: "operator" | "cli" | "sql" | "system" | "owner";
   actorEmail: string | null;
   actorLabel: string | null;
   target: string;

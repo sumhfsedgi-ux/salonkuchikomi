@@ -6,6 +6,8 @@ import { z } from "zod";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { requireOperator } from "@/lib/ops/operator";
 import { FEATURE_REGISTRY, getFeatureDefinition, type FeatureKey } from "@/lib/features/registry";
+import { sendInvitationNotice } from "@/lib/onboarding/invitation";
+import { authEmailErrorLabel } from "@/lib/onboarding/authEmailErrors";
 
 // 運営管理の保存操作。どれも先頭で requireOperator()(管理者でなければ 404)。操作した管理者は、サーバーで
 // 認証したユーザーの ID だけを使う(フォームの値は使わない)。DB の関数も管理者かどうかを確かめ直す。
@@ -117,5 +119,86 @@ export async function releaseHoldAction(input: z.input<typeof releaseSchema>): P
       return { ok: false, error: CONFLICT_ERROR, conflict: true };
     default:
       return { ok: false, error: "解除できませんでした。" };
+  }
+}
+
+const serviceStatusSchema = z.object({
+  salonId: z.uuid(),
+  expectedVersion: z.number().int().min(0),
+  expectedStatus: z.enum(["pending", "complimentary", "test"]),
+  newStatus: z.enum(["pending", "complimentary", "test"]),
+  note: z.string().trim().max(500, "メモは500文字以内で入力してください。").optional(),
+});
+
+/**
+ * 利用区分の変更(利用開始=無償提供・テスト店舗への変更も、利用開始待ちへ戻すのもこれ)。区分だけを変え、
+ * 契約プラン・機能の利用許可・権限による停止・予約通知の稼働状態は変えない(自動で開始・再開しない)。
+ */
+export async function saveServiceStatusAction(input: z.input<typeof serviceStatusSchema>): Promise<OpsActionResult> {
+  const operator = await requireOperator();
+  const parsed = serviceStatusSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "入力内容をご確認ください。" };
+  const { salonId, expectedVersion, expectedStatus, newStatus, note } = parsed.data;
+  const { data, error } = await getSupabaseAdmin().rpc("admin_update_salon_service_status", {
+    p_actor_user_id: operator.userId,
+    p_salon_id: salonId,
+    p_expected_version: expectedVersion,
+    p_expected_status: expectedStatus,
+    p_new_status: newStatus,
+    p_note: note || null,
+    p_request_id: randomUUID(),
+  });
+  if (error) return { ok: false, error: "保存に失敗しました。時間をおいてもう一度お試しください。" };
+  revalidatePath(`/ops/salons/${salonId}`);
+  revalidatePath("/ops/salons");
+  const r = data as { result: string; inflight_sends?: number };
+  switch (r.result) {
+    case "saved":
+      return {
+        ok: true,
+        changed: true,
+        message:
+          "利用区分を保存しました。" +
+          (r.inflight_sends ? `保存の時点で送信を始めていた予約通知が${r.inflight_sends}件あります(取り消せません)。` : ""),
+      };
+    case "no_change":
+      return { ok: true, changed: false, message: "変更はありませんでした。" };
+    case "conflict":
+      return { ok: false, error: CONFLICT_ERROR, conflict: true };
+    case "not_found":
+      return { ok: false, error: "サロンが見つかりません。" };
+    default:
+      return { ok: false, error: "保存できませんでした。入力内容をご確認ください。" };
+  }
+}
+
+const resendSchema = z.object({ salonId: z.uuid() });
+
+/** 招待・案内の再送(制限: 60秒あける・24時間で10回まで。DB で確かめる)。本人確認が済んでいても、店舗登録のお知らせは送れる。 */
+export async function resendInvitationAction(input: z.input<typeof resendSchema>): Promise<OpsActionResult> {
+  const operator = await requireOperator();
+  const parsed = resendSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "入力内容をご確認ください。" };
+  const { salonId } = parsed.data;
+  const result = await sendInvitationNotice({ admin: getSupabaseAdmin() }, { operatorId: operator.userId, salonId, requestId: randomUUID() });
+  revalidatePath(`/ops/salons/${salonId}`);
+  revalidatePath("/ops/salons");
+  switch (result.status) {
+    case "accepted":
+      return { ok: true, changed: true, message: "送信を受け付けました(届いたか・読まれたかは確認できません)。" };
+    case "simulated":
+      return { ok: true, changed: true, message: "検証モードのため、実際のメールは送信していません(記録だけ残しました)。" };
+    case "failed":
+      return { ok: false, error: `送信できませんでした。${authEmailErrorLabel(result.code)}` };
+    case "cooldown":
+      return { ok: false, error: `続けて送ることはできません。${result.retryAfterSeconds}秒ほどあけてから再送してください。` };
+    case "daily_limit":
+      return { ok: false, error: "24時間に送れる回数(10回)に達しました。時間をおいてから再送してください。" };
+    case "no_invitation":
+      return { ok: false, error: "このサロンには招待の記録がありません(お客様が自分で登録した店舗など)。" };
+    case "owner_changed":
+      return { ok: false, error: "所有者のアカウントが変わっているため送信できません。" };
+    default:
+      return { ok: false, error: "送信できませんでした。時間をおいてもう一度お試しください。" };
   }
 }

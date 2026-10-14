@@ -102,6 +102,21 @@ describe("口コミ・プランの変更", () => {
   it("変更が無ければ何も出さない", () => {
     expect(describeChanges({ planBefore: "salonpack", planAfter: "salonpack", features: [feature({ afterOverride: "inherit", after: { allowed: true, reason: "plan_default" } })] })).toEqual([]);
   });
+
+  it("利用開始待ちの店舗: 変更が無ければ何も出さず、対象プランになる機能は「利用開始のあと」と出す(許可されない、とは書かない)", () => {
+    const pending = { allowed: false, reason: "service_pending" } as const;
+    expect(
+      describeChanges({ planBefore: "salonpack", planAfter: "salonpack", features: [feature({ afterOverride: "inherit", before: pending, after: pending })] }),
+    ).toEqual([]);
+    const [plan] = describeChanges({
+      planBefore: "reviews",
+      planAfter: "salonpack",
+      features: [feature({ key: "blog", label: "ブログ", hasRuntime: false, beforeOverride: "inherit", afterOverride: "inherit", before: { allowed: false, reason: "not_in_plan" }, after: pending })],
+    });
+    const text = plan.details.join("\n");
+    expect(text).toContain("ブログは対象プランになります。利用開始待ちのため、使えるのは利用開始のあとです。");
+    expect(text).not.toContain("許可されません");
+  });
 });
 
 describe("利用できるかどうかが変わらない設定の変更", () => {
