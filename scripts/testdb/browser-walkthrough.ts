@@ -163,7 +163,8 @@ async function login(page: Page, email: string, password: string) {
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(password);
   await page.getByRole("button", { name: "ログイン" }).click();
-  await page.waitForURL(/\/dashboard/, { timeout: 60_000 });
+  // 店舗の無いアカウント・利用開始待ちは /onboarding、運営は /ops へ進む(0025)
+  await page.waitForURL(/\/(dashboard|onboarding|ops)/, { timeout: 60_000 });
 }
 
 /** 擬似 Google の同意画面で、アカウントを選んで「許可する」を押し、SalonPack に戻るまで待つ。 */
@@ -350,7 +351,8 @@ async function main() {
       `開発サーバー起動・ブラウザ(${channel}${headed ? "" : "・画面なし"})・テスト用DB・擬似Google・擬似LINEログイン ${invitesDisabled ? "未有効(本番と同じ)" : "有効"}・届いた口コミ ${reviewsEnabled ? "有効" : "準備中"}`
     );
 
-    // ---------------- 新規のお客様(PC): 店舗情報 → 機能の選択 → Google 連携 ----------------
+    // ---------------- 新規のお客様(PC): 店舗の情報 → 利用開始待ち → 運営が利用開始 → Google 連携 ----------------
+    // 新規登録と本人確認の画面は scripts/testdb/onboarding-walkthrough.ts で確かめる。ここでは本人確認済み(legacy)のアカウントから始める。
     const email = `browser-walk-${Date.now()}@example.invalid`;
     const password = `Walk${Math.random().toString(36).slice(2, 10)}!9`;
     const { data: created, error: userError } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
@@ -359,29 +361,32 @@ async function main() {
     cleanups.push(async () => {
       await admin.auth.admin.deleteUser(userId);
     });
+    await admin.from("account_verifications").insert({ user_id: userId, method: "legacy" });
 
     const context = await browser.newContext(PC);
     const page = await context.newPage();
     page.on("dialog", (dialog) => void dialog.accept());
     await login(page, email, password);
-    await page.getByText("店舗名").first().waitFor();
+    await page.waitForURL(/\/onboarding\/salon/, { timeout: 60_000 });
     await shot(page, "01-store-info");
-    await page.locator("#onboarding-name").fill("ブラウザ確認サロン");
-    await page.getByRole("button", { name: "次へ" }).click();
+    await page.locator("#profile-name").fill("ブラウザ確認サロン");
+    await page.locator("#profile-contactName").fill("ブラウザ 確認");
+    await page.getByRole("button", { name: "店舗を登録する" }).click();
+    await page.waitForURL(/\/onboarding\/status/, { timeout: 60_000 });
     const { data: profile } = await admin.from("profiles").select("id").eq("user_id", userId).single();
-    type SalonRow = { id: string; plan: string };
+    type SalonRow = { id: string; plan: string; service_status: string };
     let salonRow = null as SalonRow | null;
     for (let i = 0; i < 60 && !salonRow; i++) {
-      const { data } = await admin.from("salons").select("id, plan").eq("owner_id", profile!.id).maybeSingle();
+      const { data } = await admin.from("salons").select("id, plan, service_status").eq("owner_id", profile!.id).maybeSingle();
       salonRow = (data as SalonRow | null) ?? null;
       if (!salonRow) await new Promise((r) => setTimeout(r, 500));
     }
     await page.waitForLoadState("networkidle");
-    check("店舗情報の入力で店舗が作られる(契約は常に reviews で作成)", salonRow?.plan === "reviews");
+    check("店舗の情報の入力で店舗が作られる(契約は reviews・利用開始待ちで作成)", salonRow?.plan === "reviews" && salonRow?.service_status === "pending");
     const salonId = salonRow!.id as string;
 
-    // 運営が契約を確認して、予約通知を含む契約に変える(scripts/salon-contract.ts set-plan に相当)。
-    await admin.from("salons").update({ plan: "salonpack" }).eq("id", salonId);
+    // 運営が契約を確認して予約通知を含む契約に変え、利用を始める(運営の画面の操作は onboarding-walkthrough で確かめる)。
+    await admin.from("salons").update({ plan: "salonpack", service_status: "complimentary" }).eq("id", salonId);
     await page.goto(`${BASE}/dashboard`);
     await page.locator("[data-feature=reservation_notifications]").waitFor({ timeout: 60_000 });
     const home = await text(page);
