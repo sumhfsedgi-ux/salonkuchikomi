@@ -1,4 +1,5 @@
 import type { SalonPlan } from "@/lib/access/plan";
+import type { RegistrationSource, ServiceStatus } from "@/lib/onboarding/serviceStatus";
 
 export type QuestionType = "single" | "multiple" | "text";
 
@@ -47,6 +48,13 @@ export interface OwnerSalon extends PublicSalon {
   // 契約プラン(lib/access/plan.ts参照)。常に管理者が確定させる値で、
   // APP_MODEから自動的に導出してはならない。
   plan: SalonPlan;
+  // 利用区分(lib/onboarding/serviceStatus.ts)。プランとは別に、運営だけが変える。
+  serviceStatus: ServiceStatus;
+  registrationSource: RegistrationSource;
+  // 担当者・連絡先(contactEmail が null なら「ログイン用と同じ」)
+  contactName: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
   createdAt: string;
   updatedAt: string;
 }

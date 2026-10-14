@@ -16,7 +16,9 @@ export type EntitlementReason =
   | "override_deny"
   | "override_allow"
   | "plan_default"
-  | "plan_default_off";
+  | "plan_default_off"
+  // 本来なら利用可だが、利用区分が利用中ではない(0025。利用開始待ち)
+  | "service_pending";
 
 export interface FeatureEntitlement {
   key: FeatureKey;

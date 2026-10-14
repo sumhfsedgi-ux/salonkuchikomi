@@ -36,7 +36,9 @@ describe("状態の言葉(理由ごとに分ける)", () => {
       not_in_plan: "プラン対象外",
       coming_soon: "準備中",
       ended: "提供終了",
+      service_pending: "利用開始待ち",
     });
+    expect(accessState({ allowed: false, reason: "service_pending" })).toBe("service_pending");
   });
 
   it("「使えません」「利用中」「停止」の言葉を使わない(稼働の状態と混同しない)", () => {

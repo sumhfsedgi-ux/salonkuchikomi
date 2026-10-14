@@ -24,6 +24,11 @@ export function getPlanExperience(plan: SalonPlan): PlanExperience {
 
 export interface FeatureAccessInput {
   plan: SalonPlan;
+  /**
+   * 利用区分が利用中か(lib/onboarding/serviceStatus.ts)。"catalog" の機能は DB の判定に含まれる(理由 service_pending)。
+   * "code" の機能(届いた口コミ)は DB を通らないため、ここで同じ条件を足す。
+   */
+  serviceActive: boolean;
   /** 届いた口コミの提供を始めているか(GOOGLE_REVIEWS_OAUTH_ENABLED)。 */
   googleReviewsAvailable: boolean;
   /** DB から読んだ、店舗の機能ごとの利用権限(lib/features/loadEntitlements.ts)。無い機能は利用不可として扱う。 */
@@ -47,6 +52,7 @@ export interface FeatureAccess {
 }
 
 export const NOT_ALLOWED_REASON = "ご契約のプランに含まれていません。";
+export const SERVICE_PENDING_REASON = "利用開始の準備中です。利用開始のご案内をお待ちください。";
 const COMING_SOON_REASON = "提供開始前のため、準備中です。";
 const ENDED_REASON = "この機能の提供は終了しました。";
 const GOOGLE_REVIEWS_COMING_SOON_REASON = "Googleの承認を確認中のため、準備中です。";
@@ -74,6 +80,8 @@ function resolveCatalogAccess(def: FeatureDefinition, input: FeatureAccessInput)
   if (!e) return result(def, "not_allowed", NOT_ALLOWED_REASON);
   if (e.allowed) return result(def, "allowed", null);
   switch (e.reason) {
+    case "service_pending":
+      return result(def, "not_allowed", SERVICE_PENDING_REASON);
     case "lifecycle_coming_soon":
       return result(def, "coming_soon", COMING_SOON_REASON);
     case "lifecycle_ended":
@@ -88,6 +96,8 @@ export function resolveFeatureAccess(def: FeatureDefinition, input: FeatureAcces
   if (def.entitlement === "catalog") return resolveCatalogAccess(def, input);
   // 契約外の機能は、提供前でも「準備中」ではなく「契約外」として扱う。
   if (!isFeatureEntitled(def, input)) return result(def, "not_allowed", NOT_ALLOWED_REASON);
+  // 利用開始待ちは、契約の対象でも使えない(DB の判定と同じく、本来なら使える機能だけを止める)。
+  if (!input.serviceActive) return result(def, "not_allowed", SERVICE_PENDING_REASON);
   if (!isFeatureAvailable(def, input)) {
     return result(def, "coming_soon", def.key === "google_reviews" ? GOOGLE_REVIEWS_COMING_SOON_REASON : COMING_SOON_REASON);
   }

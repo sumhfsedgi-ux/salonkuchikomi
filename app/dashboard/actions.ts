@@ -2,14 +2,10 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentSalon, applyDefaultBusinessType } from "@/lib/supabase/queries";
-import { generateRandomSlug } from "@/lib/generateSlug";
+import { applyDefaultBusinessType } from "@/lib/supabase/queries";
 import { resolveFeatureSalon } from "@/lib/access/featureAccess";
 import { getPlanExperience } from "@/lib/features/access";
-import { isOperatorUser } from "@/lib/ops/operator";
-import type { OwnerSalon } from "@/lib/types";
 
 export async function logoutAction() {
   const supabase = await createClient();
@@ -17,98 +13,8 @@ export async function logoutAction() {
   redirect("/login");
 }
 
-const salonInfoSchema = z.object({
-  name: z.string().trim().min(1, "店舗名を入力してください").max(100),
-  business_type: z.string().trim().max(100, "業種は100文字以内で入力してください").optional(),
-});
-
-const CREATE_SALON_MAX_ATTEMPTS = 5;
-
-export async function createSalonAction(
-  formData: FormData,
-): Promise<{ error?: string; salon?: OwnerSalon }> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "ログインが必要です。" };
-  // 運営の管理者アカウントは店舗を持たない(サロンオーナーとは別のアカウントで運用する)。画面を通さない呼び出しでも作らせない。
-  if (await isOperatorUser(user.id)) return { error: "運営管理のアカウントでは店舗を登録できません。" };
-
-  const parsed = salonInfoSchema.safeParse({
-    name: formData.get("name"),
-    business_type: formData.get("business_type") ?? undefined,
-  });
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "入力内容をご確認ください。" };
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("user_id", user.id)
-    .maybeSingle();
-  if (!profile) return { error: "アカウント情報の取得に失敗しました。" };
-
-  // 「1オーナー1店舗」は現在の商品ルールで、DB制約にはしていない(将来の
-  // 1オーナー複数店舗・salon_membersへの拡張を妨げないため --
-  // lib/supabase/primarySalon.ts参照)。二重送信やブラウザの「戻る」で2店舗目が
-  // 作られないよう、既に店舗があれば新規作成せずにその店舗を返す
-  // (OnboardingWizardもクライアント側で既存店舗の更新に切り替えているが、
-  // サーバー側でも同じ前提を守る)。完全に同時の2リクエストまでは防げないため、
-  // 必要になればadvisory lock付きのRPCで作成する(docs/plans/reviews-465-plan.md §5)。
-  const existingSalon = await getCurrentSalon(supabase);
-  if (existingSalon) return { salon: existingSalon };
-
-  // The slug is a random string (salon names are Japanese and can't become
-  // a readable URL segment) -- a collision is astronomically unlikely, but
-  // retry with a fresh one on the rare unique-constraint hit rather than
-  // failing the whole signup.
-  //
-  // plan は常に "reviews" で作成する。APP_MODE(どのURLから作成されたか)を
-  // 理由に "salonpack" を自動付与してはならない -- SalonPack側のURLを知って
-  // いるだけの新規登録者が有料機能を使えてしまうため。SalonPackへの契約変更は
-  // 別途、管理者が信頼できる手段でplanを更新する(lib/access/plan.ts参照)。
-  for (let attempt = 0; attempt < CREATE_SALON_MAX_ATTEMPTS; attempt++) {
-    const { data: inserted, error } = await supabase
-      .from("salons")
-      .insert({
-        owner_id: profile.id,
-        name: parsed.data.name,
-        business_type: parsed.data.business_type || null,
-        slug: generateRandomSlug(),
-        plan: "reviews",
-      })
-      .select(
-        "id, owner_id, name, slug, google_review_url, description, business_type, onboarding_completed, plan, created_at, updated_at",
-      )
-      .single();
-
-    if (!error && inserted) {
-      revalidatePath("/dashboard");
-      return {
-        salon: {
-          id: inserted.id,
-          ownerId: inserted.owner_id,
-          name: inserted.name,
-          slug: inserted.slug,
-          googleReviewUrl: inserted.google_review_url,
-          description: inserted.description,
-          businessType: inserted.business_type,
-          onboardingCompleted: inserted.onboarding_completed,
-          plan: inserted.plan,
-          createdAt: inserted.created_at,
-          updatedAt: inserted.updated_at,
-        },
-      };
-    }
-    if (error.code !== "23505") {
-      console.error("createSalonAction failed", error);
-      return { error: "店舗情報の登録に失敗しました。もう一度お試しください。" };
-    }
-  }
-  return { error: "店舗情報の登録に失敗しました。もう一度お試しください。" };
-}
+// 店舗の作成は、お客様は app/onboarding/actions.ts(create_own_salon)、運営は app/ops/salons/drafts/actions.ts
+// (admin_register_salon)だけで行う(0025。ブラウザから salons に直接 INSERT するポリシーは無い)。
 
 export async function startSurveyAction(
   salonId: string,

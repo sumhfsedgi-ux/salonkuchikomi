@@ -360,3 +360,48 @@ describe("お客様自身による店舗の登録(create_own_salon)", () => {
     await expect(sql`insert into public.operator_admins (user_id, granted_by) values (${owner.userId}, 'test')`).rejects.toThrow();
   });
 });
+
+describe("TS の判定の写し(previewServiceAccess)と DB の判定", () => {
+  it("利用区分 × プラン × 個別設定 × 提供状態 × 標準のすべてで同じ", async () => {
+    const { previewServiceAccess } = await import("@/lib/ops/preview");
+    await sql
+      .begin(async (tx) => {
+        await tx`insert into public.feature_catalog (feature_key, lifecycle) values ('test_status_matrix', 'available')`;
+        await tx`insert into public.plan_feature_rules (plan, feature_key, default_enabled) values ('salonpack', 'test_status_matrix', true)`;
+        const salons: Record<string, string> = {};
+        for (const status of ["pending", "complimentary", "test"] as const) {
+          for (const plan of ["reviews", "salonpack"] as const) {
+            salons[`${status}:${plan}`] = (await createSalon(tx as unknown as Sql, { plan, serviceStatus: status })).salonId;
+          }
+        }
+        let checked = 0;
+        for (const lifecycle of ["available", "coming_soon", "ended"] as const) {
+          await tx`update public.feature_catalog set lifecycle = ${lifecycle} where feature_key = 'test_status_matrix'`;
+          for (const defaultEnabled of [true, false]) {
+            await tx`update public.plan_feature_rules set default_enabled = ${defaultEnabled} where feature_key = 'test_status_matrix'`;
+            for (const status of ["pending", "complimentary", "test"] as const) {
+              for (const plan of ["reviews", "salonpack"] as const) {
+                const salonId = salons[`${status}:${plan}`];
+                for (const mode of ["inherit", "allow", "deny"] as const) {
+                  await tx`delete from public.salon_feature_overrides where salon_id = ${salonId} and feature_key = 'test_status_matrix'`;
+                  if (mode !== "inherit") {
+                    await tx`insert into public.salon_feature_overrides (salon_id, feature_key, mode) values (${salonId}, 'test_status_matrix', ${mode})`;
+                  }
+                  const [db] = await tx<{ allowed: boolean; reason: string }[]>`select * from public.salon_feature_access(${salonId}, 'test_status_matrix')`;
+                  const rules = { reviews: {}, salonpack: { test_status_matrix: defaultEnabled } };
+                  const ts = previewServiceAccess({ lifecycle, hasRuntime: false }, rules, plan, "test_status_matrix", mode, status);
+                  expect({ lifecycle, defaultEnabled, status, plan, mode, ...ts }).toEqual({ lifecycle, defaultEnabled, status, plan, mode, allowed: db.allowed, reason: db.reason });
+                  checked++;
+                }
+              }
+            }
+          }
+        }
+        expect(checked).toBe(108);
+        throw new Error("rollback");
+      })
+      .catch((e) => {
+        if ((e as Error).message !== "rollback") throw e;
+      });
+  });
+});

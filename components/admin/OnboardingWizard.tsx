@@ -6,7 +6,7 @@ import type { OwnerSalon } from "@/lib/types";
 import type { SurveyTemplateSummary } from "@/lib/supabase/queries";
 import TemplatePicker from "@/components/admin/TemplatePicker";
 import QuestionEditor, { type QuestionData, type QuestionEditorHandle } from "@/components/admin/QuestionEditor";
-import { createSalonAction, startSurveyAction, completeOnboardingAction } from "@/app/dashboard/actions";
+import { startSurveyAction, completeOnboardingAction } from "@/app/dashboard/actions";
 import Card from "@/components/ui/Card";
 import Label from "@/components/ui/Label";
 import Input from "@/components/ui/Input";
@@ -14,9 +14,9 @@ import Alert from "@/components/ui/Alert";
 import Button from "@/components/ui/Button";
 import PageHeader from "@/components/ui/PageHeader";
 
-// 初期設定の画面。2つの流れを持つ:
-//   store_info     共通の店舗情報(全機能で共通。入力後、使う機能を選ぶ画面へ進む)
-//   reviews_setup  口コミを選んだ店舗だけの設定(テンプレート → 質問 → Google口コミ投稿URL)
+// 初期設定の画面(口コミの設定: テンプレート → 質問 → Google口コミ投稿URL)。
+// 店舗の情報の登録は、利用開始の前に /onboarding/salon(お客様)か運営の本登録で済んでいる。この画面は、
+// 利用開始が許可されたあとに、まだ済んでいない口コミの設定へ案内するときだけ使う。
 // どの機能の設定を案内するかはサーバー(lib/features)が決める。ブログだけ・予約通知だけの店舗には
 // 口コミの設定を求めない。
 
@@ -25,10 +25,6 @@ const REVIEW_STEPS = [
   { step: 3, label: "質問確認" },
   { step: 4, label: "Google口コミURL" },
 ] as const;
-
-interface StoreInfoProps {
-  flow: "store_info";
-}
 
 interface ReviewsSetupProps {
   flow: "reviews_setup";
@@ -39,7 +35,7 @@ interface ReviewsSetupProps {
   surveyQuestions?: QuestionData[];
 }
 
-type Props = StoreInfoProps | ReviewsSetupProps;
+type Props = ReviewsSetupProps;
 
 function BackButton({ onClick }: { onClick: () => void }) {
   return (
@@ -50,58 +46,6 @@ function BackButton({ onClick }: { onClick: () => void }) {
     >
       ← 戻る
     </button>
-  );
-}
-
-function StoreInfoStep() {
-  const router = useRouter();
-  const [name, setName] = useState("");
-  const [businessType, setBusinessType] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    setError(null);
-    const formData = new FormData();
-    formData.set("name", name);
-    formData.set("business_type", businessType);
-    const result = await createSalonAction(formData);
-    setSaving(false);
-    if (result.error || !result.salon) {
-      setError(result.error ?? "登録に失敗しました。");
-      return;
-    }
-    router.push("/dashboard");
-    router.refresh();
-  }
-
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeader title="店舗情報を入力しましょう" description="入力したあと、使う機能を選んで、必要な設定だけを順に案内します。" />
-      <Card className="max-w-xl">
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-          <div>
-            <Label htmlFor="onboarding-name">店舗名</Label>
-            <Input id="onboarding-name" value={name} onChange={(e) => setName(e.target.value)} required />
-          </div>
-          <div>
-            <Label htmlFor="onboarding-business-type">業種（任意）</Label>
-            <Input
-              id="onboarding-business-type"
-              value={businessType}
-              onChange={(e) => setBusinessType(e.target.value)}
-              placeholder="例：ヘアサロン、エステサロン、整体院"
-            />
-          </div>
-          {error && <Alert variant="error">{error}</Alert>}
-          <Button type="submit" disabled={saving} fullWidth className="sm:w-auto sm:px-6">
-            {saving ? "登録しています..." : "次へ"}
-          </Button>
-        </form>
-      </Card>
-    </div>
   );
 }
 
@@ -223,6 +167,5 @@ function ReviewsSetup({ templates, salon, initialStep, surveyId, surveyQuestions
 }
 
 export default function OnboardingWizard(props: Props) {
-  if (props.flow === "store_info") return <StoreInfoStep />;
   return <ReviewsSetup {...props} />;
 }

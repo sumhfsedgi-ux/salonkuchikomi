@@ -8,7 +8,7 @@ import type { PlanRules } from "@/lib/ops/preview";
 // 使えない理由は「使えません」と一括りにせず、プラン対象外・準備中・提供終了・許可しない、に分ける。
 // 判定そのもの(順序・プランの制限)は DB と lib/ops/preview.ts が決め、ここでは言葉に直すだけにする。
 
-export type AccessState = "allowed" | "not_allowed" | "not_in_plan" | "coming_soon" | "ended";
+export type AccessState = "allowed" | "not_allowed" | "not_in_plan" | "coming_soon" | "ended" | "service_pending";
 
 export const ACCESS_STATE_LABELS: Record<AccessState, string> = {
   allowed: "利用を許可",
@@ -16,6 +16,7 @@ export const ACCESS_STATE_LABELS: Record<AccessState, string> = {
   not_in_plan: "プラン対象外",
   coming_soon: "準備中",
   ended: "提供終了",
+  service_pending: "利用開始待ち",
 };
 
 type Access = { allowed: boolean; reason: EntitlementReason };
@@ -30,6 +31,8 @@ export function accessState(a: Access): AccessState {
       return "coming_soon";
     case "lifecycle_ended":
       return "ended";
+    case "service_pending":
+      return "service_pending";
     default:
       // 個別に許可しない(override_deny)・プラン内で許可していない(plan_default_off)・カタログに無い
       return "not_allowed";
@@ -119,5 +122,7 @@ export function unsavedChangeText(params: {
     case "ended":
       if (b === "not_in_plan") return `保存すると、${label}は対象プランになりますが、${ACCESS_STATE_LABELS[a]}のため利用できません。`;
       return `保存すると、${label}は${ACCESS_STATE_LABELS[a]}のため利用できなくなります。`;
+    case "service_pending":
+      return `保存すると、${label}の利用を許可します。利用開始待ちのため、使えるようになるのは利用開始のあとです。`;
   }
 }

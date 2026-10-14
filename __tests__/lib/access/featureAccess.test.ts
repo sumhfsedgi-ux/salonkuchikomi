@@ -63,7 +63,7 @@ describe("APP_MODE ごとの提供機能", () => {
 });
 
 describe("canAccessFeature(APP_MODE × 契約プラン)", () => {
-  const salon = (plan: SalonPlan) => ({ id: `salon-${plan}`, plan });
+  const salon = (plan: SalonPlan) => ({ id: `salon-${plan}`, plan, serviceStatus: "complimentary" as const });
 
   it("reviews モードでは salonpack プランの店舗でもブログを使えない", async () => {
     vi.stubEnv("NEXT_PUBLIC_APP_MODE", "reviews");

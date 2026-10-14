@@ -4,6 +4,7 @@ import type { OwnerSalon } from "@/lib/types";
 import type { SalonPlan } from "@/lib/access/plan";
 import type { QuestionData } from "@/components/admin/QuestionEditor";
 import { pickPrimarySalon, toRowArray } from "@/lib/supabase/primarySalon";
+import { isRegistrationSource, isServiceStatus } from "@/lib/onboarding/serviceStatus";
 
 // The salons columns getCurrentSalon selects, in their raw (snake_case) shape.
 interface OwnerSalonRow {
@@ -16,9 +17,17 @@ interface OwnerSalonRow {
   business_type: string | null;
   onboarding_completed: boolean;
   plan: SalonPlan;
+  service_status: string;
+  registration_source: string;
+  contact_name: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
   created_at: string;
   updated_at: string;
 }
+
+const OWNER_SALON_COLUMNS =
+  "id, owner_id, name, slug, google_review_url, description, business_type, onboarding_completed, plan, service_status, registration_source, contact_name, contact_email, contact_phone, created_at, updated_at";
 
 /**
  * The currently-authenticated user, memoized per request (same `supabase`
@@ -57,18 +66,22 @@ export const getCurrentSalon = cache(async (
   // sequential queries. salons has no unique constraint on owner_id (on
   // purpose -- see lib/supabase/primarySalon.ts), so PostgREST returns it as
   // an array; toRowArray also accepts an object in case that ever changes.
-  // The app's current product rule is one salon per owner (enforced in
-  // createSalonAction), but embedding order isn't guaranteed, so the salon is
+  // The app's current product rule is one salon per owner (enforced by
+  // create_own_salon / admin_register_salon, 0025), but embedding order isn't guaranteed, so the salon is
   // picked deterministically instead of taking whatever row comes first.
   // Any future "currently selected salon" logic should live here too, so
   // every caller keeps resolving the salon through this one function.
-  const { data: profile } = await supabase
+  //
+  // salons の RLS(0025)は、信頼できるセッション(本人確認のあと・auth.sessions に行がある)の所有者だけに行を返す。
+  // そのため、本人確認の済んでいないセッションやサインアウトしたトークンでは、ここで店舗が見つからない(null)。
+  // 問い合わせのエラー(列が無い・接続できないなど)は「店舗が無い」とは扱わず投げる。既存のオーナーが
+  // 新しい店舗の登録画面へ流れないようにするため。
+  const { data: profile, error } = await supabase
     .from("profiles")
-    .select(
-      "id, salons(id, owner_id, name, slug, google_review_url, description, business_type, onboarding_completed, plan, created_at, updated_at)",
-    )
+    .select(`id, salons(${OWNER_SALON_COLUMNS})`)
     .eq("user_id", user.id)
     .maybeSingle();
+  if (error) throw new Error("店舗の情報を読み込めませんでした。");
   if (!profile) return null;
 
   const salons = toRowArray<OwnerSalonRow>(profile.salons);
@@ -91,6 +104,12 @@ export const getCurrentSalon = cache(async (
     businessType: salon.business_type,
     onboardingCompleted: salon.onboarding_completed,
     plan: salon.plan,
+    // 知らない値は利用開始待ちとして扱う(使える側に倒さない)
+    serviceStatus: isServiceStatus(salon.service_status) ? salon.service_status : "pending",
+    registrationSource: isRegistrationSource(salon.registration_source) ? salon.registration_source : "self_signup",
+    contactName: salon.contact_name,
+    contactEmail: salon.contact_email,
+    contactPhone: salon.contact_phone,
     createdAt: salon.created_at,
     updatedAt: salon.updated_at,
   };

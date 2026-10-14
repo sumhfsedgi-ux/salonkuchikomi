@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { generationExists, recordGenerationEvent } from "@/lib/reviewGeneration/events";
 import { checkEventRateLimit, clientIp } from "@/lib/reviewGeneration/rateLimit";
+import { loadReviewsAvailable } from "@/lib/reviewGeneration/availability";
 
 export const runtime = "nodejs";
 
@@ -36,6 +37,12 @@ export async function POST(request: Request) {
   }
 
   const { generationId, salonId } = parsed.data;
+  // 口コミを使えない店舗(運営による利用停止・利用開始待ち)の記録はしない(応答は同じ 204)。
+  try {
+    if ((await loadReviewsAvailable(admin, salonId)) !== true) return new NextResponse(null, { status: 204 });
+  } catch {
+    return new NextResponse(null, { status: 204 });
+  }
   if (await generationExists(admin, generationId, salonId)) {
     await recordGenerationEvent(admin, { generationId, salonId, kind: "cta_clicked" });
   }

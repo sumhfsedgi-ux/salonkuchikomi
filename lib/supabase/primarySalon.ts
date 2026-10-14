@@ -3,7 +3,8 @@
 //
 // salons.owner_id には unique 制約を付けていない。将来の1オーナー複数店舗・
 // salon_members への拡張を妨げないためで、「1オーナー1店舗」は現在の商品ルールとして
-// アプリ側(createSalonAction)で担保している(docs/plans/reviews-465-plan.md §5)。
+// 店舗を作る DB の関数(create_own_salon・admin_register_salon。所有者ごとのロックの中で確かめる。0025)で
+// 担保している(docs/plans/reviews-465-plan.md §5)。
 
 /**
  * PostgREST の embedding は、FK 側に unique 制約があれば1対1とみなしてオブジェクトを、

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentSalon } from "@/lib/supabase/queries";
+import { isServiceActive } from "@/lib/onboarding/serviceStatus";
 import { canAccessFeature } from "@/lib/access/featureAccess";
 import { resolveFeatureAccess } from "@/lib/features/access";
 import { loadFeatureAccessInput } from "@/lib/features/accessInput";
@@ -33,6 +34,8 @@ async function resolveContext() {
   const supabase = await createClient();
   const salon = await getCurrentSalon(supabase);
   if (!salon) redirect("/dashboard");
+  // 利用開始待ちの店舗は、Google の連携の操作をしない(画面も表示しない。直接の呼び出しも同じ)。
+  if (!isServiceActive(salon.serviceStatus)) redirect("/onboarding/status");
   const {
     data: { user },
   } = await supabase.auth.getUser();

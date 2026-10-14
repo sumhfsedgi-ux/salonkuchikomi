@@ -47,6 +47,11 @@ function salon(plan: "reviews" | "salonpack"): OwnerSalon {
     businessType: null,
     onboardingCompleted: true,
     plan,
+    serviceStatus: "complimentary",
+    registrationSource: "existing",
+    contactName: null,
+    contactEmail: null,
+    contactPhone: null,
     createdAt: "2026-10-01T00:00:00Z",
     updatedAt: "2026-10-01T00:00:00Z",
   } as OwnerSalon;

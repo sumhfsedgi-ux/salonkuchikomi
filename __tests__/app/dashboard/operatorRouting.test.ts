@@ -44,14 +44,3 @@ describe("ダッシュボードの入口(layout)", () => {
     expect(redirect).not.toHaveBeenCalled();
   });
 });
-
-describe("店舗登録(createSalonAction)", () => {
-  it("管理者のアカウントでは店舗を作らない(DB に触れない)", async () => {
-    operator = true;
-    const { createSalonAction } = await import("@/app/dashboard/actions");
-    const form = new FormData();
-    form.set("name", "テスト");
-    expect(await createSalonAction(form)).toEqual({ error: "運営管理のアカウントでは店舗を登録できません。" });
-    expect(from).not.toHaveBeenCalled();
-  });
-});

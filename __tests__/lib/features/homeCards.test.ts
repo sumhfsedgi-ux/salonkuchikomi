@@ -14,6 +14,7 @@ function ctx(overrides: Partial<SetupContext> = {}): SetupContext {
   const plan = overrides.plan ?? "salonpack";
   return {
     plan,
+    serviceActive: true,
     entitlements: entitlementsFor(plan),
     reservationSwitch: null,
     hasActiveSurvey: true,

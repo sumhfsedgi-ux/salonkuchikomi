@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentSalon } from "@/lib/supabase/queries";
+import { isServiceActive } from "@/lib/onboarding/serviceStatus";
 import { completeGoogleConnect } from "@/lib/google/oauthFlow";
 import type { OAuthReturnTo } from "@/lib/google/db/oauthStates";
 import { getGoogleFlowDeps } from "@/lib/google/runtime";
@@ -30,6 +31,10 @@ export async function GET(request: NextRequest) {
   const salon = user ? await getCurrentSalon(supabase) : null;
   if (!user || !salon) {
     return redirectTo(request, "/login", {});
+  }
+  // 利用開始待ちの店舗は、連携を保存しない(開始の操作は止めているが、その前に始めた連携の戻りもここで止める)。
+  if (!isServiceActive(salon.serviceStatus)) {
+    return redirectTo(request, "/onboarding/status", {});
   }
 
   const params = request.nextUrl.searchParams;

@@ -5,6 +5,8 @@ vi.mock("@/lib/reviewGeneration/rateLimit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/reviewGeneration/rateLimit")>()),
   checkEventRateLimit: vi.fn(async () => true),
 }));
+let reviewsAvailable: boolean | null = true;
+vi.mock("@/lib/reviewGeneration/availability", () => ({ loadReviewsAvailable: vi.fn(async () => reviewsAvailable) }));
 vi.mock("@/lib/reviewGeneration/events", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/reviewGeneration/events")>()),
   generationExists: vi.fn(async () => true),
@@ -29,11 +31,22 @@ function post(body: unknown): Request {
 }
 
 afterEach(() => {
+  reviewsAvailable = true;
   vi.mocked(recordGenerationEvent).mockClear();
   vi.mocked(generationExists).mockClear();
 });
 
 describe("POST /api/review-events", () => {
+  it("口コミを使えない店舗(運営による利用停止・利用開始待ち)・無い店舗の記録はしない(応答は同じ 204)", async () => {
+    for (const value of [false, null]) {
+      reviewsAvailable = value;
+      const response = await POST(post(BODY));
+      expect(response.status).toBe(204);
+    }
+    expect(generationExists).not.toHaveBeenCalled();
+    expect(recordGenerationEvent).not.toHaveBeenCalled();
+  });
+
   it("記録済みの生成なら cta_clicked を記録して 204", async () => {
     const response = await POST(post(BODY));
     expect(response.status).toBe(204);

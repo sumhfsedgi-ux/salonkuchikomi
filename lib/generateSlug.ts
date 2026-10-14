@@ -7,7 +7,8 @@ const SLUG_LENGTH = 10;
 // English slug. A random string sidesteps that entirely -- satisfies the
 // slug column's format/length check by construction and, at this length,
 // makes a collision astronomically unlikely (still handled by retrying on
-// the DB's unique-constraint error, see createSalonAction).
+// the DB's unique-constraint error: create_own_salon / admin_register_salon
+// return slug_taken and the callers retry with a new slug).
 export function generateRandomSlug(): string {
   let slug = "";
   for (let i = 0; i < SLUG_LENGTH; i++) {
