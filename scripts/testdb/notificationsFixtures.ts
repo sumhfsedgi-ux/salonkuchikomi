@@ -19,7 +19,7 @@ export interface TestSalonFixture {
 }
 
 /** テスト専用のsalon(=authユーザー1人+profiles+salons)を1つ作る。 */
-export async function createTestSalon(options?: { plan?: "reviews" | "salonpack" }): Promise<TestSalonFixture> {
+export async function createTestSalon(options?: { plan?: "reviews" | "salonpack"; serviceStatus?: "pending" | "complimentary" | "test" }): Promise<TestSalonFixture> {
   const supabase = adminClient();
   const email = `notif-testdb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.invalid`;
   const password = `Test${Math.random().toString(36).slice(2, 12)}!9`;
@@ -47,12 +47,20 @@ export async function createTestSalon(options?: { plan?: "reviews" | "salonpack"
   const slug = `notif-testdb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const { data: salon, error: salonError } = await supabase
     .from("salons")
-    .insert({ owner_id: profile.id, name: "テストDB検証用サロン", slug, plan: options?.plan ?? "salonpack" })
+    // 0025 のあとの新しい店舗の既定は「利用開始待ち」。既存のオーナーと同じ状態(無償提供)で作る。
+    .insert({ owner_id: profile.id, name: "テストDB検証用サロン", slug, plan: options?.plan ?? "salonpack", service_status: options?.serviceStatus ?? "complimentary" })
     .select("id")
     .single();
   if (salonError || !salon) {
     await supabase.auth.admin.deleteUser(userId);
     throw new Error(`salons行の作成に失敗: ${salonError?.message}`);
+  }
+
+  // 既存のオーナーと同じく、本人確認は済んでいる(legacy)。0025 のあと、店舗の RLS は本人確認のあとのセッションだけに行を返す。
+  const { error: verifyError } = await supabase.from("account_verifications").insert({ user_id: userId, method: "legacy" });
+  if (verifyError && verifyError.code !== "23505") {
+    await supabase.auth.admin.deleteUser(userId);
+    throw new Error(`本人確認の記録に失敗: ${verifyError.message}`);
   }
 
   return {
