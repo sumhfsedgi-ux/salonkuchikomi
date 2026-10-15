@@ -348,7 +348,7 @@ export function createRpcGbpStore(client: RpcClient): GbpStore {
       return data === true;
     },
 
-    async reconcileReplyOperations(salonId, reviewIndexId, observed, settleSeconds) {
+    async reconcileReplyOperations(salonId, reviewIndexId, observed) {
       return (
         num(
           await call("gbp_reconcile_reply_operations", {
@@ -357,7 +357,6 @@ export function createRpcGbpStore(client: RpcClient): GbpStore {
             p_reply_sha256: observed.replySha256,
             p_reply_state: observed.replyState,
             p_reply_update_time: observed.replyUpdateTime,
-            p_settle_seconds: settleSeconds,
           }),
         ) ?? 0
       );

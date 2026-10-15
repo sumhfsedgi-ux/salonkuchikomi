@@ -73,8 +73,6 @@ export interface GbpInboxDeps {
   syncPageReserveMs?: number;
   minRefreshIntervalMs?: number;
   consentVersion?: string;
-  /** 結果不明・受け付けの返信を、取り直しても反映が見えないときに「反映されなかった」と決めるまでの時間。 */
-  replySettleMs?: number;
 }
 
 export interface ReplyInput {
@@ -123,11 +121,6 @@ const REPLY_LEASE_SECONDS = 60;
 const REPLY_WRITE_WINDOW_SECONDS = Math.ceil(GBP_API_TIMEOUT_MS / 1000) + 20;
 /** Google の返信の編集の上限(1つのビジネスにつき1分に10回)。 */
 const REPLY_EDITS_PER_MINUTE = 10;
-/**
- * 結果不明・受け付けの返信を「反映されなかった」と決めるまでの時間。書き込みの時間切れ(10秒)と処理権の延長より十分長くし、
- * 時間切れのあとに Google が遅れて反映する場合に、送り直しと入れ替わらないようにする。
- */
-export const GBP_REPLY_SETTLE_MS = 2 * 60_000;
 export const GBP_CONSENT_VERSION = "gbp-connect-2026-10-15";
 
 const NOT_CONNECTED = "Google口コミを連携していません。";
@@ -151,7 +144,7 @@ const LOCATION_CHANGED = "Google連携または店舗が変わったため、返
 const NOT_ENTITLED = "届いた口コミを利用できなくなったため、返信は送っていません。";
 const CONSENT_REQUIRED = "口コミの取り扱いについての確認がまだ済んでいません。届いた口コミの画面で内容を確認してください。";
 const REPLY_UNRESOLVED =
-  "前に送った返信の結果を、まだ確かめられていません。返信は送っていません。「Googleで確認する」で確かめてから、もう一度お試しください。";
+  "前に送った返信の反映を、まだ確認できていません。後からGoogleに反映されることがあるため、確認できるまでは新しく送れません。今回の返信は送っていません。「Googleで確認する」で確かめてください。";
 
 type SyncOutcome = { kind: "complete" | "partial"; at: string | null } | { kind: "throttled"; at: string | null } | { kind: "busy" } | { kind: "inactive" };
 
@@ -230,7 +223,6 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
   const syncPageReserveMs = deps.syncPageReserveMs ?? 10_000;
   const minRefreshIntervalMs = deps.minRefreshIntervalMs ?? GBP_MIN_REFRESH_INTERVAL_MS;
   const consentVersion = deps.consentVersion ?? GBP_CONSENT_VERSION;
-  const replySettleSeconds = Math.ceil((deps.replySettleMs ?? GBP_REPLY_SETTLE_MS) / 1000);
   const iso = (ms: number) => new Date(ms).toISOString();
 
   /** 今の版の連携の同意を記録している店舗か(確かめられなければ、記録していない扱い)。 */
@@ -490,12 +482,11 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
   async function reconcileOperations(salonId: string, id: string, review: GoogleReviewJson) {
     const cached = toCachedReview(review, deps.reviewKeySecret);
     try {
-      await store.reconcileReplyOperations(
-        salonId,
-        id,
-        { replySha256: replyHash(cached.replyComment), replyState: cached.replyState, replyUpdateTime: cached.replyUpdateTime },
-        replySettleSeconds,
-      );
+      await store.reconcileReplyOperations(salonId, id, {
+        replySha256: replyHash(cached.replyComment),
+        replyState: cached.replyState,
+        replyUpdateTime: cached.replyUpdateTime,
+      });
     } catch {
       console.warn("gbp: could not reconcile reply operations");
     }
@@ -770,7 +761,7 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
         case "busy":
           return { kind: "busy", message: "この口コミへの返信を送っている途中です。少し時間をおいて、結果を確認してください。" };
         case "unresolved":
-          // 前の送信の結果が分からない・反映を確かめていない。取り直して確かめるまで、送り直さない・新しく送らない。
+          // 前の送信の結果が分からない。取り直して送った内容が見えるまで、送り直さない・新しく送らない(時間では外さない)。
           return { kind: "busy", message: REPLY_UNRESOLVED };
         case "rate_limited":
           return { kind: "failed", message: "Googleへの返信は、1つの店舗につき1分に10回までです。返信は送っていません。少し時間をおいて、もう一度お試しください。", retryable: true };

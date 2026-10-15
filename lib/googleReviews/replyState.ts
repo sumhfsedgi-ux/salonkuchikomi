@@ -6,6 +6,7 @@ import type { ReviewBucket, ReviewFilter, ReviewSummary } from "@/lib/googleRevi
 
 export type ReplyDisplayState =
   | "sending"
+  | "unconfirmed"
   | "checking"
   | "send_failed"
   | "replace_failed"
@@ -21,6 +22,7 @@ export function replyDisplayState(review: Pick<ReviewSummary, "reply" | "operati
     case "sending":
       return "sending";
     case "unknown":
+      return "unconfirmed";
     case "sent_checking":
       return "checking";
     case "send_failed":
@@ -42,6 +44,7 @@ export function replyDisplayState(review: Pick<ReviewSummary, "reply" | "operati
 export function replyBucket(state: ReplyDisplayState): ReviewBucket {
   switch (state) {
     case "sending":
+    case "unconfirmed":
     case "checking":
     case "replace_failed":
     case "delete_failed":
@@ -69,6 +72,7 @@ export type BadgeTone = "neutral" | "success" | "warning" | "danger";
 
 export const REPLY_STATE_VIEW: Record<ReplyDisplayState, { label: string; tone: BadgeTone; alert: boolean }> = {
   sending: { label: "送信中…", tone: "neutral", alert: false },
+  unconfirmed: { label: "反映を確認できていません", tone: "warning", alert: true },
   checking: { label: "送信結果を確認中", tone: "warning", alert: true },
   send_failed: { label: "送信できませんでした", tone: "danger", alert: true },
   replace_failed: { label: "置き換えできませんでした", tone: "danger", alert: true },
@@ -82,8 +86,11 @@ export const REPLY_STATE_VIEW: Record<ReplyDisplayState, { label: string; tone: 
 
 /** 状態ごとの補足(詳細の返信の欄に出す)。結果が分からない状態では、もう一度送るよう促さない。 */
 export const REPLY_STATE_NOTE: Partial<Record<ReplyDisplayState, string>> = {
-  checking: "Googleに送った返信が反映されたかを、まだ確認できていません。「Googleで確認する」で最新の状態を取り直してください。確認できるまで、もう一度送らないでください。",
-  send_failed: "前回の送信はGoogleに反映されていません。文章を確認して、もう一度送れます。送らない場合は「送るのをやめる」でこの表示を消せます(Googleには何も送りません)。",
+  unconfirmed:
+    "Googleへの送信の結果を確認できていません。時間をおいてGoogleに反映されることがあります。「Googleで確認する」で最新の状態を取り直してください(送信から2分ほどたってからの確認が目安です)。反映を確認できるまでは、もう一度送る・別の返信を送る・削除はできません。",
+  checking: "Googleが返信を受け付けました。Googleに表示されたかは、「Googleで確認する」で確かめられます。",
+  send_failed:
+    "前回の返信は、Googleに送る前に止まったか、Googleに受け付けられなかったため、反映されていません。文章を確認して、もう一度送れます。送らない場合は「送るのをやめる」でこの表示を消せます(Googleには何も送りません)。",
   replace_failed: "置き換えできませんでした。以前の返信がGoogleに残っています。",
   delete_failed: "削除できませんでした。返信がGoogleに残っています。",
 };

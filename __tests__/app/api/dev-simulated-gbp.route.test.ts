@@ -44,6 +44,19 @@ describe("dev/simulated-gbp", () => {
     expect(page.reviews.length).toBeGreaterThan(0);
   });
 
+  it("返信の書き込みを時間切れにして、あとから反映できる(遅れて反映される場合の確認)", async () => {
+    enableSimulated();
+    const token = "simgbp:100000000000000000001:x";
+    const name = "accounts/sim-1/locations/sim-101/reviews/sim-r1";
+    expect((await post({ action: "defer_next_write", operation: "reply" })).status).toBe(200);
+    const sim = getDevSimulatedGbp(() => simulatedGbpDevUsers());
+    await expect(sim.api.updateReply(token, name, "遅れて届く返信")).rejects.toMatchObject({ kind: "timeout" });
+    expect(sim.replyOf(name)).toBeNull();
+    const applied = await post({ action: "apply_deferred_writes" });
+    expect(await applied.json()).toEqual({ ok: true, applied: 1 });
+    expect(sim.replyOf(name)?.comment).toBe("遅れて届く返信");
+  });
+
   it("口コミを足すと、その店舗のアカウントの名前で作る。知らない値・形の違う値は受け付けない", async () => {
     enableSimulated();
     const res = await post({ action: "add_review", locationName: "locations/sim-201", starRating: "FIVE", comment: "(架空)追加" });

@@ -18,7 +18,7 @@ import { useAutosizeTextarea } from "@/lib/useAutosizeTextarea";
 import { charsOverLimit, displayLength } from "@/lib/replyGeneration/text";
 import { suggestionPlacement } from "@/lib/replyGeneration/suggestion";
 import type { ReplyWarningView } from "@/lib/replyGeneration/service";
-import { formatReviewDate } from "@/lib/googleReviews/format";
+import { formatCheckedAt, formatReviewDate } from "@/lib/googleReviews/format";
 import { replyBucket, replyDisplayState, REPLY_STATE_NOTE } from "@/lib/googleReviews/replyState";
 import type { ActionResult, GoogleReply, ReplySubmitRequest, ReplySubmitResult, ReviewDetail } from "@/lib/googleReviews/types";
 import type { GenerateForReviewResult } from "@/app/dashboard/reviews/google/actions";
@@ -35,8 +35,7 @@ import type { GenerateForReviewResult } from "@/app/dashboard/reviews/google/act
 
 const AUTOSAVE_MS = 1500;
 const STALE_GENERATION = "Google連携または店舗が変わったため、返信案を表示しませんでした。一覧を読み込み直してください。";
-const CHECKING_STILL_UNKNOWN =
-  "Googleで確認しましたが、まだ反映を確かめられませんでした。Googleで遅れて反映されることがあるため、送信から2分ほどたってから、もう一度確認してください。";
+const GOOGLE_BUSINESS_URL = "https://business.google.com/";
 
 type SaveState = "idle" | "pending" | "saving" | "saved" | "error";
 
@@ -297,7 +296,7 @@ export default function ReviewComposer({
     onReviewUpdated(withOperation(review, "none"));
   }
 
-  // 結果不明のあと、この画面で Google から取り直したか(取り直してもまだ確かめられないときの案内に使う)。
+  // 結果不明のあと、この画面で Google から取り直したか(取り直してもまだ反映を確認できないときの案内に使う)。
   const checkedSinceSend = lastCheckedAt !== null && (result === null || lastCheckedAt > result.at);
   const visibleResult = result && !(lastCheckedAt !== null && lastCheckedAt > result.at && result.outcome.kind !== "accepted") ? result : null;
 
@@ -331,16 +330,35 @@ export default function ReviewComposer({
         <div>{checkButton}</div>
       </Alert>
     );
+  } else if (display === "unconfirmed") {
+    // 結果が分からない:Googleで確認する だけ。もう一度送る・別の返信・削除・送るのをやめる は出さない(サーバーも受け付けない)。
+    // 取り直して送った内容が見えたときだけ、返信済みに変わる(時間がたっても「送れなかった」にはしない)。
+    postLabel = null;
+    showDelete = false;
+    statePanel = (
+      <Alert variant="warning" className="flex flex-col gap-2">
+        <span className="font-medium">反映を確認できていません</span>
+        <span>{REPLY_STATE_NOTE.unconfirmed}</span>
+        {checkedSinceSend && lastCheckedAt && (
+          <span>{formatCheckedAt(lastCheckedAt)}にGoogleで確認しましたが、まだ反映を確認できていません。少し時間をおいて、もう一度確認してください。</span>
+        )}
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          {checkButton}
+          <a href={GOOGLE_BUSINESS_URL} target="_blank" rel="noopener noreferrer" className={buttonClassName({ variant: "ghost", size: "sm" })}>
+            Googleビジネスプロフィールを開く
+            <ExternalLinkIcon className="h-4 w-4" aria-hidden="true" />
+          </a>
+        </div>
+      </Alert>
+    );
   } else if (display === "checking") {
-    // 結果が分からない・反映を確かめていない間は、Googleで確認する だけ(送り直し・送るのをやめる は出さない。サーバーも受け付けない)。
-    // 取り直して反映が見えれば返信済み、送ってから時間がたっても見えなければ「送信できませんでした」などに変わる。
+    // Google が受け付けた(送信は終わっている)。表示されたかは取り直して確かめる。
     postLabel = null;
     showDelete = false;
     statePanel = (
       <Alert variant="warning" className="flex flex-col gap-2">
         <span className="font-medium">送信結果を確認中</span>
         <span>{REPLY_STATE_NOTE.checking}</span>
-        {checkedSinceSend && <span>{CHECKING_STILL_UNKNOWN}</span>}
         <div>{checkButton}</div>
       </Alert>
     );

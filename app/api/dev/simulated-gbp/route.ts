@@ -37,6 +37,8 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("fail_next"), operation: z.enum(OPERATIONS), kind: z.enum(ERROR_KINDS) }),
   z.object({ action: z.literal("delay_next"), operation: z.enum(OPERATIONS), ms: z.number().int().min(0).max(60_000) }),
   z.object({ action: z.literal("lose_next_response"), operation: z.enum(["reply", "delete_reply"]) }),
+  z.object({ action: z.literal("defer_next_write"), operation: z.enum(["reply", "delete_reply"]) }),
+  z.object({ action: z.literal("apply_deferred_writes") }),
   z.object({ action: z.literal("expire_page_tokens") }),
   z.object({ action: z.literal("add_review"), locationName, starRating: z.enum(STARS), comment: z.string().max(4000) }),
   z.object({ action: z.literal("edit_review"), reviewName, comment: z.string().max(4000) }),
@@ -96,6 +98,11 @@ export async function POST(request: NextRequest) {
     case "lose_next_response":
       sim().loseNextResponse(input.operation, new GbpApiError("timeout"));
       break;
+    case "defer_next_write":
+      sim().deferNextWrite(input.operation);
+      break;
+    case "apply_deferred_writes":
+      return NextResponse.json({ ok: true, applied: sim().applyDeferredWrites() });
     case "expire_page_tokens":
       sim().expirePageTokens();
       break;

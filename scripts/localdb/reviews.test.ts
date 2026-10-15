@@ -4,7 +4,7 @@
 //   - 新着の数え方(初回の分・編集・期限切れのあとの取り直し・初回の途中)
 //   - 期限の削除は、利用可否(準備中・許可なし)に関係なく動く
 //   - 返信の操作:利用可否・世代の確認、未返信と確認が必要の分類、世代をまたいだ結果不明の追跡、1分の回数、
-//     結果不明・受け付けは取り直しでだけ終わる(送るのをやめる・送り直し・新しい操作を受け付けない)
+//     結果不明は送った内容が見えるまで続き(時間では変わらない)、その間は送るのをやめる・送り直し・新しい操作を受け付けない
 //   - 権限:関数は service role だけ
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -116,10 +116,10 @@ async function finish(db: Sql, salonId: string, opId: string, lease: string, sta
   return row.ok;
 }
 
-async function reconcile(db: Sql, salonId: string, reviewIndexId: string, reply: string | null, state: string | null, settleSeconds: number) {
+async function reconcile(db: Sql, salonId: string, reviewIndexId: string, reply: string | null, state: string | null) {
   const [row] = await db<{ n: number }[]>`
     select public.gbp_reconcile_reply_operations(${salonId}, ${reviewIndexId}, ${reply === null ? null : sha(reply)}, ${state},
-                                                 ${reply === null ? null : new Date()}, ${settleSeconds}) as n`;
+                                                 ${reply === null ? null : new Date()}) as n`;
   return row.n;
 }
 
@@ -423,7 +423,7 @@ describe("返信の操作(§2・§3-A)", () => {
     expect(await finish(sql, c.salon.salonId, r.operation_id, r.lease_token, "accepted", [review("past-a", { reply: "ありがとうございます" })])).toBe(true);
     let d = await detail(sql, c.salon.salonId, id);
     expect([d.operation, d.bucket]).toEqual(["sent_checking", "attention"]);
-    expect(await reconcile(sql, c.salon.salonId, id, "ありがとうございます", "PENDING", 120)).toBe(1);
+    expect(await reconcile(sql, c.salon.salonId, id, "ありがとうございます", "PENDING")).toBe(1);
     d = await detail(sql, c.salon.salonId, id);
     expect([d.operation, d.bucket]).toEqual(["none", "replied"]);
     expect((await list(sql, c.salon.salonId, "unreplied")).map((x) => x.review_index_id)).not.toContain(id);
@@ -437,7 +437,7 @@ describe("返信の操作(§2・§3-A)", () => {
     const r = await begin(sql, c.salon, id, { text: "ありがとうございます" });
     await startSend(sql, c.salon.salonId, r.operation_id, r.lease_token);
     await finish(sql, c.salon.salonId, r.operation_id, r.lease_token, "accepted");
-    expect(await reconcile(sql, c.salon.salonId, id, "ありがとうございます", null, 120)).toBe(1);
+    expect(await reconcile(sql, c.salon.salonId, id, "ありがとうございます", null)).toBe(1);
     expect(await opStatus(sql, r.operation_id)).toMatchObject({ status: "confirmed" });
   });
 
@@ -462,42 +462,67 @@ describe("返信の操作(§2・§3-A)", () => {
     expect((await begin(sql, c.salon, id, { action: "delete" })).outcome).toBe("unresolved");
     const [{ n }] = await sql`select count(*)::int as n from public.gbp_reply_operations where salon_id = ${c.salon.salonId}`;
     expect(n).toBe(1);
-    // 送ってから決めた時間がたつ前の取り直しで返信が見えなくても、結果不明のまま(遅れて反映されるかもしれない)
-    expect(await reconcile(sql, c.salon.salonId, id, null, null, 600)).toBe(0);
+    // 取り直して返信が見えなくても、結果不明のまま。時間がたっても変わらない(遅れて反映されることがある)
+    expect(await reconcile(sql, c.salon.salonId, id, null, null)).toBe(0);
+    await sql`update public.gbp_reply_operations set completed_at = now() - interval '1 day', last_attempt_at = now() - interval '1 day'
+               where id = ${r.operation_id}`;
+    expect(await reconcile(sql, c.salon.salonId, id, null, null)).toBe(0);
+    expect(await reconcile(sql, c.salon.salonId, id, "ほかの返信", "APPROVED")).toBe(0);
+    expect(await opStatus(sql, r.operation_id)).toEqual({ status: "unknown", error_code: null });
     expect((await detail(sql, c.salon.salonId, id)).operation).toBe("unknown");
     expect((await begin(sql, c.salon, id, { text: "別の返信" })).outcome).toBe("unresolved");
+    expect(await dismiss(sql, c.salon.salonId, id)).toBe(0);
   });
 
-  it("時間がたってから取り直して反映が見えなければ「送信できませんでした」。そこで初めて送り直せる・送るのをやめられる", async () => {
-    const c = await syncedSalon(sql);
-    await allowGoogleReviews(sql, c.salon.salonId);
-    const id = c.rows[0].review_index_id;
-    const r = await begin(sql, c.salon, id);
-    await startSend(sql, c.salon.salonId, r.operation_id, r.lease_token);
-    await finish(sql, c.salon.salonId, r.operation_id, r.lease_token, "unknown");
-    expect(await reconcile(sql, c.salon.salonId, id, null, null, 0)).toBe(1);
-    expect(await opStatus(sql, r.operation_id)).toEqual({ status: "failed", error_code: "not_applied" });
-    let d = await detail(sql, c.salon.salonId, id);
-    expect([d.operation, d.bucket]).toEqual(["send_failed", "unreplied"]);
-    // 送るのをやめる:Google には何もしない。記録を閉じ、表示は Google のデータ(返信なし)どおりの未返信
-    expect(await dismiss(sql, c.salon.salonId, id)).toBe(1);
-    d = await detail(sql, c.salon.salonId, id);
-    expect([d.operation, d.bucket]).toEqual(["none", "unreplied"]);
-    // 確かめたあとなら、新しい操作を始められる
-    expect((await begin(sql, c.salon, id, { text: "もう一度の返信" })).outcome).toBe("new");
-  });
-
-  it("受け付けたが反映を確かめていない間も、新しい操作は始めない。取り直して見えれば確認済みになり、置き換えられる", async () => {
+  it("遅れて反映された:取り直して送った内容が見えたら確認済みになり、そこで初めて新しい操作を始められる", async () => {
     const c = await syncedSalon(sql);
     await allowGoogleReviews(sql, c.salon.salonId);
     const id = c.rows[0].review_index_id;
     const r = await begin(sql, c.salon, id, { text: "最初の返信" });
     await startSend(sql, c.salon.salonId, r.operation_id, r.lease_token);
-    await finish(sql, c.salon.salonId, r.operation_id, r.lease_token, "accepted");
-    expect(await dismiss(sql, c.salon.salonId, id)).toBe(0);
-    expect((await begin(sql, c.salon, id, { text: "直した返信", base: sha("最初の返信") })).outcome).toBe("unresolved");
-    expect(await reconcile(sql, c.salon.salonId, id, "最初の返信", "PENDING", 120)).toBe(1);
+    await finish(sql, c.salon.salonId, r.operation_id, r.lease_token, "unknown");
+    expect(await reconcile(sql, c.salon.salonId, id, null, null)).toBe(0);
+    expect((await begin(sql, c.salon, id, { text: "直した返信" })).outcome).toBe("unresolved");
+    expect(await reconcile(sql, c.salon.salonId, id, "最初の返信", "PENDING")).toBe(1);
+    expect(await opStatus(sql, r.operation_id)).toMatchObject({ status: "confirmed" });
     expect((await begin(sql, c.salon, id, { text: "直した返信", base: sha("最初の返信") })).outcome).toBe("new");
+  });
+
+  it("送れなかったと分かっている操作(Google が拒否した)だけ、「送るのをやめる」で閉じられる", async () => {
+    const c = await syncedSalon(sql);
+    await allowGoogleReviews(sql, c.salon.salonId);
+    const id = c.rows[0].review_index_id;
+    const r = await begin(sql, c.salon, id);
+    await startSend(sql, c.salon.salonId, r.operation_id, r.lease_token);
+    await finish(sql, c.salon.salonId, r.operation_id, r.lease_token, "failed");
+    let d = await detail(sql, c.salon.salonId, id);
+    expect([d.operation, d.bucket]).toEqual(["send_failed", "unreplied"]);
+    expect(await dismiss(sql, c.salon.salonId, id)).toBe(1);
+    d = await detail(sql, c.salon.salonId, id);
+    expect([d.operation, d.bucket]).toEqual(["none", "unreplied"]);
+    expect((await begin(sql, c.salon, id, { text: "もう一度の返信" })).outcome).toBe("new");
+  });
+
+  it("受け付け(送信は終わっている)は新しい操作を止めない。取り直して見えれば確認済み、ほかの返信・返信なしなら取り下げ", async () => {
+    const c = await syncedSalon(sql, ["acc-a", "acc-b", "acc-c"]);
+    await allowGoogleReviews(sql, c.salon.salonId);
+    const [a, b, x] = c.rows.map((row) => row.review_index_id);
+    const accepted = async (id: string, text: string) => {
+      const r = await begin(sql, c.salon, id, { text });
+      await startSend(sql, c.salon.salonId, r.operation_id, r.lease_token);
+      await finish(sql, c.salon.salonId, r.operation_id, r.lease_token, "accepted");
+      return r.operation_id;
+    };
+    const opA = await accepted(a, "最初の返信");
+    expect(await dismiss(sql, c.salon.salonId, a)).toBe(0);
+    expect(await reconcile(sql, c.salon.salonId, a, "最初の返信", "PENDING")).toBe(1);
+    expect(await opStatus(sql, opA)).toMatchObject({ status: "confirmed" });
+    const opB = await accepted(b, "最初の返信");
+    expect(await reconcile(sql, c.salon.salonId, b, "ほかの返信", "APPROVED")).toBe(1);
+    expect(await opStatus(sql, opB)).toEqual({ status: "dismissed", error_code: "changed_after_accept" });
+    const opX = await accepted(x, "最初の返信");
+    expect((await begin(sql, c.salon, x, { text: "直した返信", base: sha("最初の返信") })).outcome).toBe("new");
+    expect(await opStatus(sql, opX)).toMatchObject({ status: "accepted" });
   });
 
   it("送り始めてから処理権が切れた操作は、同じ op_id でも送り直さない(結果不明にして、取り直しを求める)", async () => {

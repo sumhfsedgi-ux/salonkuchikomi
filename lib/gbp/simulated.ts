@@ -8,6 +8,7 @@ import { GbpApiError, type GbpApiClient, type GbpApiErrorKind, type GoogleReview
 //     切り替えられる(本物の応答に入るかは未確認のため、入らない場合も確かめる)
 //   ・続きのページの指定(pageToken)は、expirePageTokens() で古いものを受け付けなくできる
 //   ・次の1回だけ失敗させる(failNext)・反映したうえで応答を返さない(loseNextResponse)・遅らせる(delayNext)
+//   ・応答を返さず(時間切れ)、あとから反映する(deferNextWrite → applyDeferredWrites。遅れて最初の返信が反映される場合)
 // 実在の Google のアカウント・店舗・口コミではない。
 
 export interface SimulatedLocation {
@@ -45,6 +46,10 @@ export interface SimulatedGbp {
   expirePageTokens(): void;
   /** 次の1回だけ、返信の書き込みを反映したうえで、応答を返さずに失敗させる(時間切れ・通信の切断)。 */
   loseNextResponse(operation: "reply" | "delete_reply", error: Error): void;
+  /** 次の1回だけ、返信の書き込みを反映せずに時間切れで失敗させ、反映をあとに回す(applyDeferredWrites で反映する)。 */
+  deferNextWrite(operation: "reply" | "delete_reply"): void;
+  /** あとに回した書き込みを、受け取った順に反映する。反映した数を返す。 */
+  applyDeferredWrites(): number;
   setReplyResponseIncludesState(include: boolean): void;
   setReplyState(reviewName: string, state: "PENDING" | "APPROVED" | "REJECTED", policyViolation?: string): void;
   /** SalonPack の外(Google の画面・ほかのツール)で返信を書き換える・消す。 */
@@ -69,6 +74,8 @@ export function createSimulatedGbp(options: { users: SimulatedGbpUser[]; now?: (
   const failures = new Map<SimulatedOperation, Error>();
   const delays = new Map<SimulatedOperation, number>();
   const lostResponses = new Map<"reply" | "delete_reply", Error>();
+  const deferNext = new Set<"reply" | "delete_reply">();
+  const deferred: Array<() => void> = [];
   const calls: string[] = [];
   let pageGeneration = 1;
   let replyIncludesState = true;
@@ -169,6 +176,12 @@ export function createSimulatedGbp(options: { users: SimulatedGbpUser[]; now?: (
       await maybeFail("reply");
       const review = ownReview(accessToken, reviewName);
       if (typeof comment !== "string" || !comment.trim() || Buffer.byteLength(comment, "utf8") > 4096) throw new GbpApiError("bad_response");
+      if (deferNext.delete("reply")) {
+        deferred.push(() => {
+          review.reviewReply = { comment, updateTime: new Date(now()).toISOString(), reviewReplyState: "PENDING" };
+        });
+        throw new GbpApiError("timeout");
+      }
       review.reviewReply = { comment, updateTime: new Date(now()).toISOString(), reviewReplyState: "PENDING" };
       const lost = lostResponses.get("reply");
       if (lost) {
@@ -181,6 +194,12 @@ export function createSimulatedGbp(options: { users: SimulatedGbpUser[]; now?: (
     async deleteReply(accessToken, reviewName) {
       await maybeFail("delete_reply");
       const review = ownReview(accessToken, reviewName);
+      if (deferNext.delete("delete_reply")) {
+        deferred.push(() => {
+          delete review.reviewReply;
+        });
+        throw new GbpApiError("timeout");
+      }
       delete review.reviewReply;
       const lost = lostResponses.get("delete_reply");
       if (lost) {
@@ -216,6 +235,14 @@ export function createSimulatedGbp(options: { users: SimulatedGbpUser[]; now?: (
     },
     loseNextResponse: (operation, error) => {
       lostResponses.set(operation, error);
+    },
+    deferNextWrite: (operation) => {
+      deferNext.add(operation);
+    },
+    applyDeferredWrites: () => {
+      const pending = deferred.splice(0);
+      for (const apply of pending) apply();
+      return pending.length;
     },
     setReplyResponseIncludesState: (include) => {
       replyIncludesState = include;

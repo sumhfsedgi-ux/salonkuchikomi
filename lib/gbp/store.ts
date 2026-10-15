@@ -170,7 +170,7 @@ export type BeginReplyOperation =
   | { outcome: "conflict"; operationId: string }
   | { outcome: "dismissed"; operationId: string }
   | { outcome: "busy" }
-  /** 前の操作の結果が分からない・反映を確かめていない(Google から取り直して確かめるまで、送り直さない・新しく始めない)。 */
+  /** 前の操作の結果が分からない(Google から取り直して送った内容が見えるまで、送り直さない・新しく始めない)。 */
   | { outcome: "unresolved" }
   | { outcome: "mismatch" }
   | { outcome: "rate_limited" }
@@ -237,10 +237,10 @@ export interface GbpStore {
   startReplySend(salonId: string, operationId: string, leaseToken: string, input: StartReplySendInput): Promise<StartSendOutcome>;
   finishReplyOperation(salonId: string, operationId: string, leaseToken: string, input: FinishReplyInput): Promise<boolean>;
   /**
-   * Google から取り直した直後のデータ(observed)で、その口コミの操作の状態を確かめる。結果不明・受け付けのまま
-   * settleSeconds 以上たっても反映が見えない操作は、反映されなかったと確かめた(failed)にする。
+   * Google から取り直した直後のデータ(observed)で、その口コミの操作の状態を確かめる。送った内容が見えれば確認済み。
+   * 結果不明の操作は、見えない限り結果不明のまま(時間では変えない)。
    */
-  reconcileReplyOperations(salonId: string, reviewIndexId: string, observed: ObservedReply, settleSeconds: number): Promise<number>;
+  reconcileReplyOperations(salonId: string, reviewIndexId: string, observed: ObservedReply): Promise<number>;
   /** 反映されていないと分かっている操作(failed)だけを閉じる(「送るのをやめる」)。閉じた数を返す。 */
   dismissReplyOperations(salonId: string, reviewIndexId: string): Promise<number>;
   deactivateSalonLocations(salonId: string): Promise<number>;

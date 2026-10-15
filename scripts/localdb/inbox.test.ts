@@ -2,7 +2,8 @@
 // 架空の Google の口コミの API(lib/gbp/simulated.ts)でまとめて確かめる(npm run test:localdb)。値はすべて架空。
 //   - 同意の前は、店舗の候補・口コミの取得・保存・AI の入力・投稿のどれも始まらない(同意の版が変わったときも)
 //   - 連携 → 店舗の選択 → 初回の取り込み → 一覧(未返信・確認が必要・返信済み)・Google の値・新着
-//   - 返信の投稿・結果不明・取り直しの照合(結果不明の間は、送るのをやめる・送り直し・新しい送信を受け付けない)
+//   - 返信の投稿・結果不明・取り直しの照合(結果不明は、送った内容が見えるまで続く。その間は、送るのをやめる・
+//     送り直し・新しい送信・削除を受け付けない。遅れて最初の返信が反映される場合も)
 //   - 連携・店舗の変更や利用不可への変更と、取り込み・送信が重なったとき(計画 第2版 §3-A)
 //   - 403 の分類(口コミの権限不足のときだけ口コミの結び付けに記録し、Gmail・アカウントの状態は変えない。§3-B)
 import { randomUUID } from "node:crypto";
@@ -65,7 +66,7 @@ interface World {
   make: (extra: Partial<GbpInboxDeps>) => GbpInbox;
 }
 
-async function world(opts: { bindGmail?: boolean; replySettleMs?: number } = {}): Promise<World> {
+async function world(opts: { bindGmail?: boolean } = {}): Promise<World> {
   const salon = await createSalon(sql, { plan: "salonpack" });
   const accountId = randomUUID();
   await sql`
@@ -86,7 +87,6 @@ async function world(opts: { bindGmail?: boolean; replySettleMs?: number } = {})
       reviewKeySecret: SECRET,
       canWrite: () => canWrite.value,
       minRefreshIntervalMs: 0,
-      ...(opts.replySettleMs !== undefined ? { replySettleMs: opts.replySettleMs } : {}),
       ...extra,
     });
   return { salon, accountId, ctx: { salonId: salon.salonId, userId: salon.userId }, sim, inbox: make({}), canWrite, make };
@@ -247,9 +247,9 @@ describe("返信(§2)", () => {
     expect(w.sim.replyOf(R1)).toBeNull();
   });
 
-  it("結果が分からない間は、送るのをやめる・同じ操作の送り直し・別の返信の送信を受け付けず、Google に送らない", async () => {
+  it("結果が分からない間は、送るのをやめる・同じ操作の送り直し・別の返信・削除を受け付けず、Google に送らない", async () => {
     await releaseLocations();
-    const w = await world({ replySettleMs: 120_000 });
+    const w = await world();
     await connected(w);
     const id = await idOf(w, "カットの相談");
     const writes = () => w.sim.calls.filter((c) => c === "reply" || c === "delete_reply").length;
@@ -264,34 +264,61 @@ describe("返信(§2)", () => {
     expect(await w.inbox.submitReply(w.ctx, { reviewId: id, opId: randomUUID(), action: "upsert", text: "別の返信", expectedReply: null })).toMatchObject({
       kind: "busy",
     });
+    expect(await w.inbox.submitReply(w.ctx, { reviewId: id, opId: randomUUID(), action: "delete", text: null, expectedReply: null })).toMatchObject({
+      kind: "busy",
+    });
     expect(writes()).toBe(1);
-    // 送ってから時間がたつ前の確認では、反映が見えなくても結果不明のまま
-    const checked = await w.inbox.checkReview(w.ctx, id);
+    // 確認しても、送った内容が見えなければ結果不明のまま。時間がたっても変わらない
+    let checked = await w.inbox.checkReview(w.ctx, id);
     expect(checked.ok && [checked.value.operation, checked.value.bucket]).toEqual(["unknown", "attention"]);
+    await sql`update public.gbp_reply_operations set completed_at = now() - interval '1 day', last_attempt_at = now() - interval '1 day'
+               where salon_id = ${w.salon.salonId}`;
+    checked = await w.inbox.checkReview(w.ctx, id);
+    expect(checked.ok && [checked.value.operation, checked.value.bucket]).toEqual(["unknown", "attention"]);
+    expect(await w.inbox.submitReply(w.ctx, { reviewId: id, opId: randomUUID(), action: "upsert", text: "別の返信", expectedReply: null })).toMatchObject({
+      kind: "busy",
+    });
+    expect(writes()).toBe(1);
   });
 
-  it("時間がたってから確認して反映されていなければ「送信できませんでした」になり、そこで初めて送り直せる", async () => {
+  it("遅れて最初の返信が反映される:見えるまでは結果不明で何も送らず、見えたら確認済みになり、そこで初めて置き換えられる", async () => {
     await releaseLocations();
-    const w = await world({ replySettleMs: 0 });
+    const w = await world();
     await connected(w);
     const id = await idOf(w, "カットの相談");
-    w.sim.failNext("reply", new GbpApiError("timeout"));
-    expect((await w.inbox.submitReply(w.ctx, { reviewId: id, opId: randomUUID(), action: "upsert", text: "最初の返信", expectedReply: null })).kind).toBe("unknown");
-    const checked = await w.inbox.checkReview(w.ctx, id);
-    expect(checked.ok && [checked.value.operation, checked.value.bucket]).toEqual(["send_failed", "unreplied"]);
-    const again = await w.inbox.submitReply(w.ctx, { reviewId: id, opId: randomUUID(), action: "upsert", text: "もう一度の返信", expectedReply: null });
-    expect(again.kind).toBe("accepted");
-    expect(w.sim.replyOf(R1)?.comment).toBe("もう一度の返信");
+    const writes = () => w.sim.calls.filter((c) => c === "reply" || c === "delete_reply").length;
+    // 時間切れで応答が無く、Google への反映はあとから起きる
+    w.sim.deferNextWrite("reply");
+    const sent = await w.inbox.submitReply(w.ctx, { reviewId: id, opId: randomUUID(), action: "upsert", text: "最初の返信", expectedReply: null });
+    expect(sent.kind).toBe("unknown");
+    let checked = await w.inbox.checkReview(w.ctx, id);
+    expect(checked.ok && checked.value.operation).toBe("unknown");
+    expect(w.sim.replyOf(R1)).toBeNull();
+    // 反映を確認できない間の別の返信は送らない(送っていれば、遅れて届いた最初の返信と入れ替わるおそれがある)
+    expect((await w.inbox.submitReply(w.ctx, { reviewId: id, opId: randomUUID(), action: "upsert", text: "別の返信", expectedReply: null })).kind).toBe("busy");
+    expect(writes()).toBe(1);
+    // 最初の返信が遅れて反映された
+    expect(w.sim.applyDeferredWrites()).toBe(1);
+    expect(w.sim.replyOf(R1)?.comment).toBe("最初の返信");
+    checked = await w.inbox.checkReview(w.ctx, id);
+    expect(checked.ok && [checked.value.operation, checked.value.bucket, checked.value.reply?.comment]).toEqual(["none", "replied", "最初の返信"]);
+    // 確認済みになったので、置き換えられる(見ていた返信=最初の返信を基準に送る)
+    const replaced = await w.inbox.submitReply(w.ctx, { reviewId: id, opId: randomUUID(), action: "upsert", text: "直した返信", expectedReply: "最初の返信" });
+    expect(replaced.kind).toBe("accepted");
+    expect(w.sim.replyOf(R1)?.comment).toBe("直した返信");
   });
 
-  it("「送るのをやめる」は Google に何も送らず、送れなかった記録だけを閉じる(未返信のまま)", async () => {
+  it("「送るのをやめる」は Google に何も送らず、送れなかったと分かっている記録だけを閉じる(未返信のまま)", async () => {
     await releaseLocations();
-    const w = await world({ replySettleMs: 0 });
+    const w = await world();
     await connected(w);
     const id = await idOf(w, "カットの相談");
-    w.sim.failNext("reply", new GbpApiError("timeout"));
-    await w.inbox.submitReply(w.ctx, { reviewId: id, opId: randomUUID(), action: "upsert", text: "最初の返信", expectedReply: null });
-    await w.inbox.checkReview(w.ctx, id);
+    // Google が拒否した(反映されていないと分かる)
+    w.sim.failNext("reply", new GbpApiError("permission_denied"));
+    const sent = await w.inbox.submitReply(w.ctx, { reviewId: id, opId: randomUUID(), action: "upsert", text: "最初の返信", expectedReply: null });
+    expect(sent.kind).toBe("failed");
+    const failed = await w.inbox.getReview(w.ctx, id);
+    expect(failed.kind === "ok" && [failed.review.operation, failed.review.bucket]).toEqual(["send_failed", "unreplied"]);
     const callsBefore = w.sim.calls.length;
     expect(await w.inbox.dismissReplyOperation(w.ctx, id)).toEqual({ ok: true, value: undefined });
     expect(w.sim.calls.length).toBe(callsBefore);

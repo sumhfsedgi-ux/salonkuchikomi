@@ -11,17 +11,18 @@
 --   ・表示の状態を細かく分ける(送信中/送信結果を確認中/送信できませんでした/置き換えできませんでした/
 --     削除できませんでした)。絞り込みは 未返信 / 確認が必要 / 返信済み / すべて / 新着。
 --     「未返信」は、取り直した Google のデータで返信が無く、送信中・結果不明の操作が無いものだけ。
---   ・結果が分からない(unknown)・反映を確かめていない(accepted)操作は、Google から取り直した結果でだけ終わる
---     (gbp_reconcile_reply_operations)。反映が見えれば confirmed。送ってから決めた時間(p_settle_seconds)が
---     たっても見えなければ failed(not_applied)。それまでは、同じ操作の送り直しも、その口コミへの新しい操作も
---     始めない(unresolved)。「送るのをやめる」(gbp_dismiss_reply_operation)は、反映されていないと分かっている
---     failed だけを閉じる(Google には何も送らない。Google 上の返信を消す操作は、別の delete の操作)。
+--   ・結果が分からない(unknown)操作は、Google から取り直して送った内容が見えたときだけ終わる(confirmed)。
+--     時間がたっても、見えないことだけでは「送れなかった」にしない(遅れて反映されることがある)。結果が分からない
+--     操作がある口コミには、同じ操作の送り直しも、新しい投稿・置き換え・削除も始めない(unresolved)。
+--   ・受け付け(accepted。Google が 2xx を返した。送信は終わっていて、後から届く要求は無い)は、取り直して送った
+--     内容が見えれば confirmed、ほかの返信・返信なしなら dismissed(受け付けのあとに変わった)。
+--   ・「送るのをやめる」(gbp_dismiss_reply_operation)は、反映されていないと分かっている failed だけを閉じる
+--     (Google には何も送らない。Google 上の返信を消す操作は、別の delete の操作)。
 -- 操作の状態の移り方:
---   sending ─(送る前に止まった・Google が拒否・反映されていないと分かる失敗)→ failed ─(送るのをやめる)→ dismissed
---   sending ─(Google が受け付けた)→ accepted ─(取り直して反映が見えた)→ confirmed
---   sending ─(時間切れ・通信の切断・送り始めてから処理権が切れた)→ unknown ─(取り直して反映が見えた)→ confirmed
---   accepted / unknown ─(送ってから p_settle_seconds 以上たって取り直し、反映が見えない)→ failed(not_applied)
---   accepted ─(受け付けのあとに、ほかの新しい返信が付いた)→ dismissed
+--   sending ─(送る前に止まった・Google が拒否した:反映されていないと分かる)→ failed ─(送るのをやめる)→ dismissed
+--   sending ─(Google が受け付けた)→ accepted ─(取り直して見えた)→ confirmed / ─(取り直してほかの返信・返信なし)→ dismissed
+--   sending ─(時間切れ・通信の切断・5xx・送り始めてから処理権が切れた)→ unknown ─(取り直して送った内容が見えた)→ confirmed
+--   unknown は、取り直して見えない限り unknown のまま(時間では変わらない)
 --   sending ─(送る直前に返信が変わっていた)→ conflict
 -- テーブルは RLS を有効にしてポリシーを作らない。関数は service role だけ。何度実行しても同じ結果になる。
 
@@ -182,11 +183,11 @@ begin
     return query select 'busy'::text, null::uuid, null::uuid, null::text, null::text;
     return;
   end if;
-  -- 前の操作の結果が分からない・反映を確かめていない間は、新しい操作を始めない(前の送信が後から反映されて、
-  -- 新しい返信と入れ替わる・二重に操作することを防ぐ)。取り直して確かめれば、confirmed か failed になる。
+  -- 前の操作の結果が分からない間は、新しい操作を始めない(前の送信が後から反映されて、新しい返信・削除と入れ替わる
+  -- ことを防ぐ)。取り直して送った内容が見えたとき(confirmed)だけ外れる。時間がたっただけでは外さない。
   if exists (select 1 from public.gbp_reply_operations x
               where x.salon_id = p_salon_id and x.location_name = v_location_name and x.review_key_hash = v_key
-                and x.status in ('unknown', 'accepted')) then
+                and x.status = 'unknown') then
     return query select 'unresolved'::text, null::uuid, null::uuid, null::text, null::text;
     return;
   end if;
@@ -323,17 +324,14 @@ $$;
 -- 状態を確かめる(口コミはキーとロケーションの名前で特定する。使える世代の口コミのときだけ)。
 -- 呼び出し側は、取り直した直後のデータだけを渡す(一覧の同期で読んだ古いデータでは呼ばない)。
 --   ・送った内容が見えた(upsert は同じ本文、delete は返信が無い)→ confirmed(審査の状態は Google のデータで表示する)
---   ・受け付けのあとに、ほかの新しい返信が付いた → dismissed
---   ・結果不明・受け付け(unknown・accepted)のまま、終わってから p_settle_seconds 以上たっても見えない
---     → failed(not_applied。反映されていないと確かめた)。たつ前は変えない(遅れて反映されるかもしれない)
-drop function if exists public.gbp_reconcile_reply_operations(uuid, uuid, text, text, timestamptz);
+--   ・受け付け(accepted)で、見えたのがほかの返信・返信なし → dismissed(受け付けのあとに変わった。送信は終わっている)
+--   ・結果不明(unknown)で見えない → unknown のまま(遅れて反映されることがあるため、時間がたっても変えない)
 create or replace function public.gbp_reconcile_reply_operations(
   p_salon_id uuid,
   p_review_index_id uuid,
   p_reply_sha256 text,
   p_reply_state text,
-  p_reply_update_time timestamptz,
-  p_settle_seconds integer
+  p_reply_update_time timestamptz
 ) returns integer
 language plpgsql
 security invoker
@@ -343,11 +341,7 @@ declare
   v_name text;
   v_key text;
   v_count integer;
-  v_settled integer;
 begin
-  if p_settle_seconds is null or p_settle_seconds not between 0 and 3600 then
-    raise exception 'gbp:invalid_arguments' using errcode = '22023';
-  end if;
   select l.location_name, i.review_key_hash into v_name, v_key
     from public.gbp_review_index i join public.gbp_locations l on l.id = i.location_id
    where i.id = p_review_index_id and i.salon_id = p_salon_id and public.gbp_location_usable(p_salon_id, l.id);
@@ -358,8 +352,11 @@ begin
      set status = case
            when x.action = 'upsert' and x.text_sha256 = p_reply_sha256 then 'confirmed'
            when x.action = 'delete' and p_reply_sha256 is null then 'confirmed'
-           when x.status = 'accepted' and p_reply_update_time is not null and p_reply_update_time > x.completed_at then 'dismissed'
+           when x.status = 'accepted' then 'dismissed'
            else x.status end,
+         error_code = case
+           when (x.action = 'upsert' and x.text_sha256 = p_reply_sha256) or (x.action = 'delete' and p_reply_sha256 is null) then x.error_code
+           else 'changed_after_accept' end,
          lease_token = null,
          lease_until = null,
          completed_at = coalesce(x.completed_at, now())
@@ -368,7 +365,7 @@ begin
      and (
        (x.action = 'upsert' and x.text_sha256 = p_reply_sha256)
        or (x.action = 'delete' and p_reply_sha256 is null)
-       or (x.status = 'accepted' and p_reply_update_time is not null and p_reply_update_time > x.completed_at)
+       or x.status = 'accepted'
      );
   get diagnostics v_count = row_count;
   update public.gbp_reply_operations x
@@ -378,23 +375,14 @@ begin
          completed_at = now()
    where x.salon_id = p_salon_id and x.location_name = v_name and x.review_key_hash = v_key
      and x.status = 'sending' and x.lease_until <= now();
-  -- 終わってから十分に時間がたっても、取り直した Google のデータに送った内容が出ていない:反映されなかったと確かめた。
-  update public.gbp_reply_operations x
-     set status = 'failed', error_code = 'not_applied', completed_at = now()
-   where x.salon_id = p_salon_id and x.location_name = v_name and x.review_key_hash = v_key
-     and x.status in ('unknown', 'accepted')
-     and x.completed_at <= now() - make_interval(secs => p_settle_seconds)
-     and not ((x.action = 'upsert' and x.text_sha256 is not distinct from p_reply_sha256)
-              or (x.action = 'delete' and p_reply_sha256 is null));
-  get diagnostics v_settled = row_count;
-  return v_count + v_settled;
+  return v_count;
 end;
 $$;
 
 -- 「送るのをやめる」:反映されていないと分かっている操作(failed)を、表示しないようにする(その店舗の、使える世代の
 -- 口コミだけ)。Google には何も送らない(Google 上の返信を消すのは、別の delete の操作)。
--- 結果が分からない(unknown)・送信中(sending)・反映を確かめていない(accepted)操作は変えない(取り直して確かめるまで
--- 結果不明のまま。未返信として扱い直さない)。戻り値は閉じた操作の数(0 なら何も変えていない)。
+-- 結果が分からない(unknown)・送信中(sending)・受け付け(accepted)の操作は変えない(未返信として扱い直さない)。
+-- 戻り値は閉じた操作の数(0 なら何も変えていない)。
 create or replace function public.gbp_dismiss_reply_operation(p_salon_id uuid, p_review_index_id uuid)
 returns integer
 language plpgsql
@@ -627,7 +615,7 @@ revoke all on function public.gbp_reviews_entitled(uuid) from public, anon, auth
 revoke all on function public.gbp_begin_reply_operation(uuid, uuid, uuid, text, text, integer, text, uuid, integer, integer) from public, anon, authenticated;
 revoke all on function public.gbp_reply_start_send(uuid, uuid, uuid, integer, jsonb, integer) from public, anon, authenticated;
 revoke all on function public.gbp_finish_reply_operation(uuid, uuid, uuid, text, text, jsonb, integer, timestamptz) from public, anon, authenticated;
-revoke all on function public.gbp_reconcile_reply_operations(uuid, uuid, text, text, timestamptz, integer) from public, anon, authenticated;
+revoke all on function public.gbp_reconcile_reply_operations(uuid, uuid, text, text, timestamptz) from public, anon, authenticated;
 revoke all on function public.gbp_dismiss_reply_operation(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.gbp_reply_op_display(uuid, text, text, boolean, timestamptz) from public, anon, authenticated;
 revoke all on function public.gbp_reply_bucket(text, boolean, text) from public, anon, authenticated;
@@ -638,7 +626,7 @@ grant execute on function public.gbp_reviews_entitled(uuid) to service_role;
 grant execute on function public.gbp_begin_reply_operation(uuid, uuid, uuid, text, text, integer, text, uuid, integer, integer) to service_role;
 grant execute on function public.gbp_reply_start_send(uuid, uuid, uuid, integer, jsonb, integer) to service_role;
 grant execute on function public.gbp_finish_reply_operation(uuid, uuid, uuid, text, text, jsonb, integer, timestamptz) to service_role;
-grant execute on function public.gbp_reconcile_reply_operations(uuid, uuid, text, text, timestamptz, integer) to service_role;
+grant execute on function public.gbp_reconcile_reply_operations(uuid, uuid, text, text, timestamptz) to service_role;
 grant execute on function public.gbp_dismiss_reply_operation(uuid, uuid) to service_role;
 grant execute on function public.gbp_reply_op_display(uuid, text, text, boolean, timestamptz) to service_role;
 grant execute on function public.gbp_reply_bucket(text, boolean, text) to service_role;

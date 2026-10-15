@@ -67,7 +67,7 @@ describe("返信の状態(§2「未返信」と「結果不明」を分ける)",
 
   it.each([
     ["sending", null, "sending", "attention"],
-    ["unknown", null, "checking", "attention"],
+    ["unknown", null, "unconfirmed", "attention"],
     ["sent_checking", reply("PENDING"), "checking", "attention"],
     ["send_failed", null, "send_failed", "unreplied"],
     ["replace_failed", reply("APPROVED"), "replace_failed", "attention"],
@@ -83,7 +83,8 @@ describe("返信の状態(§2「未返信」と「結果不明」を分ける)",
     expect(replyBucket(s)).toBe(bucket);
   });
 
-  it("結果が分からない状態は「送信結果を確認中」と表示する", () => {
+  it("結果が分からない状態は「反映を確認できていません」、受け付けは「送信結果を確認中」と表示する(送れなかったとは言わない)", () => {
+    expect(REPLY_STATE_VIEW.unconfirmed.label).toBe("反映を確認できていません");
     expect(REPLY_STATE_VIEW.checking.label).toBe("送信結果を確認中");
   });
 });
