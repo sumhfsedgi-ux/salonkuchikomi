@@ -11,30 +11,22 @@
 
 実際の Google への投稿、OpenAI・LINE への呼び出しは行わない。
 
-## 1. 前提(テスト用の環境が決まってから)
+## 1. 前提(共有テストDB。2026-10-15 に準備済み)
 
-環境は、どちらかに決めてから準備する。どちらも、作業の前に対象を示して確認を取る。
-
-- **A. 共有テストDBを使う**
-  1. 古い口コミの表と関数(旧 0015〜0017)を片付ける。対象と戻し方は、別に示した一覧のとおり。
-  2. `npm run testdb:migrate -- --apply` で 0027〜0030 を適用する。`--reapply-changed` は使わない。0026 は適用済みのため、変えない。
-- **B. 口コミ専用のテスト用プロジェクトを使う**
-  - プロジェクトはご本人が作る。
-  - このフォルダの `.env.testdb.local` をそのプロジェクトに向け、`npm run testdb:migrate -- --apply` で 0001〜0030 を適用する。
-
-どちらでも、確認のために次の値を入れる。行を足す・変えるのは、作業の前に一覧を示してから。
-
-- `feature_catalog` の `google_reviews` を `available` にする。テスト用の環境だけで、本番は変えない。
-- 確認用の店舗にだけ、`salon_feature_overrides` で `google_reviews = allow` を入れる。
-- 確認用の店舗とログインを作る。
-  - 口コミプランで許可ありの店舗(アンケートなし)
-  - SalonPack プランで許可ありの店舗
-  - 口コミプランで許可なしの店舗(比較用)
+- 古い口コミの表と関数(旧 0015〜0017 の表9つ・関数27個・適用の記録3行)は、バックアップを取ってから片付けた。
+  0013・0014 は残している(0014 の表は、予約通知側のテストと 0023 の関数が使う)。
+- 0027〜0031 は `npm run testdb:migrate -- --apply` で適用済み。適用済みの migration は書き換えない(直すときは新しい番号で足す)。
+- 確認の自動の手順は `scripts/testdb/reviews-browser-check.ts`。
+  - `setup`:`feature_catalog` の `google_reviews` を `available` にする(前の値を状態のファイルに残す)。
+  - `run`:確認用の店舗を3つ作り(口コミプランで許可あり・SalonPack で許可あり・口コミプランで許可なし)、
+    PC とスマートフォンで確かめ、終わったら店舗・ユーザー・架空の Google のアカウントを消す。
+  - `teardown`:提供状態を元に戻し、残った確認用のデータを消す。`cleanup` は消すだけ。
+  - 開発サーバーは `REVIEWS_CHECK_PORT`(既定 3211)で起動する。ほかのサーバーが動いているポートでは止まる。
 
 ## 2. 起動と、架空の Google の操作
 
 ```
-npm run dev:testdb:reviews        # http://localhost:3200
+npm run dev:testdb:reviews        # http://localhost:3200(REVIEWS_DEV_PORT で変えられる)
 ```
 
 起動の仕組み:
@@ -65,6 +57,9 @@ await fetch("/api/dev/simulated-gbp", { method: "POST", headers: { "content-type
 | `fail_next` {operation, kind} | 次の1回を失敗させる。operation:accounts / locations / reviews / review / reply / delete_reply。kind:timeout / unavailable / permission_denied / scope_insufficient / service_disabled / failed_precondition / rate_limited / not_found など |
 | `delay_next` {operation, ms} | 次の1回を遅らせる(60秒まで) |
 | `lose_next_response` {operation} | reply・delete_reply を反映したうえで、応答を返さない(時間切れ) |
+| `defer_next_write` {operation} | reply・delete_reply を反映せずに時間切れにし、反映をあとに回す(遅れて反映される場合) |
+| `apply_deferred_writes` | あとに回した書き込みを反映する |
+| `clear_pending` | 仕込んだ失敗・遅れ・あとに回す指定を取り消す |
 | `delay_next_ai` {ms} | 次の返信案の作成を遅らせる |
 | `set_reply_state` {reviewName, state, policyViolation?} | 返信の審査の状態を変える(PENDING / APPROVED / REJECTED) |
 | `set_reply_externally` {reviewName, comment\|null} | SalonPack の外で返信を書き換える・消す |
@@ -115,14 +110,15 @@ PC(1280px)とスマートフォン(390px)の両方で行う。スマートフォ
   - 送ると「送信結果を確認中」になる。
   - ［Googleで確認する］で「審査中」になる。
   - `set_reply_state` APPROVED で「公開済み」になる。REJECTED と policyViolation で「公開できませんでした」と理由が出る。
-- [ ] 結果不明(反映されていない場合):
-  - `fail_next` reply timeout のあと送ると、「送信結果を確認中」になる。操作は［Googleで確認する］だけ。
-  - 2分以内に確認すると、「まだ反映を確かめられませんでした」が出る。
-  - 2分を過ぎて確認すると、「送信できませんでした」になる。そこで初めて［もう一度送る］と［送るのをやめる］が出る。
-  - ［送るのをやめる］のあとは、ふつうの「未返信」になる。Google には何も送らない。
+- [ ] 結果不明(遅れて最初の返信が反映される場合):
+  - `defer_next_write` reply のあと送ると、「反映を確認できていません」になる。操作は［Googleで確認する］と
+    ［Googleビジネスプロフィールを開く］だけ(もう一度送る・別の返信・削除・送るのをやめる は出さない。サーバーも受け付けない)。
+  - 確認しても見えない間は、時間がたっても「反映を確認できていません」のまま。確認した時刻と、少し時間をおいて確認する案内が出る。
+  - `apply_deferred_writes` のあと確認すると、最初の返信が見えて「審査中」になる。ここで初めて置き換え・削除ができる。
+- [ ] 送れなかったと分かっている場合(Google が拒否した・送る前に止まった):
+  - 「送信できませんでした」と［もう一度送る］［送るのをやめる］が出る。［送るのをやめる］は Google に何も送らない。
 - [ ] 結果不明(反映されていた場合):
-  - `lose_next_response` reply のあと送ると、「送信結果を確認中」になる。
-  - 確認すると「審査中」になる(反映されていた)。
+  - `lose_next_response` reply のあと送り、確認すると「審査中」になる(反映されていた)。
 - [ ] 置き換えと削除の失敗:
   - 返信済みの口コミで置き換えに失敗すると(`fail_next` reply permission_denied)、「置き換えできませんでした」になり、残っている返信と編集中の文章が並ぶ。
   - 削除の失敗では「削除できませんでした」になる。

@@ -1,7 +1,7 @@
 import Card from "@/components/ui/Card";
 import Alert from "@/components/ui/Alert";
 import ReplyStatusBadge from "@/components/reviews/inbox/ReplyStatusBadge";
-import { policyViolationMessage, replyDisplayState, REPLY_STATE_NOTE } from "@/lib/googleReviews/replyState";
+import { policyViolationMessage, replyDisplayState, REPLY_STATE_SUMMARY } from "@/lib/googleReviews/replyState";
 import { formatReviewDate } from "@/lib/googleReviews/format";
 import type { GoogleReply, ReplyOperationState } from "@/lib/googleReviews/types";
 
@@ -11,7 +11,8 @@ import type { GoogleReply, ReplyOperationState } from "@/lib/googleReviews/types
 // 結果が分からない状態(送信結果を確認中)では、もう一度送るよう促さない。
 export default function GoogleReplyBlock({ reply, operation }: { reply: GoogleReply | null; operation: ReplyOperationState }) {
   const state = replyDisplayState({ reply, operation });
-  const note = REPLY_STATE_NOTE[state];
+  // 詳しい説明と操作は返信の欄に出す(ここでは短く)。
+  const note = REPLY_STATE_SUMMARY[state];
   if (!reply) {
     if (state === "unreplied") return <p className="text-sm text-ink-muted">まだGoogleで返信していません。</p>;
     return (

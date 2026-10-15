@@ -298,7 +298,11 @@ export default function ReviewComposer({
 
   // 結果不明のあと、この画面で Google から取り直したか(取り直してもまだ反映を確認できないときの案内に使う)。
   const checkedSinceSend = lastCheckedAt !== null && (result === null || lastCheckedAt > result.at);
-  const visibleResult = result && !(lastCheckedAt !== null && lastCheckedAt > result.at && result.outcome.kind !== "accepted") ? result : null;
+  // 結果不明は、上の「反映を確認できていません」の欄で説明と操作を出すので、送った結果の欄では同じ説明を繰り返さない。
+  const visibleResult =
+    result && !(lastCheckedAt !== null && lastCheckedAt > result.at && result.outcome.kind !== "accepted") && !(result.outcome.kind === "unknown" && display === "unconfirmed")
+      ? result
+      : null;
 
   const overChars = charsOverLimit(text);
   const unsaved = saveState === "pending" || saveState === "saving" || saveState === "error";

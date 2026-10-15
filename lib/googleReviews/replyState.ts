@@ -95,6 +95,17 @@ export const REPLY_STATE_NOTE: Partial<Record<ReplyDisplayState, string>> = {
   delete_failed: "削除できませんでした。返信がGoogleに残っています。",
 };
 
+/**
+ * 「Googleの返信」の欄に出す短い説明。詳しい説明と操作は返信の欄(ReviewComposer)に出すので、同じ文を2回出さない。
+ */
+export const REPLY_STATE_SUMMARY: Partial<Record<ReplyDisplayState, string>> = {
+  unconfirmed: "送った返信が反映されたかを、まだGoogleで確認できていません。確認の操作は、下の返信の欄にあります。",
+  checking: "Googleが返信を受け付けました。表示されたかは、下の返信の欄で確かめられます。",
+  send_failed: "前回の返信は反映されていません。",
+  replace_failed: "置き換えできませんでした。以前の返信がGoogleに残っています。",
+  delete_failed: "削除できませんでした。返信がGoogleに残っています。",
+};
+
 // policyViolation の説明。知らない値は一般的な文にして、コードを小さく添える。
 const POLICY_GROUPS: { codes: string[]; message: string }[] = [
   {
