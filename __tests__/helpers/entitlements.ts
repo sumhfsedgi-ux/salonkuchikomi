@@ -7,15 +7,17 @@ import { previewAccess, type CatalogEntry, type PlanRules } from "@/lib/ops/prev
 // 本番の判定は DB の関数だけが行う(アプリは結果を読むだけ)。この写しが DB の初期値と一致すること、
 // 判定の順(previewAccess)が DB と一致することは scripts/localdb/entitlements.test.ts で確かめる。
 
-export const CATALOG_SEED: Record<"reviews" | "blog" | "reservation_notifications", CatalogEntry> = {
+export const CATALOG_SEED: Record<"reviews" | "blog" | "reservation_notifications" | "google_reviews", CatalogEntry> = {
   reviews: { lifecycle: "available", hasRuntime: false },
   blog: { lifecycle: "available", hasRuntime: false },
   reservation_notifications: { lifecycle: "available", hasRuntime: true },
+  // 0030: 届いた口コミは準備中。プランの対象だが標準では使えない(店舗ごとの許可で使う)。
+  google_reviews: { lifecycle: "coming_soon", hasRuntime: false },
 };
 
 export const PLAN_RULES_SEED: PlanRules = {
-  reviews: { reviews: true },
-  salonpack: { reviews: true, blog: true, reservation_notifications: true },
+  reviews: { reviews: true, google_reviews: false },
+  salonpack: { reviews: true, blog: true, reservation_notifications: true, google_reviews: false },
 };
 
 export function entitlementsFor(

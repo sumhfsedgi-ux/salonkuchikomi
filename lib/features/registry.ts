@@ -10,7 +10,8 @@ import type { GoogleFeature } from "@/lib/google/scopes";
 // 利用権限(対象プラン・プラン内の標準・提供状態・サロンごとの個別設定)は、entitlement が "catalog" の機能は
 // DB の機能カタログ(supabase/migrations/0024 の feature_catalog・plan_feature_rules・salon_feature_overrides)が正で、
 // 画面・API・通知処理は同じ DB の関数(salon_feature_access)の結果を使う(lib/features/entitlements.ts)。
-// "code" の機能(届いた口コミ)は、今まで通り lib/access/plan.ts と availability で判定する。
+// 届いた口コミ(google_reviews)も 0030 から "catalog"。そのうえで GOOGLE_REVIEWS_OAUTH_ENABLED が無効なら準備中のまま
+// (lib/features/access.ts)。"code" の機能は今は無い(lib/access/plan.ts と availability で判定する仕組みは残す)。
 // Google の許可は google_accounts / salon_google_bindings、予約通知の運用状態は reservation_notification_operations が正で、
 // ここでは変えない。
 // 機能を足すときは、ここに1件足し、DB の機能カタログには migration で coming_soon として足す(既存店舗に自動で開放しない)。
@@ -130,13 +131,14 @@ export const FEATURE_REGISTRY: readonly FeatureDefinition[] = [
     googleFeature: "gbp",
     requiresLine: false,
     setupItems: ["google_gbp", "gbp_location"],
+    // 提供状態は DB の機能カタログ(0030 で coming_soon・プランの標準は使えない)が正。ここの値は判定に使わない。
     availability: "coming_soon",
-    // 受信箱・返信の画面(feature/reviews-d1-reply-engine)を取り込むときに、口コミと一緒に画面へ出す。
+    // 単独の入口(ホームのカード・メニュー・設定の案内)は作らない。「口コミ」の中のタブ(届いた口コミ・設定)から使う。
     listed: false,
     category: "customer_voice",
     sortOrder: 20,
     icon: "inbox",
-    entitlement: "code",
+    entitlement: "catalog",
   },
 ];
 

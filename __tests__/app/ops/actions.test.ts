@@ -101,7 +101,8 @@ describe("saveEntitlementsAction", () => {
   it("カタログに無い機能・長すぎるメモは DB を呼ぶ前に断る", async () => {
     currentUser = { id: "ops-user", email: "ops@example.test" };
     const { saveEntitlementsAction } = await import("@/app/ops/salons/[id]/actions");
-    expect((await saveEntitlementsAction({ ...input, changes: { overrides: { google_reviews: "allow" } } } as never)).ok).toBe(false);
+    // カタログに無い機能(届いた口コミは 0030 でカタログに入ったので、まだ入っていない口コミの通知の名前で確かめる)
+    expect((await saveEntitlementsAction({ ...input, changes: { overrides: { review_notifications: "allow" } } } as never)).ok).toBe(false);
     expect((await saveEntitlementsAction({ ...input, note: "あ".repeat(501) })).ok).toBe(false);
     expect(rpc).not.toHaveBeenCalled();
   });

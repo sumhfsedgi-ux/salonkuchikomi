@@ -78,12 +78,17 @@ function resolveCatalogAccess(def: FeatureDefinition, input: FeatureAccessInput)
   const e = input.entitlements[def.key];
   // 判定が読めない機能は使わせない(利用できる側に倒さない)。
   if (!e) return result(def, "not_allowed", NOT_ALLOWED_REASON);
+  // 届いた口コミは、DB で利用可でも、Google の権限を求める設定(GOOGLE_REVIEWS_OAUTH_ENABLED)が無効なら準備中のまま
+  // (DB の提供状態と、このデプロイの設定の二重の停止)。
+  if (e.allowed && def.key === "google_reviews" && !input.googleReviewsAvailable) {
+    return result(def, "coming_soon", GOOGLE_REVIEWS_COMING_SOON_REASON);
+  }
   if (e.allowed) return result(def, "allowed", null);
   switch (e.reason) {
     case "service_pending":
       return result(def, "not_allowed", SERVICE_PENDING_REASON);
     case "lifecycle_coming_soon":
-      return result(def, "coming_soon", COMING_SOON_REASON);
+      return result(def, "coming_soon", def.key === "google_reviews" ? GOOGLE_REVIEWS_COMING_SOON_REASON : COMING_SOON_REASON);
     case "lifecycle_ended":
       return result(def, "ended", ENDED_REASON);
     default:

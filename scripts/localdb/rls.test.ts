@@ -110,7 +110,7 @@ describe("オーナーのセッション(authenticated)", () => {
 
   it("機能カタログとプランの規則は読める", async () => {
     const rows = await as("authenticated", mine.userId, (tx) => tx`select feature_key from public.feature_catalog order by feature_key`);
-    expect(rows.map((r) => r.feature_key)).toEqual(["blog", "reservation_notifications", "reviews"]);
+    expect(rows.map((r) => r.feature_key)).toEqual(["blog", "google_reviews", "reservation_notifications", "reviews"]);
   });
 });
 
