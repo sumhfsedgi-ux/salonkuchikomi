@@ -100,3 +100,75 @@ export function CheckIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function AlertIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5v5.5" />
+      <path d="M12 16.25v.25" />
+    </svg>
+  );
+}
+
+// 届いた口コミ・Google連携の画面で使うアイコン(docs/plans/google-reviews-inbox-plan.md §8-7)。
+export function CameraIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5v-9Z" />
+      <circle cx="12" cy="13" r="3.25" />
+    </svg>
+  );
+}
+
+export function ChevronLeftIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="m14.5 6-6 6 6 6" />
+    </svg>
+  );
+}
+
+export function ExternalLinkIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M14 4h6v6" />
+      <path d="M20 4 11 13" />
+      <path d="M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10" />
+    </svg>
+  );
+}
+
+export function PencilIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M15.5 5.5 18.5 8.5" />
+      <path d="M5 19l1-4L16.5 4.5a1.4 1.4 0 0 1 2 0l1 1a1.4 1.4 0 0 1 0 2L9 18l-4 1Z" />
+    </svg>
+  );
+}
+
+export function PersonIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <circle cx="12" cy="8.5" r="3.5" />
+      <path d="M5 19.5c1.2-3.3 3.8-5 7-5s5.8 1.7 7 5" />
+    </svg>
+  );
+}
+
+export function PlayIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M8 5.5v13l10.5-6.5L8 5.5Z" />
+    </svg>
+  );
+}
+
+export function StarIcon({ filled = false, ...props }: IconProps & { filled?: boolean }) {
+  return (
+    <svg {...base} fill={filled ? "currentColor" : "none"} {...props}>
+      <path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9L12 3.5Z" />
+    </svg>
+  );
+}

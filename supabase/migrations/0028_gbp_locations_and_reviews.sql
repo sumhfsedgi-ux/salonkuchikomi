@@ -275,6 +275,28 @@ begin
 end;
 $$;
 
+-- そのロケーションを、ほかの店舗が有効に使っているか(選択の画面で「選べない」と出す)。
+create or replace function public.gbp_location_linked_elsewhere(p_location_name text, p_salon_id uuid)
+returns boolean
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select exists (select 1 from public.gbp_locations l
+                  where l.location_name = p_location_name and l.status = 'active' and l.salon_id <> p_salon_id)
+$$;
+
+-- 連携の同意(口コミの一時保存・返信は「Googleに返信する」を押したときだけ、など)を記録する。
+create or replace function public.gbp_record_consent(p_salon_id uuid, p_user_id uuid, p_version text)
+returns void
+language sql
+security invoker
+set search_path = ''
+as $$
+  insert into public.gbp_consents (salon_id, user_id, consent_type, version) values (p_salon_id, p_user_id, 'connect', p_version)
+$$;
+
 -- ------------------------------------------------------------------
 -- 3. 口コミの取り込み
 -- ------------------------------------------------------------------
@@ -788,6 +810,8 @@ revoke all on function public.gbp_location_usable(uuid, uuid) from public, anon,
 revoke all on function public.gbp_deactivate_salon_locations(uuid) from public, anon, authenticated;
 revoke all on function public.gbp_binding_changed() from public, anon, authenticated;
 revoke all on function public.gbp_select_location(uuid, uuid, text, text, text, text, uuid) from public, anon, authenticated;
+revoke all on function public.gbp_location_linked_elsewhere(text, uuid) from public, anon, authenticated;
+revoke all on function public.gbp_record_consent(uuid, uuid, text) from public, anon, authenticated;
 revoke all on function public.gbp_ingest_reviews(uuid, uuid, uuid, text, jsonb, integer) from public, anon, authenticated;
 revoke all on function public.gbp_begin_sync(uuid, uuid, integer, integer, integer, integer) from public, anon, authenticated;
 revoke all on function public.gbp_sync_checkpoint(uuid, uuid, uuid, text, timestamptz, timestamptz, numeric, integer, integer) from public, anon, authenticated;
@@ -804,6 +828,8 @@ grant execute on function public.gbp_location_usable(uuid, uuid) to service_role
 grant execute on function public.gbp_deactivate_salon_locations(uuid) to service_role;
 grant execute on function public.gbp_binding_changed() to service_role;
 grant execute on function public.gbp_select_location(uuid, uuid, text, text, text, text, uuid) to service_role;
+grant execute on function public.gbp_location_linked_elsewhere(text, uuid) to service_role;
+grant execute on function public.gbp_record_consent(uuid, uuid, text) to service_role;
 grant execute on function public.gbp_ingest_reviews(uuid, uuid, uuid, text, jsonb, integer) to service_role;
 grant execute on function public.gbp_begin_sync(uuid, uuid, integer, integer, integer, integer) to service_role;
 grant execute on function public.gbp_sync_checkpoint(uuid, uuid, uuid, text, timestamptz, timestamptz, numeric, integer, integer) to service_role;

@@ -10,6 +10,7 @@
     "test": "vitest run",
     "migrate:notifications": "tsx scripts/migrate-hmail-notifications.ts",
     "eval:review": "vitest run --config vitest.eval.config.mts",
+    "eval:reply": "vitest run --config vitest.eval.config.mts scripts/eval/reply-generation.eval.ts",
     "testdb:migrate": "node scripts/testdb/migrate.mjs",
     "testdb:walkthrough": "tsx scripts/testdb/walkthrough.ts",
     "testdb:browser": "tsx scripts/testdb/browser-walkthrough.ts",
