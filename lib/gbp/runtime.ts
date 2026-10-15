@@ -5,7 +5,7 @@ import { createGbpHttpApiClient } from "@/lib/gbp/apiClient";
 import { createGoogleGbpAccess } from "@/lib/gbp/googleAccess";
 import { createGbpInbox, type GbpInbox } from "@/lib/gbp/inbox";
 import { getDevSimulatedGbp } from "@/lib/gbp/simulated";
-import { simulatedGbpUsers } from "@/lib/gbp/dev/simulatedFixtures";
+import { simulatedGbpDevUsers } from "@/lib/gbp/dev/simulatedFixtures";
 import { createRpcGbpStore, type RpcClient } from "@/lib/gbp/supabaseStore";
 import type { GbpStore } from "@/lib/gbp/store";
 
@@ -35,7 +35,7 @@ export function getGbpInbox(): GbpInbox | null {
     console.warn("gbp: REVIEW_KEY_HMAC_SECRET is not set; the review inbox is unavailable");
     return null;
   }
-  const api = isSimulatedGoogleEnabled() ? getDevSimulatedGbp(() => simulatedGbpUsers()).api : createGbpHttpApiClient();
+  const api = isSimulatedGoogleEnabled() ? getDevSimulatedGbp(() => simulatedGbpDevUsers()).api : createGbpHttpApiClient();
   return createGbpInbox({
     store: createRpcGbpStore(rpcClient()),
     api,

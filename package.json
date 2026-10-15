@@ -14,6 +14,7 @@
     "testdb:migrate": "node scripts/testdb/migrate.mjs",
     "testdb:walkthrough": "tsx scripts/testdb/walkthrough.ts",
     "testdb:browser": "tsx scripts/testdb/browser-walkthrough.ts",
+    "dev:testdb:reviews": "node scripts/testdb/dev-reviews.mjs",
     "test:testdb": "vitest run --config scripts/testdb/vitest.testdb.config.mts",
     "test:localdb": "vitest run --config scripts/localdb/vitest.localdb.config.mts"
   },

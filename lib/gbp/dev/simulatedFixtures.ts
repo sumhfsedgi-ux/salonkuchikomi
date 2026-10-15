@@ -53,6 +53,37 @@ function reviews(location: string, base: number): GoogleReviewJson[] {
   ];
 }
 
+const STARS = ["ONE", "TWO", "THREE", "FOUR", "FIVE"] as const;
+const MANY_COMMENTS = [
+  "(架空の口コミ)仕上がりがきれいで満足です。",
+  "(架空の口コミ)予約の時間から少し待ちました。",
+  "(架空の口コミ)説明がわかりやすかったです。",
+  "(架空の口コミ)次回の予約は 03-0000-0000 に電話しました。詳しくは https://example.invalid/sim を見ました。",
+  "",
+];
+
+/**
+ * 画面確認用の、口コミが多い店舗(架空の Google は1ページ50件。取り込みは1回に最大5ページ)。
+ * 「生成失敗」を含む口コミでは、架空の AI の返信案の作成が失敗する(lib/replyGeneration/mockGenerator.ts)。
+ */
+function manyReviews(location: string, base: number, count: number): GoogleReviewJson[] {
+  const list: GoogleReviewJson[] = [];
+  for (let i = 1; i <= count; i++) {
+    const at = new Date(base - i * 5 * 3_600_000).toISOString();
+    const review: GoogleReviewJson = {
+      name: `accounts/sim-2/${location}/reviews/sim-m${i}`,
+      reviewer: i % 7 === 0 ? { isAnonymous: true } : { displayName: `架空 利用者${i}` },
+      starRating: STARS[(i * 3) % 5],
+      comment: i === 3 ? "(架空の口コミ)生成失敗を試すための口コミです。" : MANY_COMMENTS[i % MANY_COMMENTS.length],
+      createTime: at,
+      updateTime: at,
+    };
+    if (i % 4 === 0) review.reviewReply = { comment: "(架空の返信)ご来店ありがとうございました。", updateTime: at, reviewReplyState: "APPROVED" };
+    list.push(review);
+  }
+  return list;
+}
+
 export function simulatedGbpUsers(base: number = Date.now()): SimulatedGbpUser[] {
   return [
     {
@@ -95,4 +126,42 @@ export function simulatedGbpUsers(base: number = Date.now()): SimulatedGbpUser[]
     },
     { sub: SIM_STAFF_SUB, accounts: [] },
   ];
+}
+
+/**
+ * 画面確認用に足すアカウント(口コミ0件の店舗・口コミが多い店舗)。テスト(scripts/localdb)は accounts[0] だけを見る。
+ * Google が「0件」と返す店舗(★の平均は無い)と、取り込みが複数ページに分かれる店舗。
+ */
+export function simulatedGbpScreenCheckAccount(base: number = Date.now()) {
+  return {
+    name: "accounts/sim-2",
+    accountName: "架空のサロン(画面確認用)",
+    locations: [
+      {
+        name: "locations/sim-201",
+        title: "架空のサロン 口コミ0件の店",
+        address: "〒100-0000 東京都 千代田区 架空7-8-9",
+        hasVoiceOfMerchant: true,
+        reviews: [],
+        averageRating: null,
+        totalReviewCount: 0,
+      },
+      {
+        name: "locations/sim-202",
+        title: "架空のサロン 口コミが多い店",
+        address: null,
+        hasVoiceOfMerchant: true,
+        reviews: manyReviews("locations/sim-202", base, 120),
+        averageRating: 3.6,
+        totalReviewCount: 120,
+      },
+    ],
+  };
+}
+
+/** 開発サーバー(テスト用DBでの画面確認)で使う架空の Google の利用者(テストの利用者に、画面確認用のアカウントを足す)。 */
+export function simulatedGbpDevUsers(base: number = Date.now()): SimulatedGbpUser[] {
+  return simulatedGbpUsers(base).map((user) =>
+    user.sub === SIM_OWNER_SUB ? { ...user, accounts: [...user.accounts, simulatedGbpScreenCheckAccount(base)] } : user,
+  );
 }

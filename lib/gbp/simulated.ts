@@ -257,3 +257,9 @@ export function getDevSimulatedGbp(createUsers: () => SimulatedGbpUser[]): Simul
   holder.__salonpackSimulatedGbp ??= createSimulatedGbp({ users: createUsers() });
   return holder.__salonpackSimulatedGbp;
 }
+
+/** 開発サーバーの架空の口コミの API を、最初の状態に戻す(次に使うときに作り直す。画面確認の操作の口だけで使う)。 */
+export function resetDevSimulatedGbp(): void {
+  const holder = globalThis as unknown as { __salonpackSimulatedGbp?: SimulatedGbp };
+  delete holder.__salonpackSimulatedGbp;
+}

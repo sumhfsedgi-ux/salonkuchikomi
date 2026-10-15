@@ -31,11 +31,28 @@ const REPLIES: Record<ReplyMode, [string, string]> = {
 
 let variant = 0;
 
+/**
+ * 画面確認で「返信案を作っている途中」に連携の変更などを重ねるため、次の1回の作成を遅らせる(架空の文章のときだけ。
+ * 開発サーバーの画面確認の操作の口 app/api/dev/simulated-gbp からだけ設定する)。
+ */
+export function delayNextMockReply(ms: number): void {
+  (globalThis as unknown as { __salonpackMockReplyDelayMs?: number }).__salonpackMockReplyDelayMs = Math.max(0, Math.min(ms, 60_000));
+}
+
+function takeMockReplyDelay(): number {
+  const holder = globalThis as unknown as { __salonpackMockReplyDelayMs?: number };
+  const ms = holder.__salonpackMockReplyDelayMs ?? 0;
+  delete holder.__salonpackMockReplyDelayMs;
+  return ms;
+}
+
 /** OpenAI の代わりに、決まった架空の文章を返す(ネットワークに出ない)。 */
 export function mockReplyDeps(reviewText: string, rating: StarRating): ReplyPipelineDeps {
   const { mode } = classifyReview(reviewText, rating);
   const callJson = async <T,>(options: CallOpenAIJsonOptions): Promise<OpenAIJsonResult<T>> => {
     void options;
+    const delay = takeMockReplyDelay();
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
     if (reviewText.includes(MOCK_FAILURE_TRIGGER)) throw new Error("mock: simulated generation failure");
     variant = (variant + 1) % 2;
     const data: ReplyDraftOutput = { respond_to: [], reply: REPLIES[mode][variant] };
