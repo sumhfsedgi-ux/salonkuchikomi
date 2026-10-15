@@ -666,8 +666,17 @@ async function main() {
       await pb.goto(`${BASE}/dashboard/reviews/google?filter=all`);
       await pb.getByText("120件").first().waitFor({ timeout: 60_000 });
       check("B: 初回の分は新着にしない", !(await bodyText(pb)).includes("新しい口コミが"));
+      // 一覧の行(1ページ 20件)が描かれてから測る。読み込み中の表示のままでは確かめたことにならない
+      const listSection = pb.locator('section[aria-label="口コミの一覧"]');
+      await listSection.locator("li a").nth(19).waitFor({ timeout: 60_000 });
+      const unreadRows = await listSection.locator("li .sr-only", { hasText: "未読" }).count();
       const height = await noExtraPageHeight(pb);
-      check("B: 未読の口コミが多くても、PC の一覧の下に空白ができない(ページが中身より長くならない)", height.ok, height.detail);
+      console.log(`  (一覧の高さの確認:未読の行 ${unreadRows}・${height.detail})`);
+      check(
+        "B: 未読の口コミが多くても、PC の一覧の下に空白ができない(ページが中身より長くならない)",
+        unreadRows >= 10 && height.ok,
+        `未読の行 ${unreadRows}・${height.detail}`,
+      );
       await shot(pb, "pc-b-05b-long-list");
       await openReview(pb, "生成失敗を試すための口コミ");
       await composerText(pb).fill("手で書いた返信(架空)");
