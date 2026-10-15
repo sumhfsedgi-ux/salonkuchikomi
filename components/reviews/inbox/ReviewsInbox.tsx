@@ -559,7 +559,9 @@ export default function ReviewsInbox({ initialResult, actions, children, basePat
                 </select>
               </div>
             </div>
-            <Card className="overflow-hidden p-0 @min-[53rem]:max-h-[calc(100dvh-14rem)] @min-[53rem]:overflow-y-auto">{body}</Card>
+            {/* relative:一覧の中の読み上げ用の文字(sr-only は absolute)の位置の基準をこの枠にする。
+                外側の sticky の列が基準だと、枠の高さで切られずに下へはみ出し、PC でページの下に空白ができる。 */}
+            <Card className="relative overflow-hidden p-0 @min-[53rem]:max-h-[calc(100dvh-14rem)] @min-[53rem]:overflow-y-auto">{body}</Card>
           </section>
           <div className={cn("min-w-0", showingDetail ? "block" : "hidden @min-[53rem]:block")}>{children}</div>
         </div>

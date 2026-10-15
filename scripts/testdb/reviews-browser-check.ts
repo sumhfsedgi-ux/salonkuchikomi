@@ -172,6 +172,16 @@ async function noHorizontalScroll(page: Page): Promise<boolean> {
   return page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1, null);
 }
 
+/** ページの高さが、画面の中身(main の下端)より長くなっていないか。見えない要素のはみ出しで下に空白ができていないか。 */
+async function noExtraPageHeight(page: Page): Promise<{ ok: boolean; detail: string }> {
+  return page.evaluate(() => {
+    const main = document.querySelector("main");
+    const contentBottom = main ? Math.ceil(main.getBoundingClientRect().bottom + window.scrollY) : 0;
+    const pageHeight = document.documentElement.scrollHeight;
+    return { ok: main !== null && pageHeight <= contentBottom + 1, detail: `ページ ${pageHeight}px・中身 ${contentBottom}px` };
+  }, null);
+}
+
 async function openReview(page: Page, text: string) {
   await page.locator("a", { hasText: text }).first().click();
   await page.getByRole("button", { name: /AIで(返信案を作る|別の案を作る)/ }).first().waitFor({ timeout: 60_000 });
@@ -656,6 +666,9 @@ async function main() {
       await pb.goto(`${BASE}/dashboard/reviews/google?filter=all`);
       await pb.getByText("120件").first().waitFor({ timeout: 60_000 });
       check("B: 初回の分は新着にしない", !(await bodyText(pb)).includes("新しい口コミが"));
+      const height = await noExtraPageHeight(pb);
+      check("B: 未読の口コミが多くても、PC の一覧の下に空白ができない(ページが中身より長くならない)", height.ok, height.detail);
+      await shot(pb, "pc-b-05b-long-list");
       await openReview(pb, "生成失敗を試すための口コミ");
       await composerText(pb).fill("手で書いた返信(架空)");
       await pb.getByRole("button", { name: "AIで返信案を作る" }).click();
