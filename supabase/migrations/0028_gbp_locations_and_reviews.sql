@@ -275,6 +275,23 @@ begin
 end;
 $$;
 
+-- 店舗(ロケーション)の選び直しを始める(設定の「店舗を変更する」)。口コミの結び付けを選択待ちに戻す。
+-- 結び付けが p_google_account_id を指していなければ何もしない(false)。
+-- 選択待ちに戻ると、上のトリガーが今の世代を無効にし、一時保存・下書き・索引を消す(新しい店舗は初回として扱う)。
+create or replace function public.gbp_begin_location_change(p_salon_id uuid, p_google_account_id uuid)
+returns boolean
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  update public.salon_google_bindings b
+     set gbp_selection_state = 'selection_pending', updated_at = now()
+   where b.salon_id = p_salon_id and b.feature = 'gbp' and b.google_account_id = p_google_account_id;
+  return found;
+end;
+$$;
+
 -- そのロケーションを、ほかの店舗が有効に使っているか(選択の画面で「選べない」と出す)。
 create or replace function public.gbp_location_linked_elsewhere(p_location_name text, p_salon_id uuid)
 returns boolean
@@ -810,6 +827,7 @@ revoke all on function public.gbp_location_usable(uuid, uuid) from public, anon,
 revoke all on function public.gbp_deactivate_salon_locations(uuid) from public, anon, authenticated;
 revoke all on function public.gbp_binding_changed() from public, anon, authenticated;
 revoke all on function public.gbp_select_location(uuid, uuid, text, text, text, text, uuid) from public, anon, authenticated;
+revoke all on function public.gbp_begin_location_change(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.gbp_location_linked_elsewhere(text, uuid) from public, anon, authenticated;
 revoke all on function public.gbp_record_consent(uuid, uuid, text) from public, anon, authenticated;
 revoke all on function public.gbp_ingest_reviews(uuid, uuid, uuid, text, jsonb, integer) from public, anon, authenticated;
@@ -828,6 +846,7 @@ grant execute on function public.gbp_location_usable(uuid, uuid) to service_role
 grant execute on function public.gbp_deactivate_salon_locations(uuid) to service_role;
 grant execute on function public.gbp_binding_changed() to service_role;
 grant execute on function public.gbp_select_location(uuid, uuid, text, text, text, text, uuid) to service_role;
+grant execute on function public.gbp_begin_location_change(uuid, uuid) to service_role;
 grant execute on function public.gbp_location_linked_elsewhere(text, uuid) to service_role;
 grant execute on function public.gbp_record_consent(uuid, uuid, text) to service_role;
 grant execute on function public.gbp_ingest_reviews(uuid, uuid, uuid, text, jsonb, integer) to service_role;

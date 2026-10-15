@@ -152,6 +152,10 @@ export function createRpcGbpStore(client: RpcClient): GbpStore {
       }
     },
 
+    async beginLocationChange(salonId, googleAccountId) {
+      return (await call("gbp_begin_location_change", { p_salon_id: salonId, p_google_account_id: googleAccountId })) === true;
+    },
+
     async ingestReviews(salonId, locationId, syncLeaseToken, reviews, ttlSeconds) {
       if (reviews.length === 0) return [];
       const data = await call("gbp_ingest_reviews", {

@@ -79,9 +79,18 @@ export function toHomeCard(state: FeatureState): HomeCard {
 
 /**
  * 口コミプランでは機能一覧のホームを使わず、口コミの画面へ直接進む。
- * アンケートが無い・初期設定が終わっていない間は、今まで通りの初期設定へ。
+ *   ・届いた口コミ(google_reviews)を使える店舗は、届いた口コミのタブへ(アンケートが無くても初期設定へは移さない。
+ *     初期設定を終えた直後だけは、お客様用URLを案内するため口コミを集めるタブへ)
+ *   ・それ以外で、アンケートが無い・初期設定が終わっていない間は、今まで通りの初期設定へ
  */
-export function reviewsDirectDestination(params: { hasActiveSurvey: boolean; onboardingCompleted: boolean; onboarded: boolean }): string {
-  if (!params.hasActiveSurvey || !params.onboardingCompleted) return "/dashboard/setup/reviews";
+export function reviewsDirectDestination(params: {
+  hasActiveSurvey: boolean;
+  onboardingCompleted: boolean;
+  onboarded: boolean;
+  googleReviewsAllowed?: boolean;
+}): string {
+  const surveyReady = params.hasActiveSurvey && params.onboardingCompleted;
+  if (params.googleReviewsAllowed && !(surveyReady && params.onboarded)) return "/dashboard/reviews/google";
+  if (!surveyReady) return "/dashboard/setup/reviews";
   return params.onboarded ? "/dashboard/reviews?onboarded=1" : "/dashboard/reviews";
 }

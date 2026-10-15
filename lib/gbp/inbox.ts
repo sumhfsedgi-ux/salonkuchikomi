@@ -84,6 +84,8 @@ export interface GbpInbox {
   recordConsent(ctx: SourceContext): Promise<ActionResult>;
   hasConsent(ctx: SourceContext): Promise<boolean>;
   selectLocation(ctx: SourceContext, locationName: string): Promise<ActionResult>;
+  /** 店舗の選び直しを始める(今の店舗の一時保存・下書きは消える。Google には何も送らない)。 */
+  beginLocationChange(ctx: SourceContext): Promise<ActionResult>;
   listReviews(ctx: SourceContext, query: ReviewListQuery, cursor: string | null): Promise<ReviewListResult>;
   getReview(ctx: SourceContext, id: string): Promise<ReviewDetailResult>;
   /** 「更新」。最短の間隔(5分)より短ければ Google に問い合わせない。途中で区切った取り込みの続きは、間隔に関係なく読む。 */
@@ -540,6 +542,18 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
         }
       }
       return { ok: true, value: undefined };
+    },
+
+    async beginLocationChange(ctx) {
+      const binding = await access.binding(ctx.salonId);
+      if (!binding) return { ok: false, error: NOT_CONNECTED };
+      try {
+        return (await store.beginLocationChange(ctx.salonId, binding.googleAccountId))
+          ? { ok: true, value: undefined }
+          : { ok: false, error: "Google連携が変わりました。画面を読み込み直して、もう一度お試しください。" };
+      } catch {
+        return { ok: false, error: "店舗の変更を始められませんでした。もう一度お試しください。" };
+      }
     },
 
     async listReviews(ctx, query, cursor): Promise<ReviewListResult> {

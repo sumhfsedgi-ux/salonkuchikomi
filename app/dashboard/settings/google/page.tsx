@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentSalon } from "@/lib/supabase/queries";
@@ -90,6 +91,11 @@ function FeatureCard({ state, binding, canStop }: { state: FeatureState; binding
           {!binding && <ConnectButton features={[google]} purpose="connect" label="Googleと連携する" />}
           {needsReauth && <ConnectButton features={[google]} purpose="reauth" label="Googleに再接続する" />}
           {missingScope && <ConnectButton features={[google]} purpose="add_scope" label="権限を追加する" />}
+          {google === "gbp" && binding && !needsReauth && !missingScope && (
+            <Link href="/dashboard/reviews/google" className={buttonClassName({ variant: "secondary", size: "sm" })}>
+              {binding.gbpSelectionState === "selected" ? "届いた口コミを見る" : "口コミを受け取る店舗を選ぶ"}
+            </Link>
+          )}
         </div>
       )}
       {!comingSoon && (binding || canStop) && (
@@ -126,7 +132,13 @@ export default async function GoogleSettingsPage({ searchParams }: { searchParam
   // 紹介してよい機能だけ(契約外は出さない。準備中は SalonPack だけ。lib/features/access.ts)。
   // 対象外になった機能の既存の連携も消さない(下の「すべて解除」は、連携があれば今まで通り出す)。
   const experience = getPlanExperience(salon.plan);
-  const googleStates = states.filter((s) => s.definition.googleFeature && isFeatureIntroduced({ definition: s.definition, status: s.access }, experience, "guide"));
+  // 届いた口コミは単独の入口を持たない(listed:false)ので、使える店舗にだけカードを出す(準備中・契約外の店舗には出さない)。
+  const googleStates = states.filter(
+    (s) =>
+      s.definition.googleFeature &&
+      (isFeatureIntroduced({ definition: s.definition, status: s.access }, experience, "guide") ||
+        (s.key === "google_reviews" && s.access === "allowed")),
+  );
   const usableGoogle = googleStates.filter((s) => s.access === "allowed");
   const unbound = usableGoogle.filter((s) => !bindings.some((b) => b.feature === s.definition.googleFeature));
   const result = params.google ? RESULT_MESSAGES[params.google] : undefined;

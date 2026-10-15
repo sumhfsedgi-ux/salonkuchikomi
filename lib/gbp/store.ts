@@ -216,6 +216,8 @@ export interface GbpStore {
     address: string | null;
     userId: string;
   }): Promise<SelectLocationResult>;
+  /** 店舗の選び直しを始める(口コミの結び付けを選択待ちに戻す。今の世代は DB のトリガーが無効にして消す)。 */
+  beginLocationChange(salonId: string, googleAccountId: string): Promise<boolean>;
   /** 世代が使えなければ GbpLocationInactiveError、同期の処理権を失っていれば GbpSyncLeaseLostError。 */
   ingestReviews(salonId: string, locationId: string, syncLeaseToken: string | null, reviews: CachedReviewInput[], ttlSeconds: number): Promise<UpsertedReview[]>;
   beginSync(salonId: string, locationId: string, input: SyncBeginInput): Promise<SyncBegin>;

@@ -218,6 +218,35 @@ describe("選択の世代(§3-A)", () => {
     await expect(ingest(sql, d.salon.salonId, d.locationId, [review("late")])).rejects.toThrow(/gbp:location_inactive/);
   });
 
+  it("店舗の変更(選び直しの開始)で選択待ちに戻り、今の世代の内容・下書き・索引が消える。違うアカウントを指す要求は何もしない", async () => {
+    const c = await connectedSalon(sql, "salonpack");
+    await sql`select * from public.google_bind_features(${c.salon.salonId}, ${c.accountId}, ${["gmail"]}, null, ${c.salon.userId}, ${["https://www.googleapis.com/auth/gmail.readonly"]})`;
+    const rows = await ingest(sql, c.salon.salonId, c.locationId, [review("k1")]);
+    await sql`select public.gbp_save_draft(${c.salon.salonId}, ${rows[0].review_index_id}, '下書き', ${TTL})`;
+
+    const other = await createAccount(sql);
+    const [miss] = await sql`select public.gbp_begin_location_change(${c.salon.salonId}, ${other}) as ok`;
+    expect(miss.ok).toBe(false);
+    expect(await usable(sql, c.salon.salonId, c.locationId)).toBe(true);
+
+    const [hit] = await sql`select public.gbp_begin_location_change(${c.salon.salonId}, ${c.accountId}) as ok`;
+    expect(hit.ok).toBe(true);
+    expect(await usable(sql, c.salon.salonId, c.locationId)).toBe(false);
+    const bindings = await sql`select feature, google_account_id, gbp_selection_state from public.salon_google_bindings where salon_id = ${c.salon.salonId} order by feature`;
+    expect(bindings).toEqual([
+      { feature: "gbp", google_account_id: c.accountId, gbp_selection_state: "selection_pending" },
+      { feature: "gmail", google_account_id: c.accountId, gbp_selection_state: null },
+    ]);
+    const counts = await sql`
+      select (select count(*)::int from public.gbp_review_index where salon_id = ${c.salon.salonId}) as idx,
+             (select count(*)::int from public.gbp_review_cache where salon_id = ${c.salon.salonId}) as cache,
+             (select count(*)::int from public.gbp_reply_drafts where salon_id = ${c.salon.salonId}) as drafts`;
+    expect(counts[0]).toEqual({ idx: 0, cache: 0, drafts: 0 });
+    await expect(ingest(sql, c.salon.salonId, c.locationId, [review("late")])).rejects.toThrow(/gbp:location_inactive/);
+    const [fn] = await sql`select has_function_privilege('authenticated', 'public.gbp_begin_location_change(uuid, uuid)', 'execute') as can`;
+    expect(fn.can).toBe(false);
+  });
+
   it("口コミの結び付けを変えても、同じ店舗の予約メール(Gmail)の結び付けは変わらない", async () => {
     const c = await connectedSalon(sql, "salonpack");
     await sql`select * from public.google_bind_features(${c.salon.salonId}, ${c.accountId}, ${["gmail"]}, null, ${c.salon.userId}, ${["https://www.googleapis.com/auth/gmail.readonly"]})`;

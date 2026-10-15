@@ -1,7 +1,8 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentSalon } from "@/lib/supabase/queries";
+import { getAuthedUser, getCurrentSalon } from "@/lib/supabase/queries";
+import { canAccessFeature } from "@/lib/access/featureAccess";
 import { getPlanExperience, isFeatureIntroduced } from "@/lib/features/access";
 import { loadSetupContext } from "@/lib/features/setupContext";
 import { resolveFeatureStates } from "@/lib/features/featureState";
@@ -31,10 +32,21 @@ export default async function DashboardHomePage({ searchParams }: PageProps<"/da
   const justOnboarded = params?.onboarded === "1";
 
   if (getPlanExperience(salon.plan) === "reviews_direct") {
-    // 行き先を決めるのに要るのは、有効なアンケートの有無だけ(機能ごとの状態は読まない)。
-    const { data: survey, error } = await supabase.from("surveys").select("id").eq("salon_id", salon.id).eq("is_active", true).limit(1);
+    // 行き先を決めるのに要るのは、有効なアンケートの有無と、届いた口コミを使えるかだけ。
+    const user = await getAuthedUser(supabase);
+    const [{ data: survey, error }, googleReviewsAllowed] = await Promise.all([
+      supabase.from("surveys").select("id").eq("salon_id", salon.id).eq("is_active", true).limit(1),
+      user ? canAccessFeature(salon, user.id, "google_reviews") : Promise.resolve(false),
+    ]);
     if (error) throw new Error("アンケートの取得に失敗しました。");
-    redirect(reviewsDirectDestination({ hasActiveSurvey: (survey ?? []).length > 0, onboardingCompleted: salon.onboardingCompleted, onboarded: justOnboarded }));
+    redirect(
+      reviewsDirectDestination({
+        hasActiveSurvey: (survey ?? []).length > 0,
+        onboardingCompleted: salon.onboardingCompleted,
+        onboarded: justOnboarded,
+        googleReviewsAllowed,
+      }),
+    );
   }
 
   const { states } = resolveFeatureStates(await loadSetupContext(salon));

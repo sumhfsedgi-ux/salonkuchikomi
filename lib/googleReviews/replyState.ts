@@ -1,4 +1,4 @@
-import type { ReviewBucket, ReviewSummary } from "@/lib/googleReviews/types";
+import type { ReviewBucket, ReviewFilter, ReviewSummary } from "@/lib/googleReviews/types";
 
 // 返信の状態の表示(計画 第2版 §2「返信の状態」)。DB の gbp_reply_op_display・gbp_reply_bucket と同じ規則。
 // 上の条件ほど優先し、当てはまった1つを表示する。Google の状態は、取り直した Google のデータだけで決める。
@@ -53,6 +53,16 @@ export function replyBucket(state: ReplyDisplayState): ReviewBucket {
     default:
       return "replied";
   }
+}
+
+/**
+ * その口コミが今の絞り込みに入るか(詳細で操作したあと、一覧の行が絞り込みの対象外になったかを示すのに使う)。
+ * 分類は replyBucket(DB の gbp_reply_bucket と同じ規則)で、画面で変えた状態からも決める。
+ */
+export function matchesFilter(review: Pick<ReviewSummary, "reply" | "operation" | "isNew">, filter: ReviewFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "new") return review.isNew;
+  return replyBucket(replyDisplayState(review)) === filter;
 }
 
 export type BadgeTone = "neutral" | "success" | "warning" | "danger";

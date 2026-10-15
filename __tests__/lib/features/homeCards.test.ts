@@ -131,4 +131,14 @@ describe("口コミプランの /dashboard の行き先", () => {
     expect(reviewsDirectDestination({ hasActiveSurvey: true, onboardingCompleted: true, onboarded: false })).toBe("/dashboard/reviews");
     expect(reviewsDirectDestination({ hasActiveSurvey: true, onboardingCompleted: true, onboarded: true })).toBe("/dashboard/reviews?onboarded=1");
   });
+
+  it("届いた口コミを使える店舗は届いた口コミへ(アンケートが無くても初期設定へ移さない)", () => {
+    const allowed = { googleReviewsAllowed: true };
+    expect(reviewsDirectDestination({ hasActiveSurvey: false, onboardingCompleted: false, onboarded: false, ...allowed })).toBe("/dashboard/reviews/google");
+    expect(reviewsDirectDestination({ hasActiveSurvey: true, onboardingCompleted: true, onboarded: false, ...allowed })).toBe("/dashboard/reviews/google");
+    // 初期設定を終えた直後だけは、お客様用URLを案内する
+    expect(reviewsDirectDestination({ hasActiveSurvey: true, onboardingCompleted: true, onboarded: true, ...allowed })).toBe("/dashboard/reviews?onboarded=1");
+    // 使えない店舗は今まで通り
+    expect(reviewsDirectDestination({ hasActiveSurvey: false, onboardingCompleted: false, onboarded: false, googleReviewsAllowed: false })).toBe("/dashboard/setup/reviews");
+  });
 });

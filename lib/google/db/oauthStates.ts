@@ -8,7 +8,7 @@ import type { SealedSecret } from "@/lib/google/tokenBox";
 export const OAUTH_STATE_TTL_SECONDS = 10 * 60;
 
 export type OAuthPurpose = "connect" | "add_scope" | "reauth" | "switch_account";
-export type OAuthReturnTo = "settings_google" | "dashboard" | "notifications";
+export type OAuthReturnTo = "settings_google" | "dashboard" | "notifications" | "reviews";
 
 export interface StoredOAuthState {
   stateHash: string;

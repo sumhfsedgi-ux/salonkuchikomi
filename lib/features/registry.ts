@@ -127,7 +127,7 @@ export const FEATURE_REGISTRY: readonly FeatureDefinition[] = [
     label: "届いた口コミ",
     description: "Googleに届いた口コミの確認と、返信の準備ができます。",
     accessFeature: "google_reviews",
-    href: "/dashboard/settings/google",
+    href: "/dashboard/reviews/google",
     googleFeature: "gbp",
     requiresLine: false,
     setupItems: ["google_gbp", "gbp_location"],
@@ -210,7 +210,7 @@ export const SETUP_ITEMS: Record<SetupItemKey, SetupItemDefinition> = {
     key: "gbp_location",
     label: "口コミを受け取る店舗を選択",
     description: "Googleビジネスプロフィールのどの店舗の口コミを扱うかを選びます。",
-    href: "/dashboard/settings/google",
+    href: "/dashboard/reviews/google",
     required: true,
   },
 };
