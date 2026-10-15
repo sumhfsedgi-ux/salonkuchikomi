@@ -1,7 +1,7 @@
 import {
   FORBIDDEN_KINDS,
   GBP_API_TIMEOUT_MS,
-  GbpApiError,
+  isGbpApiError,
   type GbpApiClient,
   type GbpApiErrorKind,
   type GoogleLocation,
@@ -252,7 +252,7 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
   /** API のエラーを、この処理の分類にする。口コミの権限不足と確かめられたときだけ、口コミの結び付けに記録する。 */
   async function callError(salonId: string, err: unknown): Promise<GoogleCallError> {
     if (err instanceof GoogleCallError) return err;
-    if (!(err instanceof GbpApiError)) return new GoogleCallError("unavailable");
+    if (!isGbpApiError(err)) return new GoogleCallError("unavailable");
     switch (err.kind) {
       case "unauthorized":
         return new GoogleCallError("needs_reconnect", err.kind);
@@ -285,7 +285,7 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
       try {
         return await call(token);
       } catch (err) {
-        if (err instanceof GbpApiError && err.kind === "unauthorized" && attempt === 0) continue;
+        if (isGbpApiError(err) && err.kind === "unauthorized" && attempt === 0) continue;
         throw await callError(salonId, err);
       }
     }
@@ -312,7 +312,7 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
       try {
         return { sent: true, value: await call(token) };
       } catch (err) {
-        if (err instanceof GbpApiError && err.kind === "unauthorized" && attempt === 0) {
+        if (isGbpApiError(err) && err.kind === "unauthorized" && attempt === 0) {
           token = await tokenFor(salonId, binding, true);
           continue;
         }

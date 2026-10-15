@@ -50,6 +50,24 @@ describe("403 の分類(計画 第2版 §3-B)", () => {
   });
 });
 
+describe("口コミの API のエラーの見分け", () => {
+  it("別のまとまりで作られた同じ名前・種類のエラーも、口コミの API のエラーとして分類する(拒否を結果不明にしない)", async () => {
+    const { GbpApiError, isGbpApiError } = await import("@/lib/gbp/apiClient");
+    // 開発サーバーで、同じクラスが別のまとまりに読み込まれた場合と同じ形
+    class OtherCopy extends Error {
+      constructor(readonly kind: string) {
+        super(`gbp api: ${kind}`);
+        this.name = "GbpApiError";
+      }
+    }
+    expect(isGbpApiError(new GbpApiError("permission_denied"))).toBe(true);
+    expect(isGbpApiError(new OtherCopy("permission_denied"))).toBe(true);
+    expect(isGbpApiError(new OtherCopy("drop_table"))).toBe(false);
+    expect(isGbpApiError(new Error("gbp api: timeout"))).toBe(false);
+    expect(isGbpApiError({ name: "GbpApiError", kind: "timeout" })).toBe(false);
+  });
+});
+
 describe("AI に送る前の伏せ字(§3-6)", () => {
   it("URL・メールアドレス・電話番号を伏せる。人名・ふつうの文はそのまま", () => {
     const text = "山田さんに担当してもらいました。予約は 03-1234-5678 か ０９０－１２３４－５６７８、info@example.com、https://example.com/x まで。";

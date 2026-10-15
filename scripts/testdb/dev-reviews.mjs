@@ -16,7 +16,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { ROOT, TargetError, buildChildEnv, loadTestTarget } from "./target.mjs";
 
-const PORT = 3200;
+const PORT = Number(process.env.REVIEWS_DEV_PORT ?? 3200);
 
 function stop(message) {
   console.error(`\n[dev:testdb:reviews] 起動しませんでした:${message}`);
@@ -43,6 +43,10 @@ env.GOOGLE_REVIEWS_OAUTH_ENABLED = "1";
 env.NEXT_PUBLIC_APP_MODE = "salonpack";
 env.OPENAI_API_KEY = "";
 env.OPENAI_MODEL = "";
+
+if (await fetch(`http://localhost:${PORT}/login`, { redirect: "manual" }).then(() => true, () => false)) {
+  stop(`ポート ${PORT} で、すでにほかのサーバーが動いています。REVIEWS_DEV_PORT で別のポートを指定してください。`);
+}
 
 console.log(`[dev:testdb:reviews] テスト用プロジェクト ${target.ref.slice(0, 4)}… に接続します(架空の Google・架空の返信案)。http://localhost:${PORT}`);
 const child = spawn("npx", ["next", "dev", "-p", String(PORT)], { env, shell: true, stdio: "inherit" });

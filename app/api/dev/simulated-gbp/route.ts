@@ -39,6 +39,7 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("lose_next_response"), operation: z.enum(["reply", "delete_reply"]) }),
   z.object({ action: z.literal("defer_next_write"), operation: z.enum(["reply", "delete_reply"]) }),
   z.object({ action: z.literal("apply_deferred_writes") }),
+  z.object({ action: z.literal("clear_pending") }),
   z.object({ action: z.literal("expire_page_tokens") }),
   z.object({ action: z.literal("add_review"), locationName, starRating: z.enum(STARS), comment: z.string().max(4000) }),
   z.object({ action: z.literal("edit_review"), reviewName, comment: z.string().max(4000) }),
@@ -100,6 +101,10 @@ export async function POST(request: NextRequest) {
       break;
     case "defer_next_write":
       sim().deferNextWrite(input.operation);
+      break;
+    case "clear_pending":
+      sim().clearPending();
+      delayNextMockReply(0);
       break;
     case "apply_deferred_writes":
       return NextResponse.json({ ok: true, applied: sim().applyDeferredWrites() });

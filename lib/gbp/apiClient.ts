@@ -88,6 +88,33 @@ export class GbpApiError extends Error {
   }
 }
 
+const API_ERROR_KINDS: ReadonlySet<string> = new Set<GbpApiErrorKind>([
+  "unauthorized",
+  "scope_insufficient",
+  "service_disabled",
+  "permission_denied",
+  "forbidden",
+  "not_found",
+  "failed_precondition",
+  "invalid_argument",
+  "rate_limited",
+  "unavailable",
+  "bad_response",
+  "network",
+  "timeout",
+]);
+
+/**
+ * 口コミの API のエラーか。instanceof だけで見ない:開発サーバーでは、架空の Google(操作の口から作られる)と
+ * 口コミの処理が別のまとまりに入り、同じクラスが2つになることがある(分類を誤ると、拒否が「結果不明」になる)。
+ */
+export function isGbpApiError(err: unknown): err is GbpApiError {
+  if (err instanceof GbpApiError) return true;
+  if (!(err instanceof Error) || err.name !== "GbpApiError") return false;
+  const kind = (err as { kind?: unknown }).kind;
+  return typeof kind === "string" && API_ERROR_KINDS.has(kind);
+}
+
 /** 403 系(どれも、Google は書き込みを受け付けていない)。 */
 export const FORBIDDEN_KINDS: ReadonlySet<GbpApiErrorKind> = new Set(["scope_insufficient", "service_disabled", "permission_denied", "forbidden"]);
 

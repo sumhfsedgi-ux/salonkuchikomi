@@ -50,6 +50,8 @@ export interface SimulatedGbp {
   deferNextWrite(operation: "reply" | "delete_reply"): void;
   /** あとに回した書き込みを、受け取った順に反映する。反映した数を返す。 */
   applyDeferredWrites(): number;
+  /** 仕込んだ失敗・遅れ・応答の消失・あとに回す指定を取り消す(あとに回した書き込みは反映しない)。 */
+  clearPending(): void;
   setReplyResponseIncludesState(include: boolean): void;
   setReplyState(reviewName: string, state: "PENDING" | "APPROVED" | "REJECTED", policyViolation?: string): void;
   /** SalonPack の外(Google の画面・ほかのツール)で返信を書き換える・消す。 */
@@ -243,6 +245,12 @@ export function createSimulatedGbp(options: { users: SimulatedGbpUser[]; now?: (
       const pending = deferred.splice(0);
       for (const apply of pending) apply();
       return pending.length;
+    },
+    clearPending: () => {
+      failures.clear();
+      delays.clear();
+      lostResponses.clear();
+      deferNext.clear();
     },
     setReplyResponseIncludesState: (include) => {
       replyIncludesState = include;
