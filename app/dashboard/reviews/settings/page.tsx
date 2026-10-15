@@ -61,7 +61,7 @@ export default async function DashboardReviewsSettingsPage({ searchParams }: Pag
         {locationMessage && <Alert variant="warning">{locationMessage}</Alert>}
         <Card className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2">
-            <p className="font-medium text-ink">届いた口コミ</p>
+            <p className="font-medium text-ink">Google口コミ</p>
             <Badge variant={status.tone} dot>
               {status.label}
             </Badge>
@@ -87,7 +87,7 @@ export default async function DashboardReviewsSettingsPage({ searchParams }: Pag
           <div className="flex flex-wrap gap-2">
             {connection.kind !== "connected" && (
               <Link href={INBOX_PATH} className={buttonClassName({ size: "sm" })}>
-                {connection.kind === "not_connected" ? "Googleと連携する" : "届いた口コミの画面で続ける"}
+                {connection.kind === "not_connected" ? "Googleと連携する" : "「口コミ」タブで続ける"}
               </Link>
             )}
             <Link href="/dashboard/settings/google" className={buttonClassName({ variant: "secondary", size: "sm" })}>
@@ -99,7 +99,7 @@ export default async function DashboardReviewsSettingsPage({ searchParams }: Pag
               <summary className="cursor-pointer text-ink-muted">口コミを受け取るビジネスを変更する</summary>
               <form action={changeLocationAction} className="mt-2 flex flex-col gap-2">
                 <p className="text-xs text-ink-muted">
-                  変更すると、今のビジネスについて一時保存している口コミと下書きを削除し、届いた口コミの画面でビジネスを選び直します。Googleに投稿済みの返信は変わりません。
+                  変更すると、今のビジネスについて一時保存している口コミと下書きを削除し、「口コミ」タブでビジネスを選び直します。Googleに投稿済みの返信は変わりません。
                 </p>
                 <label className="flex items-start gap-2 text-sm text-ink">
                   <input type="checkbox" name="confirm" value="yes" required className="mt-0.5 h-5 w-5 shrink-0 accent-sage-dark" />

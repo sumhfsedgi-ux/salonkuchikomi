@@ -141,8 +141,8 @@ const REPLY_SUPERSEDED =
 const REPLY_UNKNOWN =
   "Googleからの応答を確認できませんでした。返信が反映されているかもしれません。「Googleで確認する」で確かめてください。確認できるまで、もう一度送らないでください。";
 const LOCATION_CHANGED = "Google連携または店舗が変わったため、返信は送っていません。一覧を読み込み直してください。";
-const NOT_ENTITLED = "届いた口コミを利用できなくなったため、返信は送っていません。";
-const CONSENT_REQUIRED = "口コミの取り扱いについての確認がまだ済んでいません。届いた口コミの画面で内容を確認してください。";
+const NOT_ENTITLED = "Google口コミを利用できなくなったため、返信は送っていません。";
+const CONSENT_REQUIRED = "口コミの取り扱いについての確認がまだ済んでいません。「口コミ」タブで内容を確認してください。";
 const REPLY_UNRESOLVED =
   "前に送った返信の反映を、まだ確認できていません。後からGoogleに反映されることがあるため、確認できるまでは新しく送れません。今回の返信は送っていません。「Googleで確認する」で確かめてください。";
 

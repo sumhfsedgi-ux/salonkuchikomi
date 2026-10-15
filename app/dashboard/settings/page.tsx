@@ -58,11 +58,11 @@ export default async function DashboardSettingsPage() {
         </p>
       )}
       <p className="text-sm text-ink-muted">
-        Google口コミ投稿先の設定は
+        Google口コミ投稿先の設定は、口コミの
         <Link href="/dashboard/reviews" className="text-sage-dark underline underline-offset-2">
-          口コミ
+          アンケート
         </Link>
-        から変更できます。
+        の画面から変更できます。
       </p>
     </div>
   );

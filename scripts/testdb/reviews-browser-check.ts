@@ -37,6 +37,7 @@ for (const [k, v] of Object.entries(childEnv)) process.env[k] = v;
 // ---- playwright-core の使う部分だけの型 ----
 interface Locator {
   click(): Promise<void>;
+  getAttribute(name: string): Promise<string | null>;
   check(): Promise<void>;
   fill(value: string): Promise<void>;
   count(): Promise<number>;
@@ -177,6 +178,21 @@ async function openReview(page: Page, text: string) {
 }
 
 const composerText = (page: Page) => page.locator("textarea").first();
+
+/** 口コミの画面のタブ(口コミ | アンケート | 設定)。タブが無ければ空。 */
+const TAB_NAV = 'nav[aria-label="口コミ機能内のナビゲーション"]';
+async function tabLabels(page: Page): Promise<string[]> {
+  const nav = page.locator(TAB_NAV);
+  if ((await nav.count()) === 0) return [];
+  return (await nav.first().innerText()).split(/\s+/).filter(Boolean);
+}
+async function activeTab(page: Page): Promise<string> {
+  return (await page.locator(`${TAB_NAV} a[aria-current="page"]`).first().innerText()).trim();
+}
+/** メニューの「口コミ」(PC は左のメニュー、スマートフォンは下のメニュー)。 */
+function menuReviews(page: Page, where: "side" | "bottom"): Locator {
+  return page.locator(where === "side" ? "aside nav a" : 'nav[aria-label="メインナビゲーション"] a', { hasText: "口コミ" }).first();
+}
 
 async function pickLocation(page: Page, locationName: string) {
   await page.locator(`input[type=radio][value="${locationName}"]`).check();
@@ -374,10 +390,28 @@ async function main() {
     // ================= A店(口コミプラン・許可あり・アンケートなし) =================
     await scenario("A: 入口・連携・店舗の選択", () => page, async () => {
       await login(page, shopA.email, shopA.password);
-      check("A: 口コミプランで許可ありは、ログイン後に届いた口コミへ(アンケートが無くても初期設定に飛ばない)", /\/dashboard\/reviews\/google/.test(page.url()), page.url());
-      const nav = await page.locator("nav", { hasText: "口コミを集める" }).first().innerText();
-      check("A: 口コミのタブは3つ(口コミを集める・届いた口コミ・設定)", ["口コミを集める", "届いた口コミ", "設定"].every((t) => nav.includes(t)), nav);
+      check("A: 口コミプランで許可ありは、ログイン後に「口コミ」タブ(アンケートが無くても初期設定に飛ばない)", /\/dashboard\/reviews\/google$/.test(page.url()), page.url());
+      check("A: タブは 口コミ | アンケート | 設定 の順で、「口コミ」が選択中", (await tabLabels(page)).join("|") === "口コミ|アンケート|設定" && (await activeTab(page)) === "口コミ", (await tabLabels(page)).join("|"));
+      check("A: 左のメニューの「口コミ」は「口コミ」タブを開く", (await menuReviews(page, "side").getAttribute("href")) === "/dashboard/reviews/google");
       await waitText(page, "Googleに届いた口コミを、ここで確認・返信できます");
+      check("A: Google と未連携なら、「口コミ」タブの中で連携を案内する", true);
+      // 「アンケート」「設定」を選ぶ・URL を直接開くと、それぞれの画面。メニューの「口コミ」は、どのタブでも選択中
+      await page.locator(TAB_NAV).getByRole("link", { name: "アンケート" }).click();
+      await page.waitForURL(/\/dashboard\/reviews$/, { timeout: 60_000 });
+      await waitText(page, "アンケートを作成する");
+      check("A: 「アンケート」タブはアンケートの画面(未作成なら作成の案内。初期設定へは移さない)", (await activeTab(page)) === "アンケート");
+      check("A: 「アンケート」タブでも、左のメニューの「口コミ」は選択中", (await menuReviews(page, "side").getAttribute("aria-current")) === "page");
+      await shot(page, "pc-a-00-survey-tab");
+      await page.goto(`${BASE}/dashboard/reviews/settings`);
+      await waitText(page, "AI返信");
+      check("A: 「設定」タブの URL を直接開くと設定の画面", (await activeTab(page)) === "設定" && (await menuReviews(page, "side").getAttribute("aria-current")) === "page");
+      await page.goto(`${BASE}/dashboard/reviews`);
+      await waitText(page, "アンケートを作成する");
+      check("A: 「アンケート」タブの URL を直接開くとアンケートの画面", /\/dashboard\/reviews$/.test(page.url()) && (await activeTab(page)) === "アンケート");
+      await menuReviews(page, "side").click();
+      await page.waitForURL(/\/dashboard\/reviews\/google$/, { timeout: 60_000 });
+      await waitText(page, "Googleに届いた口コミを、ここで確認・返信できます");
+      check("A: 左のメニューの「口コミ」を押すと「口コミ」タブ", (await activeTab(page)) === "口コミ");
       await shot(page, "pc-a-01-not-connected");
       await page.getByRole("button", { name: "Googleと連携する" }).click();
       await page.waitForTimeout(800);
@@ -525,9 +559,9 @@ async function main() {
       await page.waitForTimeout(3000);
       const stopper = await pc.newPage();
       await stopper.goto(`${BASE}/dashboard/settings/google`);
-      await stopper.locator("details", { hasText: "届いた口コミの利用を停止する" }).locator("summary").click();
-      await stopper.getByRole("button", { name: "届いた口コミの利用を停止する" }).click();
-      await waitText(stopper, "届いた口コミの利用を停止しました");
+      await stopper.locator("details", { hasText: "Google口コミの利用を停止する" }).locator("summary").click();
+      await stopper.getByRole("button", { name: "Google口コミの利用を停止する" }).click();
+      await waitText(stopper, "Google口コミの利用を停止しました");
       await picking.catch(() => undefined);
       await other.waitForLoadState("networkidle");
       const { count } = await admin.from("gbp_review_index").select("id", { count: "exact", head: true }).eq("salon_id", shopA.salonId);
@@ -552,9 +586,16 @@ async function main() {
     const pb = await pcB.newPage();
     await scenario("B: 共通の Google 連携の画面から連携 → 同意の確認 → 店舗", () => pb, async () => {
       await login(pb, shopB.email, shopB.password);
-      await pb.goto(`${BASE}/dashboard/reviews`);
-      const nav = await pb.locator("nav", { hasText: "口コミを集める" }).first().innerText();
-      check("B: SalonPack でも、許可があれば口コミのタブは3つ", ["届いた口コミ", "設定"].every((t) => nav.includes(t)), nav);
+      const reviewsCard = pb.locator('[data-feature="reviews"]');
+      await reviewsCard.waitFor({ timeout: 60_000 });
+      const cardText = await reviewsCard.innerText();
+      check("B: ホームの「口コミ」のカードは、アンケートが無くても「設定が必要」にせず「口コミを使う」", cardText.includes("口コミを使う") && !cardText.includes("設定が必要"), cardText.slice(0, 120));
+      await shot(pb, "pc-b-00-home");
+      await reviewsCard.getByRole("link", { name: "口コミを使う" }).click();
+      await pb.waitForURL(/\/dashboard\/reviews\/google$/, { timeout: 60_000 });
+      await pb.locator(TAB_NAV).waitFor({ timeout: 60_000 });
+      check("B: SalonPack のホームから「口コミ」を開くと「口コミ」タブ", (await tabLabels(pb)).join("|") === "口コミ|アンケート|設定" && (await activeTab(pb)) === "口コミ");
+      check("B: 左のメニューの「口コミ」も「口コミ」タブを開く", (await menuReviews(pb, "side").getAttribute("href")) === "/dashboard/reviews/google");
       await pb.goto(`${BASE}/dashboard/settings/google`);
       await pb.getByRole("button", { name: "同じGoogleアカウントでまとめて連携" }).click();
       const consent = await approveOnSimulatedGoogle(pb, "owner@example.test", /\/dashboard\/settings\/google/);
@@ -670,13 +711,14 @@ async function main() {
       const notFound = await bodyText(p3);
       // ダッシュボードは読み込み中の表示を先に返すため、HTTP の状態は 200 のまま、画面が 404 になる(既存の画面と同じ)。
       check(
-        "C: 届いた口コミの URL は 404 の画面になり、口コミの画面・連携の案内を出さない",
+        "C: 「口コミ」タブの URL は 404 の画面になり、口コミの画面・連携の案内を出さない",
         /404|could not be found|見つかりません/.test(notFound) && !notFound.includes("Googleに届いた口コミを、ここで確認・返信できます"),
         `status=${res?.status()} ${notFound.slice(0, 120)}`,
       );
       await p3.goto(`${BASE}/dashboard/reviews`);
-      const nav = await bodyText(p3);
-      check("C: 口コミの画面に「届いた口コミ」「設定」のタブを出さない", !nav.includes("届いた口コミ"), nav.slice(0, 160));
+      await p3.waitForLoadState("networkidle");
+      check("C: 左のメニューの「口コミ」は今まで通りアンケート(/dashboard/reviews)", (await menuReviews(p3, "side").getAttribute("href")) === "/dashboard/reviews");
+      check("C: アンケートが無ければ今まで通り初期設定へ進み、口コミのタブは出さない", /\/dashboard\/setup\/reviews/.test(p3.url()) && (await tabLabels(p3)).length === 0, p3.url());
       await ctxC.close();
     });
 
@@ -689,8 +731,18 @@ async function main() {
       ppRef = pp;
       await login(pp, shopA.email, shopA.password);
       await pp.getByText("口コミ数").first().waitFor({ timeout: 60_000 });
-      check("スマホ: 届いた口コミの一覧で、ページが横にはみ出さない", await noHorizontalScroll(pp));
+      check("スマホ: ログイン後に「口コミ」タブ。タブは 口コミ | アンケート | 設定 の順", /\/dashboard\/reviews\/google$/.test(pp.url()) && (await tabLabels(pp)).join("|") === "口コミ|アンケート|設定");
+      check("スマホ: 口コミの一覧で、ページが横にはみ出さない", await noHorizontalScroll(pp));
       await shot(pp, "sp-a-01-inbox");
+      await pp.locator(TAB_NAV).getByRole("link", { name: "アンケート" }).click();
+      await pp.waitForURL(/\/dashboard\/reviews$/, { timeout: 60_000 });
+      await waitText(pp, "アンケートを作成する");
+      check("スマホ: 「アンケート」タブで、ページが横にはみ出さない", await noHorizontalScroll(pp));
+      await shot(pp, "sp-a-06-survey-tab");
+      check("スマホ: 下のメニューの「口コミ」は「口コミ」タブを開き、アンケートでも選択中", (await menuReviews(pp, "bottom").getAttribute("href")) === "/dashboard/reviews/google" && (await menuReviews(pp, "bottom").getAttribute("aria-current")) === "page");
+      await menuReviews(pp, "bottom").click();
+      await pp.waitForURL(/\/dashboard\/reviews\/google$/, { timeout: 60_000 });
+      await pp.getByText("口コミ数").first().waitFor({ timeout: 60_000 });
       await openReview(pp, "スマートフォンで確認する口コミ");
       check("スマホ: 詳細は全画面で「一覧へ」がある", await pp.getByRole("link", { name: "一覧へ" }).first().isVisible());
       check("スマホ: 詳細で、ページが横にはみ出さない", await noHorizontalScroll(pp));

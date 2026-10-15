@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthedUser, getCurrentSalon } from "@/lib/supabase/queries";
-import { getPlanExperience, listUsableFeatureKeys } from "@/lib/features/access";
+import { getPlanExperience, isReviewsTabUsable, listUsableFeatureKeys } from "@/lib/features/access";
 import { loadFeatureAccessInput } from "@/lib/features/accessInput";
 import { getAccountState } from "@/lib/onboarding/accountState";
 import { resolveNextStep } from "@/lib/onboarding/nextStep";
@@ -22,10 +22,13 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
   const next = resolveNextStep({ account, salon });
   if (next !== "/dashboard" || !salon) redirect(next);
 
-  const usableFeatures = listUsableFeatureKeys(await loadFeatureAccessInput(salon));
+  const accessInput = await loadFeatureAccessInput(salon);
+  const usableFeatures = listUsableFeatureKeys(accessInput);
+  // Google口コミを使える店舗では、メニューの「口コミ」は「口コミ」タブを開く(lib/features/reviewsEntry.ts)。
+  const reviewsTab = isReviewsTabUsable(accessInput);
 
   return (
-    <DashboardShell salonName={salon.name} experience={getPlanExperience(salon.plan)} usableFeatures={usableFeatures}>
+    <DashboardShell salonName={salon.name} experience={getPlanExperience(salon.plan)} usableFeatures={usableFeatures} reviewsTab={reviewsTab}>
       {children}
     </DashboardShell>
   );

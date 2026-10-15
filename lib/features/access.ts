@@ -114,6 +114,14 @@ export function resolveAllFeatureAccess(input: FeatureAccessInput): FeatureAcces
 }
 
 /** 利用できる機能のうち、画面に出す機能(メニューに出す機能)。 */
+/**
+ * Google口コミ(「口コミ」タブ。google_reviews)を使えるか。DB の利用可否と GOOGLE_REVIEWS_OAUTH_ENABLED を含む
+ * (画面・操作の入口と同じ判定)。listed ではないので listUsableFeatureKeys には入らない。
+ */
+export function isReviewsTabUsable(input: FeatureAccessInput): boolean {
+  return resolveAllFeatureAccess(input).some((a) => a.key === "google_reviews" && a.status === "allowed");
+}
+
 export function listUsableFeatureKeys(input: FeatureAccessInput): FeatureKey[] {
   return resolveAllFeatureAccess(input)
     .filter((a) => a.status === "allowed" && a.definition.listed)

@@ -15,7 +15,7 @@ const MESSAGES: Record<string, { variant: "success" | "error" | "warning"; text:
   scope_regression: { variant: "error", text: "今まで許可されていた権限が含まれていなかったため、連携を変更していません。" },
   revocation_in_progress: { variant: "warning", text: "以前の連携の解除を処理しています。少し時間をおいてもう一度お試しください。" },
   feature_not_allowed: { variant: "error", text: "ご契約に含まれていない機能です。" },
-  not_available: { variant: "warning", text: "届いた口コミは現在ご利用いただけません。" },
+  not_available: { variant: "warning", text: "Google口コミの確認・返信は、現在ご利用いただけません。" },
   not_connected: { variant: "warning", text: "Googleと連携していません。" },
   consent_required: { variant: "warning", text: "口コミの取り扱いについて確認し、チェックを入れてください。" },
   consent_failed: { variant: "error", text: "確認の内容を記録できませんでした。もう一度お試しください。" },

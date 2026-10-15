@@ -458,7 +458,7 @@ export default function ReviewsInbox({ initialResult, actions, children, basePat
             description="口コミが届いたら、［更新］で取り込むとここに表示されます。"
             actions={
               <Link href="/dashboard/reviews" className="text-sm font-medium text-sage-dark underline underline-offset-2">
-                口コミを集める ›
+                アンケートで口コミを集める ›
               </Link>
             }
           />

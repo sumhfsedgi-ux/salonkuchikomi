@@ -124,7 +124,8 @@ export const FEATURE_REGISTRY: readonly FeatureDefinition[] = [
   },
   {
     key: "google_reviews",
-    label: "届いた口コミ",
+    // 画面の「口コミ」タブの機能。Google連携・運営の画面では、アンケートの「口コミ」と区別して「Google口コミ」と呼ぶ。
+    label: "Google口コミ",
     description: "Googleに届いた口コミの確認と、返信の準備ができます。",
     accessFeature: "google_reviews",
     href: "/dashboard/reviews/google",
@@ -200,7 +201,7 @@ export const SETUP_ITEMS: Record<SetupItemKey, SetupItemDefinition> = {
   },
   google_gbp: {
     key: "google_gbp",
-    label: "Googleと連携(届いた口コミ)",
+    label: "Googleと連携(Google口コミ)",
     description: "Googleビジネスプロフィールを管理しているアカウントと連携します。",
     href: "/dashboard/settings/google",
     required: true,

@@ -17,7 +17,7 @@ export type GoogleReviewsAccess =
   | { ok: true; salon: OwnerSalon; userId: string; ctx: SourceContext; inbox: GbpInbox }
   | { ok: false; error: string };
 
-const UNAVAILABLE = "届いた口コミは現在ご利用いただけません。";
+const UNAVAILABLE = "Google口コミの確認・返信は、現在ご利用いただけません。";
 
 /** その時点の判定(キャッシュしない)。時間のかかる処理のあとに確かめ直すときに使う。 */
 export async function checkGoogleReviewsAccess(): Promise<GoogleReviewsAccess> {

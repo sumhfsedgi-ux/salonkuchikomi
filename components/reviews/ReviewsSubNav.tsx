@@ -3,18 +3,19 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
+import { REVIEWS_SETTINGS_TAB_PATH, REVIEWS_TAB_PATH, SURVEY_TAB_PATH } from "@/lib/features/reviewsEntry";
 
-// 「口コミ」の中のタブ(計画 第2版 §2)。メニュー(Sidebar/BottomNav)は「口コミ」1項目のまま増やさない。
-// 「届いた口コミ」「設定」は、届いた口コミ(google_reviews)を使える店舗にだけ出す(使えない店舗の画面は今と同じ)。
-// 見た目と動きは BlogSubNav と同じ。
-const ITEMS = [
-  { href: "/dashboard/reviews", label: "口コミを集める", inboxOnly: false },
-  { href: "/dashboard/reviews/google", label: "届いた口コミ", inboxOnly: true },
-  { href: "/dashboard/reviews/settings", label: "設定", inboxOnly: true },
+// 「口コミ」の中のタブ:口コミ | アンケート | 設定。メニュー(Sidebar/BottomNav)は「口コミ」1項目のまま増やさない。
+// タブは Google口コミ(google_reviews)を使える店舗にだけ出す(使えない店舗はアンケートの画面だけで、今と同じ)。
+// タブの名前だけを変えたので、URL は変えない(lib/features/reviewsEntry.ts)。見た目と動きは BlogSubNav と同じ。
+export const REVIEWS_SUB_NAV_ITEMS = [
+  { href: REVIEWS_TAB_PATH, label: "口コミ" },
+  { href: SURVEY_TAB_PATH, label: "アンケート" },
+  { href: REVIEWS_SETTINGS_TAB_PATH, label: "設定" },
 ] as const;
 
 export function isReviewsSubNavActive(pathname: string, href: string): boolean {
-  if (href === "/dashboard/reviews") return pathname === "/dashboard/reviews";
+  if (href === SURVEY_TAB_PATH) return pathname === SURVEY_TAB_PATH;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -24,7 +25,7 @@ export default function ReviewsSubNav({ showInbox }: { showInbox: boolean }) {
 
   return (
     <nav className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" aria-label="口コミ機能内のナビゲーション">
-      {ITEMS.map((item) => {
+      {REVIEWS_SUB_NAV_ITEMS.map((item) => {
         const active = isReviewsSubNavActive(pathname, item.href);
         return (
           <Link

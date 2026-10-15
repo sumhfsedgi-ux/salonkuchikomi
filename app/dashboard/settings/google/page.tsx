@@ -30,7 +30,7 @@ const RESULT_MESSAGES: Record<string, { variant: "success" | "error" | "warning"
   not_available: { variant: "warning", text: "この機能のGoogle連携は準備中です。" },
   disconnected: { variant: "success", text: "Google連携を解除しました。" },
   stopped_gmail: { variant: "success", text: "予約通知の利用を停止しました(Googleの許可はそのままです)。再開は予約通知の画面からできます。" },
-  stopped_gbp: { variant: "success", text: "届いた口コミの利用を停止しました(予約メールの連携はそのままです)。" },
+  stopped_gbp: { variant: "success", text: "Google口コミの利用を停止しました(予約メールの連携はそのままです)。" },
 };
 
 /** その機能の権限があるか(許可された scope に含まれ、定期処理でも権限不足を検知していない)。 */
@@ -93,7 +93,7 @@ function FeatureCard({ state, binding, canStop }: { state: FeatureState; binding
           {missingScope && <ConnectButton features={[google]} purpose="add_scope" label="権限を追加する" />}
           {google === "gbp" && binding && !needsReauth && !missingScope && (
             <Link href="/dashboard/reviews/google" className={buttonClassName({ variant: "secondary", size: "sm" })}>
-              {binding.gbpSelectionState === "selected" ? "届いた口コミを見る" : "口コミを受け取る店舗を選ぶ"}
+              {binding.gbpSelectionState === "selected" ? "口コミを見る" : "口コミを受け取る店舗を選ぶ"}
             </Link>
           )}
         </div>

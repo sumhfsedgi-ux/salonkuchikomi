@@ -1,6 +1,7 @@
 import type { BadgeVariant } from "@/components/ui/Badge";
 import type { FeatureState, FeatureStatus } from "@/lib/features/featureState";
 import type { FeatureKey } from "@/lib/features/registry";
+import { REVIEWS_TAB_PATH, SURVEY_TAB_PATH } from "@/lib/features/reviewsEntry";
 
 // SalonPack のホームのカード(1機能1枚)。色だけで区別しないよう、どのカードにも文字のバッジと短い理由を付ける。
 //   - available:      利用できる(今までのボタン)
@@ -43,8 +44,15 @@ const AVAILABLE_BADGES: Partial<Record<FeatureStatus, BadgeVariant>> = {
   checking: "warning",
 };
 
-export function toHomeCard(state: FeatureState): HomeCard {
+/**
+ * options.reviewsTab:Google口コミ(「口コミ」タブ)を使える店舗。「口コミ」のカードは「口コミ」タブを開く
+ * (アンケートが未作成でも、アンケートの初期設定へは進めない。アンケートは「口コミ」の中のタブから作れる)。
+ */
+export function toHomeCard(state: FeatureState, options: { reviewsTab?: boolean } = {}): HomeCard {
   const base = { key: state.key, title: state.definition.label, description: state.definition.description };
+  if (state.key === "reviews" && state.access === "allowed" && options.reviewsTab) {
+    return { ...base, kind: "available", badge: null, reason: null, href: REVIEWS_TAB_PATH, ctaLabel: CTA.reviews };
+  }
   if (state.access !== "allowed") {
     return {
       ...base,
@@ -79,8 +87,8 @@ export function toHomeCard(state: FeatureState): HomeCard {
 
 /**
  * 口コミプランでは機能一覧のホームを使わず、口コミの画面へ直接進む。
- *   ・届いた口コミ(google_reviews)を使える店舗は、届いた口コミのタブへ(アンケートが無くても初期設定へは移さない。
- *     初期設定を終えた直後だけは、お客様用URLを案内するため口コミを集めるタブへ)
+ *   ・Google口コミ(google_reviews)を使える店舗は「口コミ」タブへ(アンケートが無くても初期設定へは移さない。
+ *     アンケートの初期設定を終えた直後だけは、お客様用URLを案内するため「アンケート」タブへ)
  *   ・それ以外で、アンケートが無い・初期設定が終わっていない間は、今まで通りの初期設定へ
  */
 export function reviewsDirectDestination(params: {
@@ -90,7 +98,7 @@ export function reviewsDirectDestination(params: {
   googleReviewsAllowed?: boolean;
 }): string {
   const surveyReady = params.hasActiveSurvey && params.onboardingCompleted;
-  if (params.googleReviewsAllowed && !(surveyReady && params.onboarded)) return "/dashboard/reviews/google";
+  if (params.googleReviewsAllowed && !(surveyReady && params.onboarded)) return REVIEWS_TAB_PATH;
   if (!surveyReady) return "/dashboard/setup/reviews";
-  return params.onboarded ? "/dashboard/reviews?onboarded=1" : "/dashboard/reviews";
+  return params.onboarded ? `${SURVEY_TAB_PATH}?onboarded=1` : SURVEY_TAB_PATH;
 }

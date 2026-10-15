@@ -25,10 +25,10 @@ export default async function DashboardReviewDetailPage({ params }: PageProps<"/
       <Card>
         <EmptyState
           title="この口コミは表示できません"
-          description="Googleと連携して店舗を選ぶと、届いた口コミを確認できます。"
+          description="Googleと連携して店舗を選ぶと、Googleの口コミを確認できます。"
           actions={
             <Link href={INBOX_PATH} className="text-sm font-medium text-sage-dark underline underline-offset-2">
-              届いた口コミへ戻る
+              口コミの一覧へ戻る
             </Link>
           }
         />

@@ -50,6 +50,8 @@ export default async function DashboardHomePage({ searchParams }: PageProps<"/da
   }
 
   const { states } = resolveFeatureStates(await loadSetupContext(salon));
+  // Google口コミを使える店舗では、「口コミ」のカードは「口コミ」タブを開く(lib/features/reviewsEntry.ts)。
+  const reviewsTab = states.some((s) => s.key === "google_reviews" && s.access === "allowed");
   const headersList = await headers();
   const host = `${headersList.get("x-forwarded-proto") ?? "https"}://${headersList.get("host")}`;
   const customerUrl = `${host}/review/${salon.slug}`;
@@ -62,13 +64,15 @@ export default async function DashboardHomePage({ searchParams }: PageProps<"/da
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {states.filter((s) => isFeatureIntroduced({ definition: s.definition, status: s.access }, "feature_home", "home")).map((state) => {
-          const card = toHomeCard(state);
+          const card = toHomeCard(state, { reviewsTab });
+          // お客様用URLは、アンケートができている店舗だけ(Google口コミを使える店舗のカードは、アンケートが無くても「利用できる」)
+          const surveyReady = state.key === "reviews" && state.status === "ready";
           return (
             <FeatureCard
               key={state.key}
               icon={ICONS[state.key]}
               card={card}
-              secondaryAction={state.key === "reviews" && card.kind === "available" ? <CopyUrlButton url={customerUrl} variant="link" /> : undefined}
+              secondaryAction={surveyReady && card.kind === "available" ? <CopyUrlButton url={customerUrl} variant="link" /> : undefined}
             />
           );
         })}
