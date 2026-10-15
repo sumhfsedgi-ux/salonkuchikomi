@@ -6,10 +6,13 @@ import { getAuthedUser, getCurrentSalon } from "@/lib/supabase/queries";
 import { generateRandomSlug } from "@/lib/generateSlug";
 import { getAccountState } from "@/lib/onboarding/accountState";
 import { DB_FIELD_TO_FORM, parseSalonProfile } from "@/lib/onboarding/salonProfile";
+import { isSelfSignupEnabled } from "@/lib/onboarding/authEmailPolicy";
+import { SHOP_REGISTRATION_CLOSED_TEXT } from "@/lib/onboarding/selfSignup";
 
 // お客様自身の店舗の登録と、登録内容(店舗名・担当者・業種・連絡先)の修正。
 // 所有者は、送られてきた値ではなく、このリクエストのセッション(auth.uid())で決まる(DB の create_own_salon)。
-// 新しい店舗は必ず「利用開始待ち」・口コミプランで作る(区分・プラン・機能・管理者の権限は、お客様が指定できない)。
+// 新しい店舗は必ず「利用開始待ち」・プラン未定で作る(区分・プラン・機能・管理者の権限は、お客様が指定できない)。
+// 新規登録の受付が閉じている間は作らない(アプリの SELF_SIGNUP_ENABLED と、DB の self_signup_settings の両方。0026)。
 
 export type ProfileActionResult = { ok: true } | { ok: false; error?: string; fieldErrors?: Record<string, string> };
 
@@ -22,6 +25,7 @@ export async function registerOwnSalonAction(input: Record<string, unknown>): Pr
   const account = await getAccountState(supabase);
   if (!account?.sessionTrusted) return { ok: false, error: "本人確認が済んでいません。メールのリンクから手続きを続けてください。" };
   if (account.isOperator) return { ok: false, error: "運営管理のアカウントでは店舗を登録できません。" };
+  if (!isSelfSignupEnabled()) return { ok: false, error: SHOP_REGISTRATION_CLOSED_TEXT };
 
   const parsed = parseSalonProfile(input ?? {}, user.email ?? null);
   if (!parsed.ok) return { ok: false, fieldErrors: parsed.fieldErrors };
@@ -49,6 +53,7 @@ export async function registerOwnSalonAction(input: Record<string, unknown>): Pr
       const field = DB_FIELD_TO_FORM[result.slice("invalid:".length)] ?? "form";
       return { ok: false, fieldErrors: { [field]: "入力内容をご確認ください。" } };
     }
+    if (result === "closed") return { ok: false, error: SHOP_REGISTRATION_CLOSED_TEXT };
     if (result === "operator") return { ok: false, error: "運営管理のアカウントでは店舗を登録できません。" };
     if (result === "untrusted_session" || result === "email_unconfirmed") {
       return { ok: false, error: "本人確認が済んでいません。メールのリンクから手続きを続けてください。" };

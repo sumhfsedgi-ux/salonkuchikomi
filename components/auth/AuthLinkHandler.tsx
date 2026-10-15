@@ -37,6 +37,16 @@ const BUTTON_LABELS: Record<LinkType, string> = {
   recovery: "手続きを続ける",
 };
 
+// ボタンを押す前の説明。確認はまだ済んでいない(リンクの先読みで手続きが進まないよう、押してから確かめる)。
+// 押すと何が完了し、どこへ進むかを書く(「確認しました」とは書かない)。
+const BEFORE_BUTTON_TEXTS: Record<LinkType, string> = {
+  email: "下のボタンを押すと、メールアドレスの確認を完了して、次の手続きに進みます。",
+  signup: "下のボタンを押すと、メールアドレスの確認を完了して、次の手続きに進みます。",
+  invite: "下のボタンを押すと、招待を受けて、パスワードの設定に進みます。",
+  magiclink: "下のボタンを押すと、ログインして、登録内容の確認に進みます。",
+  recovery: "下のボタンを押すと、パスワードの手続きに進みます。",
+};
+
 export default function AuthLinkHandler() {
   const [state, setState] = useState<State>({ kind: "reading" });
   const [linkType, setLinkType] = useState<LinkType | null>(null);
@@ -95,7 +105,7 @@ export default function AuthLinkHandler() {
   if (state.kind === "reading" || state.kind === "working") {
     return (
       <p className="py-2 text-center text-sm text-ink-muted" role="status">
-        確認しています...
+        {state.kind === "reading" ? "読み込んでいます..." : "手続きをしています..."}
       </p>
     );
   }
@@ -103,7 +113,7 @@ export default function AuthLinkHandler() {
   if (state.kind === "confirm") {
     return (
       <div className="flex flex-col gap-4">
-        <p className="text-sm text-ink">メールのリンクを確認しました。下のボタンを押して、手続きを続けてください。</p>
+        <p className="text-sm text-ink">{BEFORE_BUTTON_TEXTS[state.link.type]}</p>
         {state.currentEmail && (
           <Alert variant="warning">
             <span className="[overflow-wrap:anywhere]">{state.currentEmail}</span>

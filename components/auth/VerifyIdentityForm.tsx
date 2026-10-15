@@ -7,6 +7,19 @@ import Input from "@/components/ui/Input";
 import Alert from "@/components/ui/Alert";
 import Button from "@/components/ui/Button";
 import SendVerificationLinkButton from "@/components/auth/SendVerificationLinkButton";
+import AuthHeading from "@/components/auth/AuthHeading";
+
+// 見出し(必要な操作がわかる文)。入れ直す/新しく設定するを切り替えると、見出しも変わる。
+const HEADINGS = {
+  confirm: {
+    title: "登録したパスワードを入力してください",
+    description: "メールアドレスの確認が済みました。ご本人の確認のため、新規登録のときに決めたパスワードを入力してください。",
+  },
+  set: {
+    title: "パスワードを設定してください",
+    description: "ログインに使うパスワードを設定すると、手続きを続けられます。",
+  },
+} as const;
 
 // 本人確認(メールのリンクで開いたセッション)。
 //   confirm_or_set: 登録したパスワードを入れ直す(合わなければ、新しく設定することもできる)
@@ -38,78 +51,79 @@ export default function VerifyIdentityForm({ email, mode: initialMode }: { email
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
-      {/* パスワード管理ソフトが、どのアカウントのパスワードかを結び付けられるように */}
-      <input type="email" name="username" autoComplete="username" value={email} readOnly hidden />
-      <p className="text-sm text-ink [overflow-wrap:anywhere]">アカウント: {email}</p>
+    <>
+      <AuthHeading title={HEADINGS[mode].title} description={HEADINGS[mode].description} />
+      <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
+        {/* パスワード管理ソフトが、どのアカウントのパスワードかを結び付けられるように */}
+        <input type="email" name="username" autoComplete="username" value={email} readOnly hidden />
+        <p className="text-sm text-ink [overflow-wrap:anywhere]">アカウント: {email}</p>
 
-      {mode === "confirm" ? (
-        <>
-          <p className="text-sm text-ink-muted">本人確認のため、新規登録のときに決めたパスワードを入力してください。</p>
-          <FormField id="verify-password" label="登録したパスワード" requirement="required" error={fieldErrors.password}>
-            <Input
-              id="verify-password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              {...fieldAria("verify-password", { error: fieldErrors.password })}
-            />
-          </FormField>
-        </>
-      ) : (
-        <>
-          <p className="text-sm text-ink-muted">ログインに使うパスワードを設定してください。</p>
-          <FormField id="verify-password" label="新しいパスワード" requirement="required" help="8文字以上" error={fieldErrors.password}>
-            <Input
-              id="verify-password"
-              type="password"
-              autoComplete="new-password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              {...fieldAria("verify-password", { error: fieldErrors.password, help: true })}
-            />
-          </FormField>
-          <FormField id="verify-passwordConfirm" label="新しいパスワード(確認)" requirement="required" error={fieldErrors.passwordConfirm}>
-            <Input
-              id="verify-passwordConfirm"
-              type="password"
-              autoComplete="new-password"
-              required
-              minLength={8}
-              value={passwordConfirm}
-              onChange={(e) => setPasswordConfirm(e.target.value)}
-              {...fieldAria("verify-passwordConfirm", { error: fieldErrors.passwordConfirm })}
-            />
-          </FormField>
-        </>
-      )}
+        {mode === "confirm" ? (
+          <>
+            <FormField id="verify-password" label="登録したパスワード" requirement="required" error={fieldErrors.password}>
+              <Input
+                id="verify-password"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                {...fieldAria("verify-password", { error: fieldErrors.password })}
+              />
+            </FormField>
+          </>
+        ) : (
+          <>
+            <FormField id="verify-password" label="新しいパスワード" requirement="required" help="8文字以上" error={fieldErrors.password}>
+              <Input
+                id="verify-password"
+                type="password"
+                autoComplete="new-password"
+                required
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                {...fieldAria("verify-password", { error: fieldErrors.password, help: true })}
+              />
+            </FormField>
+            <FormField id="verify-passwordConfirm" label="新しいパスワード(確認)" requirement="required" error={fieldErrors.passwordConfirm}>
+              <Input
+                id="verify-passwordConfirm"
+                type="password"
+                autoComplete="new-password"
+                required
+                minLength={8}
+                value={passwordConfirm}
+                onChange={(e) => setPasswordConfirm(e.target.value)}
+                {...fieldAria("verify-passwordConfirm", { error: fieldErrors.passwordConfirm })}
+              />
+            </FormField>
+          </>
+        )}
 
-      <div aria-live="polite">{error && <Alert variant="error">{error}</Alert>}</div>
-      {needsNewLink && <SendVerificationLinkButton />}
+        <div aria-live="polite">{error && <Alert variant="error">{error}</Alert>}</div>
+        {needsNewLink && <SendVerificationLinkButton />}
 
-      <Button type="submit" disabled={pending} fullWidth>
-        {pending ? "確認しています..." : mode === "confirm" ? "確認して続ける" : "パスワードを設定して続ける"}
-      </Button>
-
-      {initialMode === "confirm_or_set" && (
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => {
-            setMode(mode === "confirm" ? "set" : "confirm");
-            setPassword("");
-            setPasswordConfirm("");
-            setFieldErrors({});
-            setError(null);
-          }}
-        >
-          {mode === "confirm" ? "新しいパスワードを設定する" : "登録したパスワードを入力する"}
+        <Button type="submit" disabled={pending} fullWidth>
+          {pending ? "確認しています..." : mode === "confirm" ? "確認して続ける" : "パスワードを設定して続ける"}
         </Button>
-      )}
-    </form>
+
+        {initialMode === "confirm_or_set" && (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              setMode(mode === "confirm" ? "set" : "confirm");
+              setPassword("");
+              setPasswordConfirm("");
+              setFieldErrors({});
+              setError(null);
+            }}
+          >
+            {mode === "confirm" ? "新しいパスワードを設定する" : "登録したパスワードを入力する"}
+          </Button>
+        )}
+      </form>
+    </>
   );
 }

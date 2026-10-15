@@ -52,7 +52,7 @@ export interface FeatureAccess {
 }
 
 export const NOT_ALLOWED_REASON = "ご契約のプランに含まれていません。";
-export const SERVICE_PENDING_REASON = "利用開始の準備中です。利用開始のご案内をお待ちください。";
+export const SERVICE_PENDING_REASON = "ご利用開始前のため、まだお使いいただけません。";
 const COMING_SOON_REASON = "提供開始前のため、準備中です。";
 const ENDED_REASON = "この機能の提供は終了しました。";
 const GOOGLE_REVIEWS_COMING_SOON_REASON = "Googleの承認を確認中のため、準備中です。";

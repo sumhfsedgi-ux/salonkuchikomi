@@ -13,6 +13,12 @@ import { requestConfirmationResend, requestSignup } from "@/lib/onboarding/signu
 import { sendVerificationLink } from "@/lib/onboarding/authEmail";
 import { normalizeEmail } from "@/lib/onboarding/salonProfile";
 import {
+  resendAcceptedMessage,
+  secondsUntilWindowEnd,
+  VERIFY_LINK_ACCEPTED_TEXT,
+  VERIFY_LINK_SIMULATED_TEXT,
+} from "@/lib/onboarding/signupNotice";
+import {
   readSessionClaims,
   resetPasswordWithRecoverySession,
   verifyByCurrentPassword,
@@ -34,7 +40,15 @@ const emailSchema = z
   .transform(normalizeEmail)
   .pipe(z.string().min(3, "メールアドレスを入力してください。").max(254).regex(/^[^@\s]+@[^@\s]+\.[^@\s]+$/, "メールアドレスの形式で入力してください。"));
 
-export type FieldResult = { ok: true; message?: string; simulated?: boolean } | { ok: false; error?: string; fieldErrors?: Record<string, string> };
+/** 待ち時間の範囲: address = そのアドレス(ユーザー)への送信の間隔 / connection = この接続元からの回数(どのアドレスでも同じ)。 */
+export type RetryScope = "address" | "connection";
+
+export type FieldResult =
+  | { ok: true; message?: string; simulated?: boolean; retryAfterSeconds?: number; retryScope?: RetryScope }
+  | { ok: false; error?: string; fieldErrors?: Record<string, string>; retryAfterSeconds?: number; retryScope?: RetryScope };
+
+const RATE_LIMITED_TEXT = "短い間に操作が続いています。少し時間をおいてから、もう一度お試しください。";
+const TRY_LATER_TEXT = "処理できませんでした。時間をおいて、もう一度お試しください。";
 
 async function clientKey(): Promise<string> {
   const h = await headers();
@@ -49,11 +63,54 @@ async function withinLimit(key: string, windowSeconds: number, limit: number): P
   return data !== false;
 }
 
-/** 新規登録・確認メールの再送の共通の応答(送らなかった場合とも食い違わない文)。 */
-const SIGNUP_ACCEPTED_MESSAGE =
-  "ご入力のメールアドレスでお手続きできる場合は、確認のメールをお送りしました。メールのリンクを開いて、登録を続けてください。" +
-  "すでに登録済みの場合はメールは届きません。ログイン、またはパスワードの再設定をお試しください。";
+/**
+ * 同じアドレス・同じユーザーへの送信の間隔(秒。前回から数える)。初期値は65秒。
+ * Supabase にも同じ人への最低の間隔(資料・ソースでの初期値は60秒・前回の送信から数える)がある。このプロジェクトの
+ * 実際の設定値はアプリから確かめられないため、この値が Supabase の設定より長いときだけ、Supabase に断られにくくなる
+ * (手順書の、一般公開の前に確かめること)。
+ */
+function authEmailIntervalSeconds(): number {
+  const value = Number.parseInt(process.env.AUTH_EMAIL_MIN_INTERVAL_SECONDS ?? "", 10);
+  return Number.isFinite(value) && value >= 1 && value <= 3600 ? value : 65;
+}
 
+type SendLimit = { ok: true; intervalSeconds: number } | { ok: false; result: FieldResult };
+
+/**
+ * 送信の前の制限(0026)。アカウントを調べる前に、どのアドレスにも同じように確かめる(登録済みかどうかで応答を変えない)。
+ *   1. 接続元ごとの回数(0012 の rate_limit_hit。1時間に10回・1時間区切り。変えない)
+ *   2. アドレスごとの間隔(auth_email_cooldown_take。前回から N 秒。確かめると同時に記録する)
+ * 待ち時間は、サーバーが決めた残りの秒数を返す(画面はこれで数える)。間隔の記録が読めないときは、どのアドレスでも同じ応答にする。
+ */
+async function takeSendLimit(ipKey: string, cooldownKey: string): Promise<SendLimit> {
+  if (!(await withinLimit(ipKey, 60 * 60, 10))) {
+    // 1時間区切りの窓が終わるまで(アプリの時計で数えるため、1秒の余裕を足す)
+    return {
+      ok: false,
+      result: { ok: false, error: RATE_LIMITED_TEXT, retryAfterSeconds: secondsUntilWindowEnd(Date.now(), 60 * 60) + 1, retryScope: "connection" },
+    };
+  }
+  const intervalSeconds = authEmailIntervalSeconds();
+  const { data, error } = await getSupabaseAdmin().rpc("auth_email_cooldown_take", { p_key: cooldownKey, p_seconds: intervalSeconds });
+  if (error) return { ok: false, result: { ok: false, error: TRY_LATER_TEXT } };
+  const left = Number(data);
+  if (left > 0) return { ok: false, result: { ok: false, error: RATE_LIMITED_TEXT, retryAfterSeconds: left, retryScope: "address" } };
+  return { ok: true, intervalSeconds };
+}
+
+/** アドレスごとの間隔のキー。新規登録と確認メールの再送(新規登録の画面・ログイン画面)で共用する。生のアドレスは入れない。 */
+function confirmEmailKey(email: string): string {
+  return `confirm:${hashIp(email)}`;
+}
+
+/** 送信の失敗のログ。失敗の種類(コード)だけを残す(メールアドレス・トークン・パスワード・リンクは残さない)。 */
+function logSendFailure(where: string, code: string | undefined): void {
+  console.warn(`[auth-email] ${where}: ${code ?? "unknown"}`);
+}
+
+// 新規登録・確認メールの再送の応答は、登録済みかどうかで変えない(画面の文は lib/onboarding/signupNotice.ts)。
+// Supabase に断られた(429 を含む)・送信に失敗した場合も、受付と同じ応答にする(確認済みのアカウントでは送信が起きないため、
+// 失敗だけを伝えると、登録済みかどうかが分かってしまう)。受付は「送った・届いた」という意味ではない。
 export async function signupAction(input: { email: string; password: string; passwordConfirm: string }): Promise<FieldResult> {
   if (!isSelfSignupEnabled()) return { ok: false, error: "現在、新規登録は受け付けていません。" };
   const fieldErrors: Record<string, string> = {};
@@ -64,40 +121,38 @@ export async function signupAction(input: { email: string; password: string; pas
   else if (input.password !== input.passwordConfirm) fieldErrors.passwordConfirm = "パスワードが一致しません。";
   if (Object.keys(fieldErrors).length > 0 || !email.success || !password.success) return { ok: false, fieldErrors };
 
-  const key = await clientKey();
-  if (!(await withinLimit(`signup:ip:${key}`, 60 * 60, 10)) || !(await withinLimit(`signup:email:${hashIp(email.data)}`, 60, 1))) {
-    return { ok: false, error: "短い間に操作が続いています。少し時間をおいてから、もう一度お試しください。" };
-  }
+  const limit = await takeSendLimit(`signup:ip:${await clientKey()}`, confirmEmailKey(email.data));
+  if (!limit.ok) return limit.result;
   try {
     const result = await requestSignup({ admin: getSupabaseAdmin() }, email.data, password.data);
-    if (result.result === "failed" && result.failureCode === "rate_limited") {
-      return { ok: false, error: "短い間に操作が続いています。少し時間をおいてから、もう一度お試しください。" };
-    }
-    if (result.result === "failed") {
-      return { ok: false, error: "登録を受け付けられませんでした。時間をおいて、もう一度お試しください。" };
-    }
-    return { ok: true, message: SIGNUP_ACCEPTED_MESSAGE, simulated: resolveAuthEmailPolicy().mode === "simulated" };
+    if (result.result === "failed") logSendFailure("signup", result.failureCode);
   } catch {
-    return { ok: false, error: "登録を受け付けられませんでした。時間をおいて、もう一度お試しください。" };
+    logSendFailure("signup", "exception");
   }
+  return { ok: true, simulated: resolveAuthEmailPolicy().mode === "simulated", retryAfterSeconds: limit.intervalSeconds, retryScope: "address" };
 }
 
+// 確認メールの再送(新規登録の送信後の画面・ログイン画面)。新規登録の受付を閉じていても止めない
+// (招待のお客様はこの経路を使わない。Supabase の再送は anon key で直接呼べるため、ここで止めても守りにならない。
+// 店舗の登録は、DB の受付の設定で止まる)。
 export async function resendConfirmationAction(input: { email: string }): Promise<FieldResult> {
   const email = emailSchema.safeParse(input?.email ?? "");
   if (!email.success) return { ok: false, fieldErrors: { email: email.error.issues[0]?.message ?? "メールアドレスを確認してください。" } };
-  const key = await clientKey();
-  if (!(await withinLimit(`resend:ip:${key}`, 60 * 60, 10)) || !(await withinLimit(`resend:email:${hashIp(email.data)}`, 60, 1))) {
-    return { ok: false, error: "短い間に操作が続いています。少し時間をおいてから、もう一度お試しください。" };
-  }
+  const limit = await takeSendLimit(`resend:ip:${await clientKey()}`, confirmEmailKey(email.data));
+  if (!limit.ok) return limit.result;
   try {
-    await requestConfirmationResend({ admin: getSupabaseAdmin() }, email.data);
+    const result = await requestConfirmationResend({ admin: getSupabaseAdmin() }, email.data);
+    if (result.result === "failed") logSendFailure("resend", undefined);
   } catch {
-    // 応答は共通にする(失敗の詳細は出さない)
+    logSendFailure("resend", "exception");
   }
+  const mode = resolveAuthEmailPolicy().mode === "simulated" ? "simulated" : "live";
   return {
     ok: true,
-    message: "ご入力のメールアドレスが確認待ちの場合は、確認のメールをお送りしました。数分たっても届かない場合は、迷惑メールのフォルダもご確認ください。",
-    simulated: resolveAuthEmailPolicy().mode === "simulated",
+    message: resendAcceptedMessage(mode),
+    simulated: mode === "simulated",
+    retryAfterSeconds: limit.intervalSeconds,
+    retryScope: "address",
   };
 }
 
@@ -149,15 +204,34 @@ export async function sendVerificationLinkAction(): Promise<FieldResult> {
   const supabase = await createClient();
   const user = await getAuthedUser(supabase);
   if (!user?.email) return { ok: false, error: "ログインの状態を確認できませんでした。ログインし直してください。" };
-  if (!(await withinLimit(`verify-link:user:${user.id}`, 60, 1)) || !(await withinLimit(`verify-link:user-day:${user.id}`, 24 * 60 * 60, 5))) {
-    return { ok: false, error: "続けて送ることはできません。少し時間をおいてから、もう一度お試しください。" };
+  // 同じユーザーへの間隔(前回から N 秒。0026)と、1日5回まで(0012。1日区切り)
+  const intervalSeconds = authEmailIntervalSeconds();
+  const { data: left, error: cooldownError } = await getSupabaseAdmin().rpc("auth_email_cooldown_take", {
+    p_key: `verify-link:${user.id}`,
+    p_seconds: intervalSeconds,
+  });
+  if (cooldownError) return { ok: false, error: TRY_LATER_TEXT };
+  if (Number(left) > 0) return { ok: false, error: RATE_LIMITED_TEXT, retryAfterSeconds: Number(left), retryScope: "address" };
+  if (!(await withinLimit(`verify-link:user-day:${user.id}`, 24 * 60 * 60, 5))) {
+    return {
+      ok: false,
+      error: "今日はこれ以上送れません。時間をおいて、もう一度お試しください。",
+      retryAfterSeconds: secondsUntilWindowEnd(Date.now(), 24 * 60 * 60) + 1,
+      retryScope: "address",
+    };
   }
   const sent = await sendVerificationLink({ admin: getSupabaseAdmin() }, user.email);
-  if (sent.outcome === "failed") return { ok: false, error: "メールを送れませんでした。時間をおいて、もう一度お試しください。" };
+  if (sent.outcome === "failed") {
+    logSendFailure("verify-link", undefined);
+    return { ok: false, error: "メールを送れませんでした。時間をおいて、もう一度お試しください。", retryAfterSeconds: intervalSeconds, retryScope: "address" };
+  }
+  // 受付は「送った・届いた」という意味ではない。検証モードでは送っていない(文を分ける)
   return {
     ok: true,
-    message: "登録のメールアドレスに、本人確認のメールをお送りしました。メールのリンクを開いて、手続きを続けてください。",
+    message: sent.outcome === "accepted" ? VERIFY_LINK_ACCEPTED_TEXT : VERIFY_LINK_SIMULATED_TEXT,
     simulated: sent.outcome !== "accepted",
+    retryAfterSeconds: intervalSeconds,
+    retryScope: "address",
   };
 }
 

@@ -4,7 +4,14 @@ import type { SalonPlan } from "@/lib/access/plan";
 import { isFeatureKey, type FeatureKey } from "@/lib/features/registry";
 import type { FeatureLifecycle, OverrideMode } from "@/lib/features/entitlements";
 import type { CatalogEntry, PlanRules } from "@/lib/ops/preview";
-import { isRegistrationSource, isServiceStatus, type RegistrationSource, type ServiceStatus } from "@/lib/onboarding/serviceStatus";
+import {
+  isRegistrationKind,
+  isRegistrationSource,
+  isServiceStatus,
+  type RegistrationKind,
+  type RegistrationSource,
+  type ServiceStatus,
+} from "@/lib/onboarding/serviceStatus";
 import type { InvitationKind } from "@/lib/onboarding/invitation";
 
 // 運営の「サロンを追加」(下書き)・利用区分・招待と案内の画面が読むデータ。service role で読む
@@ -43,7 +50,10 @@ export interface SalonDraft {
   contactEmail: string | null;
   contactPhone: string | null;
   plan: SalonPlan | null;
-  serviceStatus: ServiceStatus | null;
+  /** 新しい店舗の登録種別(通常登録・テスト用)。0025 のときに保存された「無料提供」は、選び直してもらうため null にする。 */
+  serviceStatus: RegistrationKind | null;
+  /** 0025 のときに「無料提供」で保存された下書き(新しい店舗では選べなくなったことを画面で知らせる)。 */
+  savedAsComplimentary: boolean;
   featureOverrides: Partial<Record<FeatureKey, Exclude<OverrideMode, "inherit">>>;
   salonId: string | null;
   version: number;
@@ -66,7 +76,8 @@ function toDraft(r: Record<string, unknown>): SalonDraft {
     contactEmail: (r.contact_email as string | null) ?? null,
     contactPhone: (r.contact_phone as string | null) ?? null,
     plan: r.plan === "reviews" || r.plan === "salonpack" ? r.plan : null,
-    serviceStatus: isServiceStatus(r.service_status) ? r.service_status : null,
+    serviceStatus: isRegistrationKind(r.service_status) ? r.service_status : null,
+    savedAsComplimentary: r.service_status === "complimentary",
     featureOverrides: overrides,
     salonId: (r.salon_id as string | null) ?? null,
     version: Number(r.version ?? 0),

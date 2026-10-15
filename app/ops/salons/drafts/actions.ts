@@ -168,6 +168,13 @@ export async function registerSalonAction(input: z.infer<typeof registerSchema>)
       return { ok: false, error: "このアカウントは本人確認が済んでいません。本人がログイン画面から本人確認を済ませると登録できます。" };
     } else if (r.result.startsWith("incomplete:")) {
       return { ok: false, error: "本登録に必要な項目がそろっていません。", fieldErrors: { [draftFieldOf(r.result.slice("incomplete:".length))]: "本登録に必要です。" } };
+    } else if (r.result === "invalid:service_status") {
+      // 0025 のときに保存された「無料提供」の下書きなど(新しい店舗は無料提供にできない。0026)
+      return { ok: false, error: "新しい店舗は無料提供にできません。登録種別を選び直してください。", fieldErrors: { serviceStatus: "「通常登録」か「テスト用」を選んでください。" } };
+    } else if (r.result === "invalid:feature_overrides") {
+      return { ok: false, error: "プランが未定のときは、機能ごとの利用許可を設定できません。", fieldErrors: { features: "プランを選ぶと設定できます。" } };
+    } else if (r.result.startsWith("invalid:")) {
+      return { ok: false, error: "保存できない内容が含まれています。", fieldErrors: { [draftFieldOf(r.result.slice("invalid:".length))]: "入力内容をご確認ください。" } };
     } else return { ok: false, error: "本登録に失敗しました。画面を再読み込みして、内容を確認してください。" };
   }
   if (!salonId) return { ok: false, error: "本登録に失敗しました。時間をおいて、もう一度お試しください。" };

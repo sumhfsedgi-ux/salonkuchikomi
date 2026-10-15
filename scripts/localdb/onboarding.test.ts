@@ -12,6 +12,8 @@ let sql: Sql;
 
 beforeAll(async () => {
   sql = await createDatabase(DB);
+  // お客様自身の店舗の登録を確かめるため、新規登録の受付を開く(0026。閉じた状態は onboarding0026.test.ts で確かめる)
+  await sql`update public.self_signup_settings set open = true where id = 1`;
 });
 afterAll(async () => {
   await dropDatabase(sql, DB);
@@ -317,15 +319,15 @@ describe("お客様自身による店舗の登録(create_own_salon)", () => {
     return row.r;
   }
 
-  it("本人確認のあとのセッションで、利用開始待ち・口コミプランの店舗を1つだけ作る", async () => {
+  it("本人確認のあとのセッションで、利用開始待ち・プラン未定(仮の値)の店舗を1つだけ作る", async () => {
     const userId = await newUser();
     const link = await createSession(sql, userId, { amr: ["otp"] });
     expect((await create(link.claims)).result).toBe("untrusted_session");
     expect(await record(userId, link.sessionId)).toBe("recorded");
     const created = await create(link.claims);
     expect(created.result).toBe("created");
-    const [s] = await sql`select plan, service_status, registration_source, contact_name from public.salons where id = ${created.salon_id!}`;
-    expect(s).toEqual({ plan: "reviews", service_status: "pending", registration_source: "self_signup", contact_name: "山田 花子" });
+    const [s] = await sql`select plan, plan_placeholder, service_status, registration_source, contact_name from public.salons where id = ${created.salon_id!}`;
+    expect(s).toEqual({ plan: "reviews", plan_placeholder: true, service_status: "pending", registration_source: "self_signup", contact_name: "山田 花子" });
     expect(await create(link.claims)).toEqual({ result: "already_exists", salon_id: created.salon_id });
     const [log] = await sql`select actor_kind, actor_user_id, target from public.operator_audit_log where salon_id = ${created.salon_id!}`;
     expect(log).toEqual({ actor_kind: "owner", actor_user_id: userId, target: "registration" });

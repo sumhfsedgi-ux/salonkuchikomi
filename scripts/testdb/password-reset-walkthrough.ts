@@ -17,12 +17,16 @@
  * アドレスは example.invalid だけ。既存の画面・本番には触れない。
  *
  *   npm i --no-save playwright-core
- *   npx tsx scripts/testdb/password-reset-walkthrough.ts [--channel=chrome|msedge] [--headed]
+ *   npx tsx scripts/testdb/password-reset-walkthrough.ts [--closed] [--channel=chrome|msedge] [--headed]
+ * --closed: 新規登録の受付を閉じた状態(アプリの SELF_SIGNUP_ENABLED を外し、DB の self_signup_settings.open も閉じる。本番の今と同じ)で、
+ *   既存店舗のオーナー・既存の運営管理者・運営が招待したアカウントの再設定を確かめる(新規登録を使う C1・C2 は行わない)。
+ * DB の受付の設定は、変える前の値を記録し、終わったとき・失敗したときに必ず元に戻す(scripts/testdb/signupSetting.ts)。
  */
 import { spawn, spawnSync, type ChildProcess } from "child_process";
 import { randomBytes } from "node:crypto";
 import { assertTestDatabase, buildChildEnv, databaseOptions, loadTestTarget } from "./target.mjs";
 
+const closedMode = process.argv.includes("--closed");
 const PORT = 3998;
 const BASE = `http://localhost:${PORT}`;
 const channel = process.argv.find((a) => a.startsWith("--channel="))?.split("=")[1] ?? "chrome";
@@ -31,7 +35,7 @@ const headed = process.argv.includes("--headed");
 const target = loadTestTarget({ requireDatabaseUrl: true });
 const childEnv = buildChildEnv(target, process.env, PORT) as Record<string, string>;
 childEnv.NEXT_PUBLIC_APP_MODE = "salonpack";
-childEnv.SELF_SIGNUP_ENABLED = "1";
+childEnv.SELF_SIGNUP_ENABLED = closedMode ? "" : "1";
 for (const [k, v] of Object.entries(childEnv)) process.env[k] = v;
 const SUPABASE_URL = childEnv.NEXT_PUBLIC_SUPABASE_URL;
 const ANON_KEY = childEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -239,7 +243,9 @@ async function main() {
   const sql = postgres({ ...databaseOptions(target.testdb), max: 1, onnotice: () => {} });
   await assertTestDatabase(sql, target.ref);
   const { createTestSalon, notificationsTestAdminClient } = await import("./notificationsFixtures");
+  const { overrideSignupSetting } = await import("./signupSetting");
   const admin = notificationsTestAdminClient();
+  let restoreSignup: (() => Promise<void>) | null = null;
   const createdUsers: string[] = [];
   const contexts: BrowserContext[] = [];
   let operatorId: string | null = null;
@@ -406,13 +412,16 @@ async function main() {
   }
 
   try {
+    restoreSignup = (await overrideSignupSetting(admin, !closedMode)).restore;
     await waitForServer();
     await warmUp();
-    console.log(`開発サーバー・ブラウザ(${channel}${headed ? "" : "・画面なし"})・テスト用DB(GoTrue v2.197.0)・メールは送らない`);
+    console.log(
+      `開発サーバー・ブラウザ(${channel}${headed ? "" : "・画面なし"})・テスト用DB(GoTrue v2.197.0)・メールは送らない・新規登録の受付: ${closedMode ? "閉じた状態" : "開いた状態"}`,
+    );
 
     // ------------------------------------------------------------------ 準備
     // A. 既存店舗のオーナー(0025 の移行と同じ legacy・無償提供)
-    const owner = await createTestSalon({ plan: "salonpack" });
+    const owner = await createTestSalon({ plan: "salonpack", registrationSource: "existing" });
     createdUsers.push(owner.userId);
     // B. 既存の運営管理者(legacy)
     const opEmail = newEmail("ops");
@@ -438,12 +447,14 @@ async function main() {
     await login(opPage, opEmail, opPassword);
     await opPage.waitForURL(/\/ops\/salons/, { timeout: 60_000 });
 
-    // C1. 新規登録して、メールの確認がまだ
+    // C1. 新規登録して、メールの確認がまだ(新規登録を使うため、開いた状態だけ)
     const c1Email = newEmail("unconfirmed");
     const c1Password = newPassword();
     const c2Email = newEmail("linkonly");
     const c2Password = newPassword();
-    for (const [address, pwd] of [
+    let c2Ctx: BrowserContext | null = null;
+    let c2LinkTokens: Awaited<ReturnType<typeof sessionFromCookies>> = null;
+    if (!closedMode) for (const [address, pwd] of [
       [c1Email, c1Password],
       [c2Email, c2Password],
     ]) {
@@ -455,21 +466,21 @@ async function main() {
       await page.locator("#password").fill(pwd);
       await page.locator("#passwordConfirm").fill(pwd);
       await page.getByRole("button", { name: "登録して確認メールを受け取る" }).click();
-      await waitText(page, "ご入力のメールアドレスでお手続きできる場合は");
+      await waitText(page, "登録リクエストを受け付けました");
       createdUsers.push(await userIdOf(address));
     }
     // C2. 新規登録 → 確認のリンクは開いたが、本人確認(パスワード)の手続きの前に離れた
-    const c2Ctx = await newCtx();
-    await guardMail(c2Ctx);
-    {
+    if (!closedMode) {
+      c2Ctx = await newCtx();
+      await guardMail(c2Ctx);
       const page = track(await c2Ctx.newPage());
       const { data } = await admin.auth.admin.generateLink({ type: "magiclink", email: c2Email });
       await page.goto(`${BASE}/auth/confirm#token_hash=${data.properties!.hashed_token}&type=magiclink`);
       await page.getByRole("button", { name: /ログインして続ける/ }).click();
       await page.waitForURL(/\/auth\/verify/, { timeout: 60_000 });
       await waitText(page, "登録したパスワード");
+      c2LinkTokens = await sessionFromCookies(c2Ctx);
     }
-    const c2LinkTokens = await sessionFromCookies(c2Ctx);
     // D. 運営が招待したが、招待のリンクを使っていない(利用開始待ちの店舗あり。パスワードは無い)
     const dEmail = newEmail("invited");
     await opPage.goto(`${BASE}/ops/salons/new`);
@@ -477,7 +488,7 @@ async function main() {
     await opPage.locator("#draft-contactName").fill("招待 四郎");
     await opPage.locator("#draft-loginEmail").fill(dEmail);
     await opPage.locator("#draft-plan").selectOption("reviews");
-    await opPage.locator("label", { hasText: "利用開始待ち" }).locator("input[type=radio]").check();
+    await opPage.locator("label", { hasText: "通常登録" }).locator("input[type=radio]").check();
     await opPage.getByRole("button", { name: /内容を確認/ }).click();
     await opPage.getByRole("dialog").waitFor({ timeout: 60_000 });
     await opPage.getByRole("button", { name: "登録して招待メールを送信" }).click();
@@ -508,7 +519,7 @@ async function main() {
     }
 
     // ------------------------------------------------------------------ C1. 新規登録・メール未確認
-    {
+    if (!closedMode) {
       const id = await userIdOf(c1Email);
       const before = await verification(id);
       const r = await resetThroughExistingScreens("新規(メール未確認)", c1Email);
@@ -522,7 +533,7 @@ async function main() {
     }
 
     // ------------------------------------------------------------------ C2. 新規登録・リンクは開いたが本人確認の前
-    {
+    if (!closedMode && c2Ctx) {
       const id = await userIdOf(c2Email);
       const before = await verification(id);
       const r = await resetThroughExistingScreens("新規(本人確認の前)", c2Email);
@@ -563,6 +574,7 @@ async function main() {
       check("運営の招待(未使用): 運営の記録でも「招待手続き完了(本人がパスワードを設定)」になる", row?.owner_verified === true && row?.owner_verification_method === "password_set");
     }
   } finally {
+    if (restoreSignup) await restoreSignup().catch((e) => console.error(`受付の設定を戻せませんでした: ${e instanceof Error ? e.message : e}`));
     for (const ctx of contexts) await ctx.close().catch(() => undefined);
     if (operatorId) await admin.from("salon_drafts").delete().eq("created_by", operatorId);
     if (createdUsers.length > 0) await sql`delete from auth.flow_state where user_id = any(${createdUsers}::uuid[])`.catch(() => undefined);

@@ -19,7 +19,13 @@ export interface TestSalonFixture {
 }
 
 /** テスト専用のsalon(=authユーザー1人+profiles+salons)を1つ作る。 */
-export async function createTestSalon(options?: { plan?: "reviews" | "salonpack"; serviceStatus?: "pending" | "complimentary" | "test" }): Promise<TestSalonFixture> {
+export async function createTestSalon(options?: {
+  plan?: "reviews" | "salonpack";
+  serviceStatus?: "pending" | "complimentary" | "test";
+  /** 登録経路(0025)。既存の店舗(0025 の時点の店舗)と同じにするときは existing。省略時は DB の既定(self_signup)。 */
+  registrationSource?: "existing" | "self_signup" | "operator";
+  name?: string;
+}): Promise<TestSalonFixture> {
   const supabase = adminClient();
   const email = `notif-testdb-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.invalid`;
   const password = `Test${Math.random().toString(36).slice(2, 12)}!9`;
@@ -48,7 +54,14 @@ export async function createTestSalon(options?: { plan?: "reviews" | "salonpack"
   const { data: salon, error: salonError } = await supabase
     .from("salons")
     // 0025 のあとの新しい店舗の既定は「利用開始待ち」。既存のオーナーと同じ状態(無償提供)で作る。
-    .insert({ owner_id: profile.id, name: "テストDB検証用サロン", slug, plan: options?.plan ?? "salonpack", service_status: options?.serviceStatus ?? "complimentary" })
+    .insert({
+      owner_id: profile.id,
+      name: options?.name ?? "テストDB検証用サロン",
+      slug,
+      plan: options?.plan ?? "salonpack",
+      service_status: options?.serviceStatus ?? "complimentary",
+      ...(options?.registrationSource ? { registration_source: options.registrationSource } : {}),
+    })
     .select("id")
     .single();
   if (salonError || !salon) {

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // 店舗の画面の入口(layout)と、お客様の店舗の登録(registerOwnSalonAction)。
 //   ログイン → 本人確認 → 店舗の登録 → 利用開始 のうち、済んでいない段階へ移す。運営の管理者は /ops へ。
@@ -68,7 +68,7 @@ describe("ダッシュボードの入口(layout)", () => {
     await expect(layout()).rejects.toThrow("REDIRECT:/onboarding/status");
   });
 
-  it("無償提供・テスト店舗はダッシュボードを表示する", async () => {
+  it("無料提供・テスト用はダッシュボードを表示する", async () => {
     for (const status of ["complimentary", "test"] as const) {
       salon = { id: "s", plan: "reviews", name: "x", serviceStatus: status };
       await expect(layout()).resolves.toBeTruthy();
@@ -84,6 +84,25 @@ describe("ダッシュボードの入口(layout)", () => {
 
 describe("お客様の店舗の登録(registerOwnSalonAction)", () => {
   const valid = { name: "私のサロン", contactName: "山田 花子", businessType: "", contactEmailMode: "same", contactEmail: "", contactPhone: "03-0000-0000" };
+  // 新規登録の受付が開いているとき(閉じているときは下の it で確かめる。DB でも create_own_salon が closed を返す)
+  beforeEach(() => {
+    vi.stubEnv("SELF_SIGNUP_ENABLED", "1");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("新規登録の受付が閉じている間は、DB を呼ばずに受付停止を案内する。DB が closed を返したときも同じ", async () => {
+    const { registerOwnSalonAction } = await import("@/app/onboarding/actions");
+    account = trusted();
+    vi.stubEnv("SELF_SIGNUP_ENABLED", "");
+    const closed = await registerOwnSalonAction(valid);
+    expect(closed).toMatchObject({ ok: false, error: expect.stringMatching(/新規の店舗登録は受け付けていません/) });
+    expect(rpc).not.toHaveBeenCalled();
+    vi.stubEnv("SELF_SIGNUP_ENABLED", "1");
+    rpc.mockResolvedValueOnce({ data: { result: "closed" }, error: null } as never);
+    expect(await registerOwnSalonAction(valid)).toMatchObject({ ok: false, error: expect.stringMatching(/新規の店舗登録は受け付けていません/) });
+  });
 
   it("管理者・本人確認がまだのセッションでは、DB を呼ばずに断る", async () => {
     const { registerOwnSalonAction } = await import("@/app/onboarding/actions");

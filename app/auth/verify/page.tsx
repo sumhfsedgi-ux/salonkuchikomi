@@ -12,7 +12,7 @@ import SendVerificationLinkButton from "@/components/auth/SendVerificationLinkBu
 import Alert from "@/components/ui/Alert";
 import Button from "@/components/ui/Button";
 
-export const metadata: Metadata = { title: "本人確認", robots: { index: false, follow: false } };
+export const metadata: Metadata = { title: "パスワードの確認・設定", robots: { index: false, follow: false } };
 
 // 本人確認。店舗の操作は、メールのリンクで本人を確認し、パスワードを確かめた(または設定した)あとだけ。
 //   - 本人確認が済んでいない & メールのリンクのセッション → パスワードの入れ直し・設定
@@ -46,19 +46,21 @@ export default async function VerifyPage() {
 
   if (account.emailLinkSession && account.emailConfirmed) {
     return (
-      <AuthShell title="本人確認" description="メールアドレスを確認しました。続けて、パスワードを確認してください。">
+      // 見出しは VerifyIdentityForm が出す(入れ直す/新しく設定するの切り替えに合わせて変わる)
+      <AuthShell>
         <VerifyIdentityForm email={user.email ?? ""} mode={account.verificationMode} />
       </AuthShell>
     );
   }
 
   return (
-    <AuthShell title="本人確認が必要です">
+    <AuthShell title="メールでの確認が必要です">
       <div className="flex flex-col gap-4">
         <p className="text-sm text-ink">
-          店舗の情報を扱う前に、ご本人の確認が必要です。登録のメールアドレスに本人確認のメールをお送りします。メールのリンクを開いて、手続きを続けてください。
+          店舗の情報を扱う前に、メールでのご本人の確認が必要です。下のボタンを押すと、登録のメールアドレスに、パスワード再設定と同じ形式のメールをお送りします。
+          メールのリンクを開き、パスワードを入力または設定して、手続きを続けてください。
         </p>
-        <p className="text-sm text-ink-muted [overflow-wrap:anywhere]">送信先: {user.email}</p>
+        <p className="text-sm text-ink-muted [overflow-wrap:anywhere]">登録のメールアドレス: {user.email}</p>
         <SendVerificationLinkButton />
         <form action={logoutAction}>
           <Button type="submit" variant="ghost" fullWidth>

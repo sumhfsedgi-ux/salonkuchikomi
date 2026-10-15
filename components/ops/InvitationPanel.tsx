@@ -99,6 +99,11 @@ export default function InvitationPanel(props: InvitationPanelProps) {
           同じサロンへの送信は60秒あけ、24時間で{DAILY_SEND_LIMIT}回までです(この24時間: {props.attempts24h}回)。
           本人確認が済んでいても、店舗登録のお知らせは再送できます。
         </p>
+        {props.ownerEmailConfirmed && !props.ownerVerified && (
+          <p className="text-xs text-ink-muted">
+            本人確認のご案内は、パスワード再設定と同じ形式のメールで届きます。お客様には、メールのリンクを開いてパスワードを設定するよう、あわせてお伝えください。
+          </p>
+        )}
       </div>
     </Card>
   );

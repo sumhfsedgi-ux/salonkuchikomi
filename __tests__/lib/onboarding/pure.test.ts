@@ -106,7 +106,7 @@ describe("認証のメールの送信の方針(authEmailPolicy)", () => {
 });
 
 describe("利用区分と店舗の情報", () => {
-  it("利用中は無償提供・テスト店舗だけ。知らない値は利用中にしない", () => {
+  it("利用中は無料提供・テスト用だけ。知らない値は利用中にしない", () => {
     expect(isServiceActive("complimentary")).toBe(true);
     expect(isServiceActive("test")).toBe(true);
     expect(isServiceActive("pending")).toBe(false);

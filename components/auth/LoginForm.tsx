@@ -8,6 +8,8 @@ import Label from "@/components/ui/Label";
 import Input from "@/components/ui/Input";
 import Alert from "@/components/ui/Alert";
 import Button from "@/components/ui/Button";
+import { useSendWaits } from "@/components/auth/useSendWaits";
+import { formatWait } from "@/lib/onboarding/signupNotice";
 
 export default function LoginForm({ signupEnabled = false }: { signupEnabled?: boolean }) {
   const [email, setEmail] = useState("");
@@ -18,6 +20,9 @@ export default function LoginForm({ signupEnabled = false }: { signupEnabled?: b
   const [unconfirmed, setUnconfirmed] = useState(false);
   const [resendInfo, setResendInfo] = useState<string | null>(null);
   const [resending, startResend] = useTransition();
+  // 確認メールの再送の待ち時間(サーバーが返した残りの秒数。新規登録の画面と同じ間隔を共有する)
+  const waits = useSendWaits();
+  const resendWait = waits.waitSecondsFor(email);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -82,15 +87,20 @@ export default function LoginForm({ signupEnabled = false }: { signupEnabled?: b
           <Button
             type="button"
             variant="secondary"
-            disabled={resending}
+            disabled={resending || resendWait > 0}
             onClick={() =>
               startResend(async () => {
-                const res = await resendConfirmationAction({ email });
-                setResendInfo(res.ok ? (res.message ?? null) : (res.error ?? res.fieldErrors?.email ?? null));
+                try {
+                  const res = await resendConfirmationAction({ email });
+                  waits.record(email, res);
+                  setResendInfo(res.ok ? (res.message ?? null) : (res.error ?? res.fieldErrors?.email ?? null));
+                } catch {
+                  setResendInfo("処理できませんでした。通信の状態を確認して、もう一度お試しください。");
+                }
               })
             }
           >
-            {resending ? "送信しています..." : "確認のメールを再送する"}
+            {resending ? "処理しています…" : resendWait > 0 ? `再送まであと${formatWait(resendWait)}` : "確認のメールを再送する"}
           </Button>
           {resendInfo && <p className="text-sm text-ink-muted" role="status">{resendInfo}</p>}
         </div>

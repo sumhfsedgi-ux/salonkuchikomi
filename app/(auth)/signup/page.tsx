@@ -31,8 +31,9 @@ export default async function SignupPage() {
     );
   }
 
+  // 見出しと説明は、送信の前と後で切り替わるため SignupForm が出す
   return (
-    <AuthShell title="新規登録" description="メールアドレスとパスワードを登録してください。">
+    <AuthShell>
       <SignupForm />
     </AuthShell>
   );

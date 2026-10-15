@@ -13,7 +13,10 @@ export interface SalonListRow {
   id: string;
   name: string;
   slug: string;
+  /** 区分で意味が変わる(利用中: 契約プラン / 利用開始待ち: 予定のプラン)。表示は planDisplay(lib/ops/onboardingDisplay)を使う。 */
   plan: SalonPlan;
+  /** true のとき plan は仮の値(プラン未定)。 */
+  planPlaceholder: boolean;
   createdAt: string;
   ownerEmail: string | null;
   entitled: Partial<Record<FeatureKey, boolean>>;
@@ -57,6 +60,7 @@ export async function listSalons(params: {
     name: r.name as string,
     slug: r.slug as string,
     plan: r.plan as SalonPlan,
+    planPlaceholder: r.plan_placeholder === true,
     createdAt: r.created_at as string,
     ownerEmail: (r.owner_email as string | null) ?? null,
     entitled: (r.entitled ?? {}) as SalonListRow["entitled"],
@@ -106,7 +110,10 @@ export interface SalonDetail {
   id: string;
   name: string;
   slug: string;
+  /** 区分で意味が変わる(利用中: 契約プラン / 利用開始待ち: 予定のプラン)。表示は planDisplay を使う。 */
   plan: SalonPlan;
+  /** true のとき plan は仮の値(プラン未定)。 */
+  planPlaceholder: boolean;
   businessType: string | null;
   description: string | null;
   googleReviewUrl: string | null;
@@ -125,8 +132,9 @@ export interface SalonDetail {
 
 export async function getSalonDetail(salonId: string): Promise<SalonDetail | null> {
   const db = getSupabaseAdmin();
-  const [salon, access, catalog, rules, holds, bindings, ops, master, sw, scan, lines] = await Promise.all([
+  const [salon, placeholder, access, catalog, rules, holds, bindings, ops, master, sw, scan, lines] = await Promise.all([
     db.rpc("admin_get_salon", { p_salon_id: salonId }),
+    db.from("salons").select("plan_placeholder").eq("id", salonId).maybeSingle(),
     db.rpc("salon_feature_access_all", { p_salon_id: salonId }),
     db.from("feature_catalog").select("feature_key, lifecycle, has_runtime"),
     db.from("plan_feature_rules").select("plan, feature_key, default_enabled"),
@@ -145,7 +153,7 @@ export async function getSalonDetail(salonId: string): Promise<SalonDetail | nul
     db.from("gmail_scan_state").select("last_tick_at").eq("salon_id", salonId).maybeSingle(),
     db.from("line_connections").select("status, destination_id, removed_at").eq("salon_id", salonId),
   ]);
-  for (const r of [salon, access, catalog, rules, holds, bindings, ops, master, sw, scan, lines]) {
+  for (const r of [salon, placeholder, access, catalog, rules, holds, bindings, ops, master, sw, scan, lines]) {
     if (r.error) throw new Error("サロンの詳細の取得に失敗しました。");
   }
   const base = ((salon.data ?? []) as Array<Record<string, unknown>>)[0];
@@ -167,6 +175,7 @@ export async function getSalonDetail(salonId: string): Promise<SalonDetail | nul
     name: base.name as string,
     slug: base.slug as string,
     plan: base.plan as SalonPlan,
+    planPlaceholder: (placeholder.data as { plan_placeholder?: boolean } | null)?.plan_placeholder === true,
     businessType: (base.business_type as string | null) ?? null,
     description: (base.description as string | null) ?? null,
     googleReviewUrl: (base.google_review_url as string | null) ?? null,

@@ -1,11 +1,14 @@
 import { z } from "zod";
 import { isFeatureKey, type FeatureKey } from "@/lib/features/registry";
 import { isValidEmail, normalizeEmail, normalizePhone, toFieldErrors, type FieldErrors } from "@/lib/onboarding/salonProfile";
-import type { ServiceStatus } from "@/lib/onboarding/serviceStatus";
+import type { RegistrationKind } from "@/lib/onboarding/serviceStatus";
 import type { SalonPlan } from "@/lib/access/plan";
 
 // 運営の「サロンを追加」の入力(DBに触れない)。下書きはサロン名だけで保存できる。本登録には、担当者名・ログイン用の
-// メールアドレス・契約プラン・利用区分がそろっていることを求める(DB の admin_register_salon でも確かめる)。
+// メールアドレス・登録種別がそろっていることを求める(DB の admin_register_salon でも確かめる)。
+// 登録種別は「通常登録(pending)」と「テスト用」だけ(新しい店舗は無料提供にできない。0026)。
+// プラン: 通常登録では「案内予定のプラン」(任意。契約ではない)、テスト用では「契約プラン」(必須)。
+// プランが未定のときは、機能ごとの利用許可は設定できない(保存のときに外す。DB も、プランの無い利用許可を登録しない)。
 
 export interface DraftFormValues {
   name: string;
@@ -16,7 +19,7 @@ export interface DraftFormValues {
   contactEmail: string;
   contactPhone: string;
   plan: "" | SalonPlan;
-  serviceStatus: "" | ServiceStatus;
+  serviceStatus: "" | RegistrationKind;
   /** 個別設定(書かない機能はプランの標準)。 */
   featureOverrides: Partial<Record<FeatureKey, "allow" | "deny">>;
 }
@@ -30,7 +33,8 @@ export const EMPTY_DRAFT: DraftFormValues = {
   contactEmail: "",
   contactPhone: "",
   plan: "",
-  serviceStatus: "",
+  // 新しい下書きは「通常登録」(pending)を初期選択にする。保存済みの下書きは、保存されている選択のまま開く
+  serviceStatus: "pending",
   featureOverrides: {},
 };
 
@@ -59,7 +63,7 @@ const schema = z
     contactEmail: z.string().transform(normalizeEmail),
     contactPhone: z.string().transform(normalizePhone),
     plan: z.enum(["", "reviews", "salonpack"]),
-    serviceStatus: z.enum(["", "pending", "complimentary", "test"]),
+    serviceStatus: z.enum(["", "pending", "test"], { message: "登録種別は「通常登録」か「テスト用」を選んでください。" }),
     featureOverrides: z.record(z.string(), z.enum(["allow", "deny"])),
   })
   .superRefine((v, ctx) => {
@@ -87,7 +91,7 @@ export interface DraftDbFields {
   contact_email: string | null;
   contact_phone: string | null;
   plan: SalonPlan | null;
-  service_status: ServiceStatus | null;
+  service_status: RegistrationKind | null;
   feature_overrides: Record<string, "allow" | "deny">;
 }
 
@@ -121,7 +125,7 @@ export function parseDraftForm(input: unknown): DraftParseResult {
       contact_phone: v.contactPhone || null,
       plan: v.plan || null,
       service_status: v.serviceStatus || null,
-      feature_overrides: v.featureOverrides,
+      feature_overrides: v.plan ? v.featureOverrides : {},
     },
   };
 }
@@ -131,8 +135,8 @@ export function missingForRegistration(f: Pick<DraftDbFields, "contact_name" | "
   const errors: FieldErrors<DraftField> = {};
   if (!f.contact_name) errors.contactName = "本登録には、担当者名が必要です。";
   if (!f.login_email) errors.loginEmail = "本登録には、ログイン用のメールアドレスが必要です。";
-  if (!f.plan) errors.plan = "本登録には、契約プランの選択が必要です。";
-  if (!f.service_status) errors.serviceStatus = "本登録には、利用区分の選択が必要です。";
+  if (!f.service_status) errors.serviceStatus = "本登録には、登録種別の選択が必要です。";
+  if (f.service_status === "test" && !f.plan) errors.plan = "テスト用の店舗の本登録には、契約プランの選択が必要です。";
   return errors;
 }
 

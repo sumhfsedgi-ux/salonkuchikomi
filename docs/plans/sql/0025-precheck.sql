@@ -8,7 +8,7 @@ select to_regclass('public.feature_catalog') is not null as has_0024,
                 where table_schema = 'public' and table_name = 'salons' and column_name = 'service_status') as has_0025_column,
        to_regclass('public.account_verifications') is not null as has_0025_table;
 
--- 2. 移行の対象の店舗(この時点で存在する店舗は、すべて「無償提供」・登録経路「既存」になる)。一覧と件数を控える。
+-- 2. 移行の対象の店舗(この時点で存在する店舗は、すべて「無料提供」・登録経路「既存」になる)。一覧と件数を控える。
 select s.id, s.name, s.plan, s.created_at, u.email as owner_email
   from public.salons s
   join public.profiles p on p.id = s.owner_id

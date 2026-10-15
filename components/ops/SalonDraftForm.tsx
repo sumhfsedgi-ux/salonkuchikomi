@@ -12,7 +12,7 @@ import type { CatalogEntry, PlanRules } from "@/lib/ops/preview";
 import { isSwitchOn, overrideForSwitch } from "@/lib/ops/toggle";
 import { PLAN_LABELS } from "@/lib/ops/labels";
 import { INVITATION_KIND_LABELS, usableFeatureLabels } from "@/lib/ops/onboardingDisplay";
-import { SERVICE_STATUS_DESCRIPTIONS, SERVICE_STATUS_LABELS, type ServiceStatus } from "@/lib/onboarding/serviceStatus";
+import { REGISTRATION_KINDS, REGISTRATION_KIND_DESCRIPTIONS, REGISTRATION_KIND_LABELS, TEST_SEND_NOTICE } from "@/lib/onboarding/serviceStatus";
 import type { SalonPlan } from "@/lib/access/plan";
 import FormField, { fieldAria, focusFirstError } from "@/components/ui/FormField";
 import Input from "@/components/ui/Input";
@@ -27,10 +27,11 @@ import { cn } from "@/lib/cn";
 //   - 内容を確認: 下書きを保存してから、本登録に足りない項目と、紐付け先のアカウント・送る案内を確認画面に出す
 //   - 登録して招待メールを送信: 確認画面からだけ行う。結果は詳細の画面の「招待と案内」に出す
 // 機能のスイッチは、すべての機能を出す。プランの対象外の機能は「プラン対象外」と出し、押せない。
+// 登録種別は「通常登録」と「テスト用」だけ(新しい店舗は無料提供にできない)。通常登録のプランは「案内予定のプラン」(任意・契約ではない)、
+// テスト用のプランは「契約プラン」(必須)。通常登録の店舗は、登録しただけでは使えない(利用開始は、将来のプラン選択・決済で行う)。
 
 const SAVED_TEXT = "下書きを保存しました(アカウント・店舗はまだ作っていません。メールも送っていません)。";
 const CATALOG_FEATURES = FEATURE_REGISTRY.filter((d) => d.entitlement === "catalog" && d.listed).sort((a, b) => a.sortOrder - b.sortOrder);
-const STATUSES: ServiceStatus[] = ["pending", "complimentary", "test"];
 
 type Preview = { draftId: string; version: number; account: AccountPreview };
 
@@ -67,6 +68,7 @@ export default function SalonDraftForm({
   catalog,
   rules,
   arrival = null,
+  savedAsComplimentary = false,
 }: {
   initial: DraftFormValues;
   draftId: string | null;
@@ -75,6 +77,8 @@ export default function SalonDraftForm({
   rules: PlanRules;
   /** 「サロンを追加」の画面から移ってきたとき: saved = 保存の結果を出す / confirm = 確認を開く */
   arrival?: "saved" | "confirm" | null;
+  /** 0025 のときに「無料提供」で保存された下書き(登録種別を選び直してもらう)。 */
+  savedAsComplimentary?: boolean;
 }) {
   const router = useRouter();
   const [values, setValues] = useState<DraftFormValues>(initial);
@@ -203,6 +207,9 @@ export default function SalonDraftForm({
   ) as Partial<Record<FeatureKey, OverrideMode>>;
   const usableAfter = plan && values.serviceStatus ? usableFeatureLabels(catalog, rules, plan, overridesForPreview, values.serviceStatus) : [];
   const usableIfActive = plan ? usableFeatureLabels(catalog, rules, plan, overridesForPreview, "complimentary") : [];
+  const isTest = values.serviceStatus === "test";
+  // 通常登録のプランは「案内予定のプラン」(契約ではない)。テスト用では、登録のあとこのプランで利用を始める(契約プラン)。
+  const planLabel = isTest ? "契約プラン" : "案内予定のプラン";
 
   return (
     <div className="flex flex-col gap-6">
@@ -275,28 +282,18 @@ export default function SalonDraftForm({
         </Card>
 
         <Card className="flex flex-col gap-5">
-          <h2 className="text-base font-semibold text-ink">契約プランと利用区分</h2>
-          <FormField id={id("plan")} label="契約プラン" requirement="required" help="本登録に必要です。" error={fieldErrors.plan}>
-            <select
-              id={id("plan")}
-              value={values.plan}
-              onChange={(e) => changePlan(e.target.value as "" | SalonPlan)}
-              className="min-h-11 w-full rounded-lg border border-greige bg-white px-3 text-ink"
-              {...fieldAria(id("plan"), { error: fieldErrors.plan, help: true })}
-            >
-              <option value="">選んでください</option>
-              <option value="reviews">{PLAN_LABELS.reviews}</option>
-              <option value="salonpack">{PLAN_LABELS.salonpack}</option>
-            </select>
-          </FormField>
-          {planNote && <p className="text-sm text-warning" role="status">{planNote}</p>}
-
+          <h2 className="text-base font-semibold text-ink">登録種別とプラン</h2>
           <fieldset className="flex flex-col gap-2" aria-describedby={fieldErrors.serviceStatus ? id("serviceStatus-error") : undefined}>
             <legend className="mb-1 text-sm font-medium text-ink">
-              利用区分
+              登録種別
               <span className="ml-2 rounded bg-danger-soft px-1.5 py-0.5 text-xs font-medium text-danger">必須</span>
             </legend>
-            {STATUSES.map((s) => (
+            {savedAsComplimentary && !values.serviceStatus && (
+              <Alert variant="warning">
+                この下書きには「無料提供」が保存されていました。新しい店舗は無料提供にできないため、登録種別を選び直してください。
+              </Alert>
+            )}
+            {REGISTRATION_KINDS.map((s) => (
               <label key={s} className="flex min-h-11 items-start gap-2 text-sm text-ink">
                 <input
                   id={s === "pending" ? id("serviceStatus") : undefined}
@@ -307,8 +304,8 @@ export default function SalonDraftForm({
                   onChange={() => set("serviceStatus", s)}
                 />
                 <span>
-                  <span className="font-medium">{SERVICE_STATUS_LABELS[s]}</span>
-                  <span className="block text-xs text-ink-muted">{SERVICE_STATUS_DESCRIPTIONS[s]}</span>
+                  <span className="font-medium">{REGISTRATION_KIND_LABELS[s]}</span>
+                  <span className="block text-xs text-ink-muted">{REGISTRATION_KIND_DESCRIPTIONS[s]}</span>
                 </span>
               </label>
             ))}
@@ -318,14 +315,39 @@ export default function SalonDraftForm({
               </p>
             )}
           </fieldset>
+
+          <FormField
+            id={id("plan")}
+            label={planLabel}
+            requirement={isTest ? "required" : "optional"}
+            help={
+              isTest
+                ? "テスト用の店舗の本登録に必要です。登録のあと、このプランで利用を始めます。"
+                : "お客様に案内する予定のプランです。契約ではありません(契約プランは、お客様のプラン選択・お支払いの手続き(準備中)で決まります)。"
+            }
+            error={fieldErrors.plan}
+          >
+            <select
+              id={id("plan")}
+              value={values.plan}
+              onChange={(e) => changePlan(e.target.value as "" | SalonPlan)}
+              className="min-h-11 w-full rounded-lg border border-greige bg-white px-3 text-ink"
+              {...fieldAria(id("plan"), { error: fieldErrors.plan, help: true })}
+            >
+              <option value="">{isTest ? "選んでください" : "未定"}</option>
+              <option value="reviews">{PLAN_LABELS.reviews}</option>
+              <option value="salonpack">{PLAN_LABELS.salonpack}</option>
+            </select>
+          </FormField>
+          {planNote && <p className="text-sm text-warning" role="status">{planNote}</p>}
         </Card>
 
         <Card className="flex flex-col gap-4">
           <div>
             <h2 className="text-base font-semibold text-ink">利用を許可する機能</h2>
             <p className="mt-1 text-sm text-ink-muted">
-              プランの標準のまま、または個別に許可しない機能を選べます。プランの対象外・準備中・提供終了の機能は、ここでは許可できません。
-              利用開始待ちのあいだは、許可した機能も使えません。
+              プランの標準のまま使うか、個別に許可しない機能を選べます。プラン対象外・準備中・提供終了の機能は許可できません。
+              プランが未定のときは設定できません。通常登録の店舗では、登録しただけでは許可した機能も使えません。
             </p>
           </div>
           {fieldErrors.features && <p className="text-sm text-danger">{fieldErrors.features}</p>}
@@ -454,9 +476,11 @@ export default function SalonDraftForm({
             <ConfirmRow label="連絡用メール">{values.contactEmailMode === "other" && values.contactEmail ? values.contactEmail : "ログイン用と同じ"}</ConfirmRow>
             <ConfirmRow label="電話番号">{values.contactPhone || "—"}</ConfirmRow>
             <ConfirmRow label="招待先">{values.loginEmail}</ConfirmRow>
-            <ConfirmRow label="契約プラン">{plan ? PLAN_LABELS[plan] : "—"}</ConfirmRow>
-            <ConfirmRow label="利用区分">{values.serviceStatus ? SERVICE_STATUS_LABELS[values.serviceStatus] : "—"}</ConfirmRow>
-            <ConfirmRow label="利用を許可する機能">{usableIfActive.join("・") || "なし"}</ConfirmRow>
+            <ConfirmRow label="登録種別">{values.serviceStatus ? REGISTRATION_KIND_LABELS[values.serviceStatus] : "—"}</ConfirmRow>
+            <ConfirmRow label={planLabel}>{plan ? `${PLAN_LABELS[plan]}${isTest ? "" : "(契約ではありません)"}` : "未定"}</ConfirmRow>
+            <ConfirmRow label={isTest ? "利用を許可する機能" : "利用を始めたときに使える機能(予定)"}>
+              {plan ? usableIfActive.join("・") || "なし" : "プランが未定のため、ありません"}
+            </ConfirmRow>
           </dl>
 
           {preview.account.kind === "blocked" ? (
@@ -484,16 +508,23 @@ export default function SalonDraftForm({
           <div className={cn("rounded-xl border p-3 text-sm", values.serviceStatus === "pending" ? "border-warning/40 bg-warning-soft/40" : "border-border")}>
             {values.serviceStatus === "pending" ? (
               <p>
-                <span className="font-semibold">登録のあとも「利用開始待ち」です。</span>サービスの機能は使えません。利用を始めるときは、詳細の画面の「利用区分」で変更してください。
+                <span className="font-semibold">通常登録のため、登録のあとは「利用開始待ち」です。</span>
+                登録しただけでは、サービスの機能は使えません。通常のお客様の利用開始は、プラン選択・お支払いの手続き(準備中)で行います。
               </p>
             ) : (
-              <>
-                <p>
-                  <span className="font-semibold">登録のあと、すぐに使える機能:</span> {usableAfter.join("・") || "ありません"}
-                </p>
-                <p className="mt-1 text-ink-muted">予約通知は、お客様の Google・LINE の連携と開始の操作が済むまで始まりません(自動では始めません)。</p>
-              </>
+              <p>
+                <span className="font-semibold">登録のあとに使える機能:</span> {usableAfter.join("・") || "ありません"}
+              </p>
             )}
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-ink-muted">
+              <li>
+                {preview.account.kind === "verified"
+                  ? "担当者は本人確認が済んでいるため、いまのパスワードでログインできます。"
+                  : "利用には、担当者の招待・本人確認の手続きの完了が必要です。"}
+              </li>
+              {values.serviceStatus !== "pending" && <li>予約通知は、Google・LINE の連携と開始の設定が完了するまで送信されません。</li>}
+              {values.serviceStatus === "test" && <li>{TEST_SEND_NOTICE}</li>}
+            </ul>
           </div>
           <p className="text-xs text-ink-muted">「送信を受け付けた」と表示されても、メールが届いた・読まれたという意味ではありません。</p>
         </ConfirmDialog>

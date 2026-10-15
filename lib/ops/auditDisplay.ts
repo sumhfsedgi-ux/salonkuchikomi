@@ -68,10 +68,22 @@ function changeText(e: Pick<AuditEntry, "target" | "before" | "after">, rules: P
   }
   if (e.target === "registration") {
     const a = (e.after ?? {}) as { source?: unknown; plan?: unknown; service_status?: unknown };
-    const detail = [planLabel(a.plan), statusLabel(a.service_status)].filter(Boolean).join("・");
-    if (a.source === "self_signup") return `お客様が店舗を登録${detail ? `(${detail})` : ""}`;
-    if (a.source === "operator") return `運営が店舗を本登録${detail ? `(${detail})` : ""}`;
+    // 登録のときのプランの意味(0026): 利用開始待ちでは案内予定のプラン(契約ではない)、テスト用では契約プラン。
+    // お客様が自分で登録したときは、プランを決めていない(0025 の記録の口コミプランは仮の値)。
+    const plan = planLabel(a.plan);
+    const planText =
+      a.source === "self_signup" || !plan ? "プラン未定" : a.service_status === "pending" ? `案内予定のプラン: ${plan}` : `契約プラン: ${plan}`;
+    const detail = [planText, statusLabel(a.service_status)].filter(Boolean).join("・");
+    if (a.source === "self_signup") return `お客様が店舗を登録(${detail})`;
+    if (a.source === "operator") return `運営が店舗を本登録(${detail})`;
     return "店舗の登録";
+  }
+  if (e.target === "contract_plan") {
+    // 利用開始待ちから利用中にしたとき、そのときから契約プランとして使うプラン(0026)。
+    const a = (e.after ?? {}) as { plan?: unknown; service_status?: unknown };
+    const plan = planLabel(a.plan);
+    const status = statusLabel(a.service_status);
+    return plan ? `利用開始: 契約プランは${plan}${status ? `(${status})` : ""}` : "利用開始のときの契約プラン";
   }
   if (e.target === "invitation") {
     const a = (e.after ?? {}) as { kind?: unknown; result?: unknown; error?: unknown };
@@ -99,8 +111,8 @@ function changeText(e: Pick<AuditEntry, "target" | "before" | "after">, rules: P
     }
     case "hold": {
       const label = featureLabel(key);
-      // 権限による停止は、利用許可がなくなったときにだけ DB が開く(supabase/migrations/0024 の salon_entitlement_settle)。
-      if (e.after === "open") return `${label}を権限により停止(利用許可がなくなったため)`;
+      // 権限による停止は、使えなくなったとき(利用許可がなくなった・利用区分を利用開始待ちに止めた)に DB が開く(0024 の salon_entitlement_settle。0025 で利用区分も対象)。
+      if (e.after === "open") return `${label}を権限により停止(利用許可・利用区分の変更で使えなくなったため)`;
       if (e.after === "released") return `${label}の権限による停止を解除`;
       return `${label}の権限による停止の変更`;
     }

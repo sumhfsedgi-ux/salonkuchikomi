@@ -13,6 +13,8 @@ let operator: string;
 beforeAll(async () => {
   sql = await createDatabase(DB);
   operator = await createOperator(sql);
+  // 運営の登録とお客様の登録が同時のときを確かめるため、新規登録の受付を開く(0026)
+  await sql`update public.self_signup_settings set open = true where id = 1`;
 });
 afterAll(async () => {
   await dropDatabase(sql, DB);
@@ -90,12 +92,12 @@ describe("本登録", () => {
   it("新しいアカウント: 指定したプラン・区分・機能で店舗を作り、招待の行と履歴を書く。同じ下書きの再登録は同じ店舗を返す", async () => {
     const email = `new-${randomUUID().slice(0, 8)}@example.test`;
     const user = await invitedAccount(email);
-    const d = await saveDraft(fullDraft(email, { service_status: "complimentary", feature_overrides: { blog: "deny" } }));
+    const d = await saveDraft(fullDraft(email, { service_status: "test", feature_overrides: { blog: "deny" } }));
     const r = await register(d.draft_id as string, 0, user);
     expect(r.result).toBe("registered");
     const salonId = r.salon_id as string;
-    const [s] = await sql`select plan, service_status, registration_source, contact_name, contact_email from public.salons where id = ${salonId}`;
-    expect(s).toEqual({ plan: "salonpack", service_status: "complimentary", registration_source: "operator", contact_name: "担当 太郎", contact_email: null });
+    const [s] = await sql`select plan, plan_placeholder, service_status, registration_source, contact_name, contact_email from public.salons where id = ${salonId}`;
+    expect(s).toEqual({ plan: "salonpack", plan_placeholder: false, service_status: "test", registration_source: "operator", contact_name: "担当 太郎", contact_email: null });
     const overrides = await sql`select feature_key, mode from public.salon_feature_overrides where salon_id = ${salonId}`;
     expect(overrides).toEqual([{ feature_key: "blog", mode: "deny" }]);
     const [inv] = await sql`select user_id, login_email, last_result from public.salon_invitations where salon_id = ${salonId}`;

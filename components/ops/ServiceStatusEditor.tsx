@@ -8,7 +8,13 @@ import type { OverrideMode } from "@/lib/features/entitlements";
 import type { SalonPlan } from "@/lib/access/plan";
 import type { CatalogEntry, PlanRules } from "@/lib/ops/preview";
 import { serviceStatusChangeNotes, usableFeatureLabels } from "@/lib/ops/onboardingDisplay";
-import { SERVICE_STATUS_DESCRIPTIONS, SERVICE_STATUS_LABELS, type ServiceStatus } from "@/lib/onboarding/serviceStatus";
+import {
+  SERVICE_STATUS_CHANGE_OPTIONS,
+  SERVICE_STATUS_LABELS,
+  serviceStatusChoices,
+  type RegistrationSource,
+  type ServiceStatus,
+} from "@/lib/onboarding/serviceStatus";
 import Alert from "@/components/ui/Alert";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
@@ -16,14 +22,18 @@ import Label from "@/components/ui/Label";
 import ConfirmDialog from "@/components/ops/ConfirmDialog";
 import ServiceStatusBadge from "@/components/ops/ServiceStatusBadge";
 
-// 利用区分の変更(運営)。無償提供・テスト店舗にすると、許可された機能を使えるようになる(利用開始)。
+// 利用区分の変更(運営)。通常のお客様の利用開始には使わない(将来の決済の完了で自動で始まる)。運営が変えられるのは:
+//   テスト用の指定(プランが決まっている店舗だけ)/ 利用の停止(利用開始待ちに変更)/ 既存の店舗を無料提供に戻すこと。
+// 選べる変更は serviceStatusChoices(DB の admin_update_salon_service_status と同じ規則)。
+// 選択肢は変更の結果が伝わる言葉にする(利用開始待ちに戻すと機能が止まるため、「通常登録」とは出さない)。
 // 区分だけを変え、契約プラン・機能の利用許可・権限による停止・予約通知の稼働状態は変えない。確認のうえ保存する。
-const STATUSES: ServiceStatus[] = ["pending", "complimentary", "test"];
 
 export default function ServiceStatusEditor({
   salonId,
   version,
   status,
+  registrationSource,
+  planPlaceholder,
   plan,
   catalog,
   rules,
@@ -33,6 +43,8 @@ export default function ServiceStatusEditor({
   salonId: string;
   version: number;
   status: ServiceStatus;
+  registrationSource: RegistrationSource;
+  planPlaceholder: boolean;
   plan: SalonPlan;
   catalog: Partial<Record<FeatureKey, CatalogEntry>>;
   rules: PlanRules;
@@ -53,6 +65,7 @@ export default function ServiceStatusEditor({
     setDraft(status);
   }
   const dirty = draft !== status;
+  const choices = serviceStatusChoices({ status, registrationSource, planPlaceholder });
   const before = usableFeatureLabels(catalog, rules, plan, overrides, status);
   const after = usableFeatureLabels(catalog, rules, plan, overrides, draft);
 
@@ -89,13 +102,29 @@ export default function ServiceStatusEditor({
       </div>
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-1 text-sm font-medium text-ink">変更後の利用区分</legend>
-        {STATUSES.map((s) => (
-          <label key={s} className="flex min-h-11 items-start gap-2 text-sm text-ink">
-            <input type="radio" name={`service-status-${salonId}`} className="mt-1" checked={draft === s} disabled={pending} onChange={() => setDraft(s)} />
+        <label className="flex min-h-11 items-start gap-2 text-sm text-ink">
+          <input type="radio" name={`service-status-${salonId}`} className="mt-1" checked={draft === status} disabled={pending} onChange={() => setDraft(status)} />
+          <span>
+            <span className="font-medium">{SERVICE_STATUS_LABELS[status]}</span>
+            <span className="ml-1 text-xs text-ink-muted">(現在・変更しない)</span>
+          </span>
+        </label>
+        {choices.map((c) => (
+          <label key={c.status} className={`flex min-h-11 items-start gap-2 text-sm ${c.available ? "text-ink" : "text-ink-muted"}`}>
+            <input
+              type="radio"
+              name={`service-status-${salonId}`}
+              className="mt-1"
+              checked={draft === c.status}
+              disabled={pending || !c.available}
+              aria-describedby={`service-status-${salonId}-${c.status}-note`}
+              onChange={() => setDraft(c.status)}
+            />
             <span>
-              <span className="font-medium">{SERVICE_STATUS_LABELS[s]}</span>
-              {s === status && <span className="ml-1 text-xs text-ink-muted">(現在)</span>}
-              <span className="block text-xs text-ink-muted">{SERVICE_STATUS_DESCRIPTIONS[s]}</span>
+              <span className="font-medium">{SERVICE_STATUS_CHANGE_OPTIONS[c.status].label}</span>
+              <span id={`service-status-${salonId}-${c.status}-note`} className="block text-xs text-ink-muted">
+                {c.available ? SERVICE_STATUS_CHANGE_OPTIONS[c.status].description : `選べません: ${c.reason}`}
+              </span>
             </span>
           </label>
         ))}
@@ -127,7 +156,7 @@ export default function ServiceStatusEditor({
           }
         >
           <ul className="list-disc space-y-1 pl-5 text-sm text-ink">
-            {serviceStatusChangeNotes({ from: status, to: draft, before, after, reservationActive }).map((n) => (
+            {serviceStatusChangeNotes({ from: status, to: draft, before, after, reservationActive, startPlan: registrationSource === "existing" ? null : plan }).map((n) => (
               <li key={n}>{n}</li>
             ))}
           </ul>

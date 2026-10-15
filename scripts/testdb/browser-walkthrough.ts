@@ -42,6 +42,9 @@ if (invitesDisabled) {
   childEnv.NEXT_PUBLIC_SUPPORT_CONTACT_LABEL = "運営(検証用の連絡先)";
 }
 childEnv.NEXT_PUBLIC_APP_MODE = "salonpack";
+// お客様が自分で店舗を登録するため、新規登録の受付を開く(0026: アプリの設定と DB の self_signup_settings の両方。
+// DB の値は変える前の値を記録し、終わったとき・失敗したときに必ず元に戻す)
+childEnv.SELF_SIGNUP_ENABLED = "1";
 for (const [k, v] of Object.entries(childEnv)) process.env[k] = v;
 
 // playwright-core の型をリポジトリに持ち込まないため、使う部分だけを宣言する。
@@ -340,8 +343,10 @@ async function main() {
   const playwright: Playwright = pw.chromium ? pw : pw.default!;
 
   const { createTestSalon, notificationsTestAdminClient } = await import("./notificationsFixtures");
+  const { overrideSignupSetting } = await import("./signupSetting");
   const admin = notificationsTestAdminClient();
   const cleanups: Array<() => Promise<void>> = [];
+  const signupSetting = await overrideSignupSetting(admin, true);
   const server = startServer();
   const browser = await playwright.chromium.launch({ channel, headless: !headed });
   try {
@@ -351,7 +356,7 @@ async function main() {
       `開発サーバー起動・ブラウザ(${channel}${headed ? "" : "・画面なし"})・テスト用DB・擬似Google・擬似LINEログイン ${invitesDisabled ? "未有効(本番と同じ)" : "有効"}・届いた口コミ ${reviewsEnabled ? "有効" : "準備中"}`
     );
 
-    // ---------------- 新規のお客様(PC): 店舗の情報 → 利用開始待ち → 運営が利用開始 → Google 連携 ----------------
+    // ---------------- 新規のお客様(PC): 店舗の情報 → 利用開始待ち → 運営がテスト用に指定 → Google 連携 ----------------
     // 新規登録と本人確認の画面は scripts/testdb/onboarding-walkthrough.ts で確かめる。ここでは本人確認済み(legacy)のアカウントから始める。
     const email = `browser-walk-${Date.now()}@example.invalid`;
     const password = `Walk${Math.random().toString(36).slice(2, 10)}!9`;
@@ -382,11 +387,12 @@ async function main() {
       if (!salonRow) await new Promise((r) => setTimeout(r, 500));
     }
     await page.waitForLoadState("networkidle");
-    check("店舗の情報の入力で店舗が作られる(契約は reviews・利用開始待ちで作成)", salonRow?.plan === "reviews" && salonRow?.service_status === "pending");
+    check("店舗の情報の入力で店舗が作られる(利用開始待ち・プランは未定で作成)", salonRow?.service_status === "pending");
     const salonId = salonRow!.id as string;
 
-    // 運営が契約を確認して予約通知を含む契約に変え、利用を始める(運営の画面の操作は onboarding-walkthrough で確かめる)。
-    await admin.from("salons").update({ plan: "salonpack", service_status: "complimentary" }).eq("id", salonId);
+    // 運営が動作確認のためにテスト用に指定し、予約通知を含むプランで使えるようにする(運営の画面の操作は onboarding-walkthrough で確かめる)。
+    // 0026: 新しい店舗は無料提供にできない。プランが仮の値のままでは利用中にできないため、プランを決めてからテスト用にする。
+    await admin.from("salons").update({ plan: "salonpack", plan_placeholder: false, service_status: "test" }).eq("id", salonId);
     await page.goto(`${BASE}/dashboard`);
     await page.locator("[data-feature=reservation_notifications]").waitFor({ timeout: 60_000 });
     const home = await text(page);
@@ -589,6 +595,7 @@ async function main() {
     // ---------------- 同じスマートフォンの別のタブで、別の店舗の招待を開いても取り違えない ----------------
     if (!invitesDisabled) await multiTabInvites(browser, admin, cleanups);
   } finally {
+    await signupSetting.restore().catch((e) => console.error(`受付の設定を戻せませんでした: ${e instanceof Error ? e.message : e}`));
     await browser.close().catch(() => {});
     for (const c of cleanups) await c().catch(() => {});
     const { data } = await admin.from("google_accounts").select("id").in("google_sub", ["100000000000000000001", "100000000000000000002"]);

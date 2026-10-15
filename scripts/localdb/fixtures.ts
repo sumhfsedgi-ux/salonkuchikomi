@@ -22,13 +22,24 @@ async function hasTable(sql: Sql, table: string): Promise<boolean> {
   return row.ok;
 }
 
+export type RegistrationSource = "existing" | "self_signup" | "operator";
+
 /**
- * 既存のオーナーと同じ状態の店舗(メール確認済み・本人確認は legacy)。0025 のあとの DB では、利用区分も入れる
- * (既定は complimentary。後から UPDATE すると版数・履歴が増えるため、INSERT で直接入れる)。
+ * 既存のオーナーと同じ状態の店舗(メール確認済み・本人確認は legacy)。0025 のあとの DB では、利用区分と登録経路も入れる
+ * (既定は complimentary・existing。後から UPDATE すると版数・履歴が増えるため、INSERT で直接入れる)。
+ * 0026 のあとの DB では、プランが仮の値か(planPlaceholder。既定 false)も入れる。
  */
 export async function createSalon(
   sql: Sql,
-  opts: { plan?: "reviews" | "salonpack"; name?: string; email?: string; serviceStatus?: ServiceStatus; verified?: boolean } = {},
+  opts: {
+    plan?: "reviews" | "salonpack";
+    name?: string;
+    email?: string;
+    serviceStatus?: ServiceStatus;
+    registrationSource?: RegistrationSource;
+    planPlaceholder?: boolean;
+    verified?: boolean;
+  } = {},
 ): Promise<SalonFixture> {
   const userId = randomUUID();
   const email = opts.email ?? `owner-${userId.slice(0, 8)}@example.test`;
@@ -37,10 +48,16 @@ export async function createSalon(
   const name = opts.name ?? `テスト店舗 ${userId.slice(0, 4)}`;
   const slug = `s-${userId.slice(0, 12)}`;
   const plan = opts.plan ?? "salonpack";
-  const [salon] = (await hasColumn(sql, "salons", "service_status"))
+  const [salon] = (await hasColumn(sql, "salons", "plan_placeholder"))
     ? await sql<{ id: string }[]>`
-        insert into public.salons (owner_id, name, slug, plan, service_status)
-        values (${profile.id}, ${name}, ${slug}, ${plan}, ${opts.serviceStatus ?? "complimentary"})
+        insert into public.salons (owner_id, name, slug, plan, service_status, registration_source, plan_placeholder)
+        values (${profile.id}, ${name}, ${slug}, ${plan}, ${opts.serviceStatus ?? "complimentary"},
+                ${opts.registrationSource ?? "existing"}, ${opts.planPlaceholder ?? false})
+        returning id`
+    : (await hasColumn(sql, "salons", "service_status"))
+    ? await sql<{ id: string }[]>`
+        insert into public.salons (owner_id, name, slug, plan, service_status, registration_source)
+        values (${profile.id}, ${name}, ${slug}, ${plan}, ${opts.serviceStatus ?? "complimentary"}, ${opts.registrationSource ?? "existing"})
         returning id`
     : await sql<{ id: string }[]>`
         insert into public.salons (owner_id, name, slug, plan)

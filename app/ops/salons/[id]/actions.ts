@@ -45,6 +45,20 @@ export async function saveEntitlementsAction(input: SaveEntitlementsInput): Prom
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "入力内容をご確認ください。" };
   const { salonId, expectedVersion, expected, changes, note } = parsed.data;
 
+  // 新しい店舗(登録の途中)が利用開始待ちのあいだ、プランは予定(契約ではない)。契約プランの変更として記録しないため、変えない(0026)。
+  // 既存の店舗(0025 の時点の店舗)は、止めている間(利用開始待ち)も契約のまま。運営がプラン・利用許可を調整できる。
+  // 保存しても、利用区分は変わらず、権限による停止も解除しない(再開は、区分の変更・停止の解除という別の明示的な操作だけ)。
+  const { data: current, error: readError } = await getSupabaseAdmin()
+    .from("salons")
+    .select("service_status, registration_source")
+    .eq("id", salonId)
+    .maybeSingle();
+  if (readError) return { ok: false, error: "保存に失敗しました。時間をおいてもう一度お試しください。" };
+  if (!current) return { ok: false, error: "サロンが見つかりません。" };
+  if (current.service_status === "pending" && current.registration_source !== "existing") {
+    return { ok: false, error: "利用開始待ちの店舗では、契約プランと機能の利用許可は変更できません(契約プランは、利用を始めるときに決まります)。" };
+  }
+
   const { data, error } = await getSupabaseAdmin().rpc("admin_update_salon_entitlements", {
     p_actor_user_id: operator.userId,
     p_salon_id: salonId,
@@ -131,8 +145,10 @@ const serviceStatusSchema = z.object({
 });
 
 /**
- * 利用区分の変更(利用開始=無償提供・テスト店舗への変更も、利用開始待ちへ戻すのもこれ)。区分だけを変え、
- * 契約プラン・機能の利用許可・権限による停止・予約通知の稼働状態は変えない(自動で開始・再開しない)。
+ * 利用区分の変更(運営)。通常のお客様の利用開始には使わない(将来の決済の完了で自動で始まる)。
+ * できるのは、テスト用の指定(プランが決まっている店舗だけ)・利用の停止(利用開始待ちに変更)・既存の店舗を無料提供に戻すこと
+ * (DB の admin_update_salon_service_status が確かめ直す)。区分だけを変え、契約プラン・機能の利用許可・権限による停止・
+ * 予約通知の稼働状態は変えない(自動で開始・再開しない)。
  */
 export async function saveServiceStatusAction(input: z.input<typeof serviceStatusSchema>): Promise<OpsActionResult> {
   const operator = await requireOperator();
@@ -151,7 +167,7 @@ export async function saveServiceStatusAction(input: z.input<typeof serviceStatu
   if (error) return { ok: false, error: "保存に失敗しました。時間をおいてもう一度お試しください。" };
   revalidatePath(`/ops/salons/${salonId}`);
   revalidatePath("/ops/salons");
-  const r = data as { result: string; inflight_sends?: number };
+  const r = data as { result: string; detail?: string; inflight_sends?: number };
   switch (r.result) {
     case "saved":
       return {
@@ -167,6 +183,10 @@ export async function saveServiceStatusAction(input: z.input<typeof serviceStatu
       return { ok: false, error: CONFLICT_ERROR, conflict: true };
     case "not_found":
       return { ok: false, error: "サロンが見つかりません。" };
+    case "invalid":
+      if (r.detail === "complimentary_existing_only") return { ok: false, error: "新しい店舗は無料提供にできません(無料提供は、既存の店舗だけです)。" };
+      if (r.detail === "plan_required") return { ok: false, error: "プランが未定のため、テスト用にできません。" };
+      return { ok: false, error: "保存できませんでした。入力内容をご確認ください。" };
     default:
       return { ok: false, error: "保存できませんでした。入力内容をご確認ください。" };
   }

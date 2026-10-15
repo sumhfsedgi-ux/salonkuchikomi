@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { requireOperator } from "@/lib/ops/operator";
-import { listSalons, type SalonListCursor } from "@/lib/ops/queries";
+import { listSalons, type SalonListCursor, type SalonListRow } from "@/lib/ops/queries";
 import { PLAN_LABELS, formatJst } from "@/lib/ops/labels";
 import { FEATURE_CATEGORIES, FEATURE_REGISTRY, isFeatureKey, type FeatureKey } from "@/lib/features/registry";
 import type { SalonPlan } from "@/lib/access/plan";
 import { listDrafts } from "@/lib/ops/onboardingQueries";
-import { INVITATION_STATE_LABELS } from "@/lib/ops/onboardingDisplay";
+import { INVITATION_STATE_LABELS, planDisplay } from "@/lib/ops/onboardingDisplay";
 import { isServiceStatus, REGISTRATION_SOURCE_LABELS, SERVICE_STATUS_LABELS, type ServiceStatus } from "@/lib/onboarding/serviceStatus";
 import ServiceStatusBadge from "@/components/ops/ServiceStatusBadge";
 import PageHeader from "@/components/ui/PageHeader";
@@ -21,6 +21,20 @@ const categoryOrder = (key: string) => FEATURE_CATEGORIES.findIndex((c) => c.key
 const CATALOG_FEATURES = FEATURE_REGISTRY.filter((d) => d.entitlement === "catalog").sort(
   (a, b) => categoryOrder(a.category) - categoryOrder(b.category) || a.sortOrder - b.sortOrder,
 );
+
+// プランの印。利用開始待ちの店舗のプランは契約ではないため、そのとおりに出す(planDisplay)。
+// 契約プランでの絞り込み(DB の admin_list_salons)も、契約プランだけを対象にする。
+function PlanBadge({ row }: { row: SalonListRow }) {
+  const d = planDisplay(row);
+  if (d.kind === "unset" || !d.plan) return <Badge variant="neutral">プラン未定</Badge>;
+  if (d.kind === "planned") return <Badge variant="neutral">案内予定: {PLAN_LABELS[d.plan]}</Badge>;
+  return (
+    <Badge variant={d.plan === "salonpack" ? "success" : "neutral"}>
+      {PLAN_LABELS[d.plan]}
+      {d.kind === "contract_stopped" ? "(利用停止中)" : ""}
+    </Badge>
+  );
+}
 
 function one(value: string | string[] | undefined): string | null {
   const v = Array.isArray(value) ? value[0] : value;
@@ -173,7 +187,7 @@ export default async function OpsSalonsPage({ searchParams }: PageProps<"/ops/sa
                 <div className="flex flex-col gap-2 md:items-end">
                   <div className="flex flex-wrap gap-1.5 md:justify-end">
                     <ServiceStatusBadge status={s.serviceStatus} />
-                    <Badge variant={s.plan === "salonpack" ? "success" : "neutral"}>{PLAN_LABELS[s.plan]}</Badge>
+                    <PlanBadge row={s} />
                     {s.invitationState !== "none" && (
                       <Badge variant={s.invitationState === "complete" ? "neutral" : "warning"}>{INVITATION_STATE_LABELS[s.invitationState]}</Badge>
                     )}

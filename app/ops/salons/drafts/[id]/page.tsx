@@ -38,7 +38,15 @@ export default async function OpsDraftPage({ params, searchParams }: PageProps<"
         description="下書きのあいだは、アカウント・店舗は作られず、メールも送られません。内容を確認してから本登録・招待します。"
         action={<Badge variant="neutral">下書き</Badge>}
       />
-      <SalonDraftForm initial={initial} draftId={draft.id} version={draft.version} catalog={catalog} rules={rules} arrival={arrival} />
+      <SalonDraftForm
+        initial={initial}
+        draftId={draft.id}
+        version={draft.version}
+        catalog={catalog}
+        rules={rules}
+        arrival={arrival}
+        savedAsComplimentary={draft.savedAsComplimentary}
+      />
     </div>
   );
 }
