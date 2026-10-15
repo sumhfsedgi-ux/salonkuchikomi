@@ -13,7 +13,10 @@ import { recordGenerationEvent, type GenerationEvent } from "@/lib/reviewGenerat
 //   ① 利用回数の上限(店舗ごと)を確かめる。確かめられなければ作らない(入力は画面に残る)
 //   ② 店舗の返信の設定を読む
 //   ③ 口コミ本文の URL・メールアドレス・電話番号を伏せ字にしてから、返信の作成エンジン(lib/replyGeneration/pipeline.ts)に渡す。
-//      投稿者名は受け取らない(呼び出し側は本文と★だけを渡す)
+//      投稿者名は受け取らない(呼び出し側は Google のデータのうち本文と★だけを渡す)。エンジンは、これに店舗名・業種・
+//      店舗の紹介文と返信の設定(口調・長さ・店舗名を入れるか・再来店の一言・追加の希望)を添えて AI に送る。署名と
+//      低評価のときの連絡先の案内は AI に送らず、できた文章のあとにコードで付ける。再生成のときは前の案の書き出し
+//      (60文字まで。前の案も伏せ字にする)だけを添える
 //   ④ 使用量を記録する(本文・返信は記録しない)
 // 文章を作るのは、本番では OpenAI。架空の Google を使う検証(mock)では、OpenAI を呼ばずに決まった架空の文章にする。
 // 口コミ本文・返信の案は、どこにも保存せず、ログにも出さない(種類だけ)。
@@ -95,7 +98,8 @@ export async function generateReplyForSalon(input: ReplyServiceInput, deps: Repl
   const reviewText = maskContactDetails(input.reviewText.trim());
   if ([...reviewText].length > REVIEW_TEXT_MAX_CHARS) return { ok: false, error: REPLY_ERRORS.tooLong, retryable: false };
   // 前の案は書き出しを変えるためにしか使わないので、長すぎるものは捨てる。
-  const previousReply = input.regenerate && input.previousReply && utf8Bytes(input.previousReply) <= REPLY_MAX_BYTES * 2 ? input.previousReply : null;
+  const previousReply =
+    input.regenerate && input.previousReply && utf8Bytes(input.previousReply) <= REPLY_MAX_BYTES * 2 ? maskContactDetails(input.previousReply) : null;
 
   const { admin } = deps;
   if (!admin) return { ok: false, error: REPLY_ERRORS.rateUnavailable, retryable: true };

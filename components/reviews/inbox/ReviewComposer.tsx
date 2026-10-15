@@ -35,6 +35,8 @@ import type { GenerateForReviewResult } from "@/app/dashboard/reviews/google/act
 
 const AUTOSAVE_MS = 1500;
 const STALE_GENERATION = "Google連携または店舗が変わったため、返信案を表示しませんでした。一覧を読み込み直してください。";
+const CHECKING_STILL_UNKNOWN =
+  "Googleで確認しましたが、まだ反映を確かめられませんでした。Googleで遅れて反映されることがあるため、送信から2分ほどたってから、もう一度確認してください。";
 
 type SaveState = "idle" | "pending" | "saving" | "saved" | "error";
 
@@ -295,7 +297,7 @@ export default function ReviewComposer({
     onReviewUpdated(withOperation(review, "none"));
   }
 
-  // 結果不明のあと、この画面で Google から取り直したか(取り直す前は、もう一度送る操作を出さない)。
+  // 結果不明のあと、この画面で Google から取り直したか(取り直してもまだ確かめられないときの案内に使う)。
   const checkedSinceSend = lastCheckedAt !== null && (result === null || lastCheckedAt > result.at);
   const visibleResult = result && !(lastCheckedAt !== null && lastCheckedAt > result.at && result.outcome.kind !== "accepted") ? result : null;
 
@@ -330,51 +332,28 @@ export default function ReviewComposer({
       </Alert>
     );
   } else if (display === "checking") {
+    // 結果が分からない・反映を確かめていない間は、Googleで確認する だけ(送り直し・送るのをやめる は出さない。サーバーも受け付けない)。
+    // 取り直して反映が見えれば返信済み、送ってから時間がたっても見えなければ「送信できませんでした」などに変わる。
     postLabel = null;
     showDelete = false;
-    if (!checkedSinceSend) {
-      statePanel = (
-        <Alert variant="warning" className="flex flex-col gap-2">
-          <span className="font-medium">送信結果を確認中</span>
-          <span>{REPLY_STATE_NOTE.checking}</span>
-          <div>{checkButton}</div>
-        </Alert>
-      );
-    } else if (!review.reply) {
-      statePanel = (
-        <Alert variant="warning" className="flex flex-col gap-2">
-          <span className="font-medium">Googleで確認したところ、前回の送信は反映されていませんでした。</span>
-          <span>文章を確認して、もう一度送れます。送らない場合は「送るのをやめる」を押すと、未返信に戻ります。</span>
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-            <Button type="button" size="sm" onClick={() => openConfirm("upsert", null)} disabled={!textReady}>
-              もう一度送る
-            </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => void dismiss()}>
-              送るのをやめる
-            </Button>
-            {checkButton}
-          </div>
-        </Alert>
-      );
-    } else {
-      statePanel = (
-        <Alert variant="warning" className="flex flex-col gap-2">
-          <span className="font-medium">Googleで確認したところ、送った文章とは違う返信が付いています。</span>
-          <span>上の「Googleの返信」が、いまGoogleに表示されている返信です。編集中の文章で置き換えるか、このままにするかを選んでください。</span>
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-            <Button type="button" size="sm" onClick={() => openConfirm("upsert", review.reply?.comment ?? null)} disabled={!textReady}>
-              編集中の文章で置き換える
-            </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => void dismiss()}>
-              このままにする
-            </Button>
-          </div>
-        </Alert>
-      );
-    }
+    statePanel = (
+      <Alert variant="warning" className="flex flex-col gap-2">
+        <span className="font-medium">送信結果を確認中</span>
+        <span>{REPLY_STATE_NOTE.checking}</span>
+        {checkedSinceSend && <span>{CHECKING_STILL_UNKNOWN}</span>}
+        <div>{checkButton}</div>
+      </Alert>
+    );
   } else if (display === "send_failed") {
     postLabel = "もう一度送る";
-    statePanel = <Alert variant="error">{REPLY_STATE_NOTE.send_failed}</Alert>;
+    statePanel = (
+      <Alert variant="error" className="flex flex-col gap-2">
+        <span>{REPLY_STATE_NOTE.send_failed}</span>
+        <Button type="button" size="sm" variant="ghost" className="self-start" onClick={() => void dismiss()}>
+          送るのをやめる
+        </Button>
+      </Alert>
+    );
   } else if (display === "replace_failed") {
     postLabel = "もう一度置き換える";
     statePanel = (

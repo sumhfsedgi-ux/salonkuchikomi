@@ -11,7 +11,7 @@ import { entitlementsFor } from "../../helpers/entitlements";
 //   ・準備中(機能カタログの coming_soon)・店舗ごとの許可が無い・GOOGLE_REVIEWS_OAUTH_ENABLED が空、のどれでも、
 //     画面の操作・AI の生成・投稿・店舗の選択・連携の開始が、口コミの処理(Google・DB)に届かない
 //   ・AI の返信案は、作っている間に世代(連携・店舗)が変わったら返さない。投稿者名は渡さない
-//   ・連携の前の同意が無いと、連携を始めない・店舗を選ばない
+//   ・連携の前の同意が無いと、連携を始めない・同意を記録しない(同意の確認そのものは lib/gbp/inbox.ts。localdb で確かめる)
 //   ・貼り付け型の入口は無い
 // DB・Google・OpenAI には接続しない(店舗の解決・利用権限の読み込み・口コミの処理を差し替える)。
 
@@ -159,12 +159,13 @@ async function callEveryEntry() {
   results.push(await a.saveReviewDraftAction(REVIEW, "下書き"));
   results.push(await a.submitReplyAction({ reviewId: REVIEW, opId: OP, action: "upsert", text: "ありがとうございます", expectedReply: null }));
   results.push(await a.dismissReplyOperationAction(REVIEW));
-  results.push(await a.selectLocationAction({ locationName: "locations/1", consent: true }));
+  results.push(await a.selectLocationAction({ locationName: "locations/1" }));
   results.push(await a.generateReplyForReviewAction({ reviewId: REVIEW, locationId: LOCATION }));
   results.push(await a.saveReplySettingsAction({} as never));
   const connect = await redirectOf(() => a.startReviewsConnectAction(form({ mode: "connect", consent: "yes" })));
   const change = await redirectOf(() => a.changeLocationAction(form({ confirm: "yes" })));
-  return { results, connect, change };
+  const agree = await redirectOf(() => a.agreeReviewsConsentAction(form({ consent: "yes" })));
+  return { results, connect, change, agree };
 }
 
 describe("非公開のままの入口(計画 第2版 §6)", () => {
@@ -187,8 +188,9 @@ describe("非公開のままの入口(計画 第2版 §6)", () => {
     }],
   ])("%s、どの操作も口コミの処理・AI・Google の連携に届かない", async (_label, setup) => {
     setup();
-    const { results, connect, change } = await callEveryEntry();
+    const { results, connect, change, agree } = await callEveryEntry();
     expect(allInboxCalls()).toBe(0);
+    expect(agree).toBe("/dashboard/reviews/google?google=not_available");
     expect(generateReplyForSalon).not.toHaveBeenCalled();
     expect(startGoogleConnect).not.toHaveBeenCalled();
     expect(connect).toBe("/dashboard/reviews/google?google=not_available");
@@ -308,19 +310,29 @@ describe("連携の開始・店舗の選択と同意(計画 第2版 §2 操作�
     expect(startGoogleConnect.mock.calls[0][0]).toMatchObject({ features: ["gbp"], purpose: "add_scope", expectedGoogleSub: "sub-gmail", returnTo: "reviews" });
   });
 
-  it("同意が記録されていない店舗の選択は、チェックが必要", async () => {
+  it("店舗の選択では同意を記録しない(同意の無い店舗は、口コミの処理が選択を断る)", async () => {
     const { selectLocationAction } = await loadActions();
-    expect(await selectLocationAction({ locationName: "locations/1", consent: false })).toMatchObject({ ok: false });
-    expect(inbox.selectLocation).not.toHaveBeenCalled();
-    expect(await selectLocationAction({ locationName: "locations/1", consent: true })).toEqual({ ok: true, value: undefined });
-    expect(inbox.recordConsent).toHaveBeenCalledTimes(1);
+    // 画面から consent: true が来ても、ここでは記録しない(同意は同意の操作だけで記録する)
+    expect(await selectLocationAction({ locationName: "locations/1", consent: true } as never)).toEqual({ ok: true, value: undefined });
+    expect(inbox.recordConsent).not.toHaveBeenCalled();
     expect(inbox.selectLocation).toHaveBeenCalledWith({ salonId: "salon-1", userId: "user-1" }, "locations/1");
   });
 
+  it("共通の Google 連携の画面から連携した店舗の同意:チェックが無ければ記録しない。あれば記録して届いた口コミへ戻る", async () => {
+    const { agreeReviewsConsentAction } = await loadActions();
+    expect(await redirectOf(() => agreeReviewsConsentAction(form({})))).toBe("/dashboard/reviews/google?google=consent_required");
+    expect(inbox.recordConsent).not.toHaveBeenCalled();
+    expect(await redirectOf(() => agreeReviewsConsentAction(form({ consent: "yes" })))).toBe("/dashboard/reviews/google");
+    expect(inbox.recordConsent).toHaveBeenCalledWith({ salonId: "salon-1", userId: "user-1" });
+    // 同意の操作は、Google にも口コミの処理(取得・選択)にもつながない
+    expect(startGoogleConnect).not.toHaveBeenCalled();
+    expect(inbox.selectLocation).not.toHaveBeenCalled();
+    expect(inbox.refresh).not.toHaveBeenCalled();
+  });
+
   it("ロケーションの名前の形が違えば選ばない", async () => {
-    inbox.hasConsent.mockResolvedValue(true);
     const { selectLocationAction } = await loadActions();
-    expect(await selectLocationAction({ locationName: "accounts/1/locations/1", consent: true })).toMatchObject({ ok: false });
+    expect(await selectLocationAction({ locationName: "accounts/1/locations/1" })).toMatchObject({ ok: false });
     expect(inbox.selectLocation).not.toHaveBeenCalled();
   });
 

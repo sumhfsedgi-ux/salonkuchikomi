@@ -3,7 +3,8 @@
 //   - 古い処理(同期・取り込み・下書き・送信)が、変更後に書き戻さない(同時の接続での待ち合わせも)
 //   - 新着の数え方(初回の分・編集・期限切れのあとの取り直し・初回の途中)
 //   - 期限の削除は、利用可否(準備中・許可なし)に関係なく動く
-//   - 返信の操作:利用可否・世代の確認、未返信と確認が必要の分類、世代をまたいだ結果不明の追跡、1分の回数
+//   - 返信の操作:利用可否・世代の確認、未返信と確認が必要の分類、世代をまたいだ結果不明の追跡、1分の回数、
+//     結果不明・受け付けは取り直しでだけ終わる(送るのをやめる・送り直し・新しい操作を受け付けない)
 //   - 権限:関数は service role だけ
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -113,6 +114,24 @@ async function finish(db: Sql, salonId: string, opId: string, lease: string, sta
   const [row] = await db<{ ok: boolean }[]>`
     select public.gbp_finish_reply_operation(${salonId}, ${opId}, ${lease}, ${status}, null, ${db.json(reviews as never)}, ${TTL}, null) as ok`;
   return row.ok;
+}
+
+async function reconcile(db: Sql, salonId: string, reviewIndexId: string, reply: string | null, state: string | null, settleSeconds: number) {
+  const [row] = await db<{ n: number }[]>`
+    select public.gbp_reconcile_reply_operations(${salonId}, ${reviewIndexId}, ${reply === null ? null : sha(reply)}, ${state},
+                                                 ${reply === null ? null : new Date()}, ${settleSeconds}) as n`;
+  return row.n;
+}
+
+async function dismiss(db: Sql, salonId: string, reviewIndexId: string) {
+  const [row] = await db<{ n: number }[]>`select public.gbp_dismiss_reply_operation(${salonId}, ${reviewIndexId}) as n`;
+  return row.n;
+}
+
+async function opStatus(db: Sql, operationId: string) {
+  const [row] = await db<{ status: string; error_code: string | null }[]>`
+    select status, error_code from public.gbp_reply_operations where id = ${operationId}`;
+  return row;
 }
 
 async function detail(db: Sql, salonId: string, reviewIndexId: string) {
@@ -404,30 +423,93 @@ describe("返信の操作(§2・§3-A)", () => {
     expect(await finish(sql, c.salon.salonId, r.operation_id, r.lease_token, "accepted", [review("past-a", { reply: "ありがとうございます" })])).toBe(true);
     let d = await detail(sql, c.salon.salonId, id);
     expect([d.operation, d.bucket]).toEqual(["sent_checking", "attention"]);
-    await sql`select public.gbp_reconcile_reply_operations(${c.salon.salonId}, ${id}, ${sha("ありがとうございます")}, 'PENDING', now())`;
+    expect(await reconcile(sql, c.salon.salonId, id, "ありがとうございます", "PENDING", 120)).toBe(1);
     d = await detail(sql, c.salon.salonId, id);
     expect([d.operation, d.bucket]).toEqual(["none", "replied"]);
     expect((await list(sql, c.salon.salonId, "unreplied")).map((x) => x.review_index_id)).not.toContain(id);
+    expect(await opStatus(sql, r.operation_id)).toMatchObject({ status: "confirmed" });
   });
 
-  it("結果不明は「確認が必要」で、未返信に入れない。取り直して返信が無いと分かってから未返信に戻る", async () => {
+  it("取り直して送った返信が見えれば、Google の応答に審査の状態が無くても確認済み(確認中のまま残さない)", async () => {
+    const c = await syncedSalon(sql);
+    await allowGoogleReviews(sql, c.salon.salonId);
+    const id = c.rows[0].review_index_id;
+    const r = await begin(sql, c.salon, id, { text: "ありがとうございます" });
+    await startSend(sql, c.salon.salonId, r.operation_id, r.lease_token);
+    await finish(sql, c.salon.salonId, r.operation_id, r.lease_token, "accepted");
+    expect(await reconcile(sql, c.salon.salonId, id, "ありがとうございます", null, 120)).toBe(1);
+    expect(await opStatus(sql, r.operation_id)).toMatchObject({ status: "confirmed" });
+  });
+
+  it("結果不明は「確認が必要」で、未返信に入れない。送るのをやめる・同じ操作の送り直し・新しい操作は受け付けない", async () => {
+    const c = await syncedSalon(sql);
+    await allowGoogleReviews(sql, c.salon.salonId);
+    const id = c.rows[0].review_index_id;
+    const opId = randomUUID();
+    const r = await begin(sql, c.salon, id, { opId });
+    expect(await startSend(sql, c.salon.salonId, r.operation_id, r.lease_token)).toBe("ok");
+    expect(await finish(sql, c.salon.salonId, r.operation_id, r.lease_token, "unknown")).toBe(true);
+    const d = await detail(sql, c.salon.salonId, id);
+    expect([d.operation, d.bucket]).toEqual(["unknown", "attention"]);
+    expect((await list(sql, c.salon.salonId, "unreplied")).map((x) => x.review_index_id)).not.toContain(id);
+    expect((await list(sql, c.salon.salonId, "attention")).map((x) => x.review_index_id)).toContain(id);
+    // 直接呼ばれても、「送るのをやめる」は結果不明の記録を閉じない(未返信として扱い直さない)
+    expect(await dismiss(sql, c.salon.salonId, id)).toBe(0);
+    expect(await opStatus(sql, r.operation_id)).toEqual({ status: "unknown", error_code: null });
+    // 同じ操作の送り直し・別の文章の新しい操作・削除の操作も、確かめるまで始めない(何も記録しない)
+    expect((await begin(sql, c.salon, id, { opId })).outcome).toBe("unresolved");
+    expect((await begin(sql, c.salon, id, { text: "別の返信" })).outcome).toBe("unresolved");
+    expect((await begin(sql, c.salon, id, { action: "delete" })).outcome).toBe("unresolved");
+    const [{ n }] = await sql`select count(*)::int as n from public.gbp_reply_operations where salon_id = ${c.salon.salonId}`;
+    expect(n).toBe(1);
+    // 送ってから決めた時間がたつ前の取り直しで返信が見えなくても、結果不明のまま(遅れて反映されるかもしれない)
+    expect(await reconcile(sql, c.salon.salonId, id, null, null, 600)).toBe(0);
+    expect((await detail(sql, c.salon.salonId, id)).operation).toBe("unknown");
+    expect((await begin(sql, c.salon, id, { text: "別の返信" })).outcome).toBe("unresolved");
+  });
+
+  it("時間がたってから取り直して反映が見えなければ「送信できませんでした」。そこで初めて送り直せる・送るのをやめられる", async () => {
     const c = await syncedSalon(sql);
     await allowGoogleReviews(sql, c.salon.salonId);
     const id = c.rows[0].review_index_id;
     const r = await begin(sql, c.salon, id);
-    expect(await startSend(sql, c.salon.salonId, r.operation_id, r.lease_token)).toBe("ok");
-    expect(await finish(sql, c.salon.salonId, r.operation_id, r.lease_token, "unknown")).toBe(true);
+    await startSend(sql, c.salon.salonId, r.operation_id, r.lease_token);
+    await finish(sql, c.salon.salonId, r.operation_id, r.lease_token, "unknown");
+    expect(await reconcile(sql, c.salon.salonId, id, null, null, 0)).toBe(1);
+    expect(await opStatus(sql, r.operation_id)).toEqual({ status: "failed", error_code: "not_applied" });
     let d = await detail(sql, c.salon.salonId, id);
-    expect([d.operation, d.bucket]).toEqual(["unknown", "attention"]);
-    expect((await list(sql, c.salon.salonId, "unreplied")).map((x) => x.review_index_id)).not.toContain(id);
-    expect((await list(sql, c.salon.salonId, "attention")).map((x) => x.review_index_id)).toContain(id);
-    // 取り直しても一致しない(返信が無い)間は、結果不明のまま(推測で未返信にしない)
-    await sql`select public.gbp_reconcile_reply_operations(${c.salon.salonId}, ${id}, null, null, null)`;
-    expect((await detail(sql, c.salon.salonId, id)).operation).toBe("unknown");
-    // 利用者が「送るのをやめる」を選んだら、未返信に戻る
-    await sql`select public.gbp_dismiss_reply_operation(${c.salon.salonId}, ${id})`;
+    expect([d.operation, d.bucket]).toEqual(["send_failed", "unreplied"]);
+    // 送るのをやめる:Google には何もしない。記録を閉じ、表示は Google のデータ(返信なし)どおりの未返信
+    expect(await dismiss(sql, c.salon.salonId, id)).toBe(1);
     d = await detail(sql, c.salon.salonId, id);
     expect([d.operation, d.bucket]).toEqual(["none", "unreplied"]);
+    // 確かめたあとなら、新しい操作を始められる
+    expect((await begin(sql, c.salon, id, { text: "もう一度の返信" })).outcome).toBe("new");
+  });
+
+  it("受け付けたが反映を確かめていない間も、新しい操作は始めない。取り直して見えれば確認済みになり、置き換えられる", async () => {
+    const c = await syncedSalon(sql);
+    await allowGoogleReviews(sql, c.salon.salonId);
+    const id = c.rows[0].review_index_id;
+    const r = await begin(sql, c.salon, id, { text: "最初の返信" });
+    await startSend(sql, c.salon.salonId, r.operation_id, r.lease_token);
+    await finish(sql, c.salon.salonId, r.operation_id, r.lease_token, "accepted");
+    expect(await dismiss(sql, c.salon.salonId, id)).toBe(0);
+    expect((await begin(sql, c.salon, id, { text: "直した返信", base: sha("最初の返信") })).outcome).toBe("unresolved");
+    expect(await reconcile(sql, c.salon.salonId, id, "最初の返信", "PENDING", 120)).toBe(1);
+    expect((await begin(sql, c.salon, id, { text: "直した返信", base: sha("最初の返信") })).outcome).toBe("new");
+  });
+
+  it("送り始めてから処理権が切れた操作は、同じ op_id でも送り直さない(結果不明にして、取り直しを求める)", async () => {
+    const c = await syncedSalon(sql);
+    await allowGoogleReviews(sql, c.salon.salonId);
+    const id = c.rows[0].review_index_id;
+    const opId = randomUUID();
+    const r = await begin(sql, c.salon, id, { opId });
+    await startSend(sql, c.salon.salonId, r.operation_id, r.lease_token);
+    await sql`update public.gbp_reply_operations set lease_until = now() - interval '1 second' where id = ${r.operation_id}`;
+    expect((await begin(sql, c.salon, id, { opId })).outcome).toBe("unresolved");
+    expect(await opStatus(sql, r.operation_id)).toEqual({ status: "unknown", error_code: "lease_expired" });
   });
 
   it("置き換え・削除の失敗で以前の返信が残っているときは「確認が必要」。新規の送信の失敗は未返信", async () => {

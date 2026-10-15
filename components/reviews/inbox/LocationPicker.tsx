@@ -1,14 +1,13 @@
 "use client";
 
-import { useId, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Button from "@/components/ui/Button";
 import Alert from "@/components/ui/Alert";
-import { CONSENT_ITEMS } from "@/components/reviews/inbox/connectCopy";
 import type { ActionResult, GbpAccountOption, GbpLocationOption } from "@/lib/googleReviews/types";
 
 // 口コミを受け取る店舗(Google のビジネス)を選ぶ(計画 第2版 §2 操作の流れ 3)。1件でも選んでもらう(自動では選ばない)。
-// 連携の前の同意がまだ無い(Google連携の画面から連携した)ときは、ここで同意のチェックを求める。
+// 同意を記録した店舗にだけ出す(同意の前は、店舗の候補も取らない。lib/gbp/inbox.ts)。
 // 選ぶと、サーバーが最初の取り込みを行い、画面を読み直す。
 
 const UNAVAILABLE_REASON: Record<NonNullable<GbpLocationOption["unavailableReason"]>, string> = {
@@ -18,15 +17,12 @@ const UNAVAILABLE_REASON: Record<NonNullable<GbpLocationOption["unavailableReaso
 
 interface Props {
   accounts: GbpAccountOption[];
-  needsConsent: boolean;
-  select: (input: { locationName: string; consent: boolean }) => Promise<ActionResult>;
+  select: (input: { locationName: string }) => Promise<ActionResult>;
 }
 
-export default function LocationPicker({ accounts, needsConsent, select }: Props) {
+export default function LocationPicker({ accounts, select }: Props) {
   const router = useRouter();
-  const consentId = useId();
   const [selected, setSelected] = useState<string | null>(null);
-  const [consented, setConsented] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -36,7 +32,7 @@ export default function LocationPicker({ accounts, needsConsent, select }: Props
     startTransition(async () => {
       let result: ActionResult;
       try {
-        result = await select({ locationName: selected, consent: consented });
+        result = await select({ locationName: selected });
       } catch {
         result = { ok: false, error: "店舗を選べませんでした。もう一度お試しください。" };
       }
@@ -94,31 +90,9 @@ export default function LocationPicker({ accounts, needsConsent, select }: Props
         ))}
       </fieldset>
 
-      {needsConsent && (
-        <div className="flex flex-col gap-2 rounded-lg border border-border bg-ivory p-3">
-          <p className="text-sm font-semibold text-ink">口コミの取り扱いについて</p>
-          <ul className="flex list-disc flex-col gap-1 pl-5 text-xs text-ink-muted">
-            {CONSENT_ITEMS.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-          <label htmlFor={consentId} className="flex items-start gap-2 text-sm text-ink">
-            <input
-              id={consentId}
-              type="checkbox"
-              checked={consented}
-              onChange={(e) => setConsented(e.target.checked)}
-              disabled={pending}
-              className="mt-0.5 h-5 w-5 shrink-0 accent-sage-dark"
-            />
-            上の内容を確認しました
-          </label>
-        </div>
-      )}
-
       {error && <Alert variant="error">{error}</Alert>}
 
-      <Button type="button" className="self-start" onClick={submit} disabled={!selected || pending || (needsConsent && !consented)}>
+      <Button type="button" className="self-start" onClick={submit} disabled={!selected || pending}>
         {pending ? "口コミを取り込んでいます…" : "この店舗の口コミを受け取る"}
       </Button>
     </div>

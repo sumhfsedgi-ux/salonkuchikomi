@@ -1,7 +1,8 @@
 // 届いた口コミのサーバー処理(lib/gbp/inbox.ts)を、ローカルの PostgreSQL の本物の SQL(0027〜0030)と
 // 架空の Google の口コミの API(lib/gbp/simulated.ts)でまとめて確かめる(npm run test:localdb)。値はすべて架空。
+//   - 同意の前は、店舗の候補・口コミの取得・保存・AI の入力・投稿のどれも始まらない(同意の版が変わったときも)
 //   - 連携 → 店舗の選択 → 初回の取り込み → 一覧(未返信・確認が必要・返信済み)・Google の値・新着
-//   - 返信の投稿・結果不明・取り直しの照合
+//   - 返信の投稿・結果不明・取り直しの照合(結果不明の間は、送るのをやめる・送り直し・新しい送信を受け付けない)
 //   - 連携・店舗の変更や利用不可への変更と、取り込み・送信が重なったとき(計画 第2版 §3-A)
 //   - 403 の分類(口コミの権限不足のときだけ口コミの結び付けに記録し、Gmail・アカウントの状態は変えない。§3-B)
 import { randomUUID } from "node:crypto";
@@ -11,7 +12,7 @@ import { createDatabase, dropDatabase } from "./db";
 import { createSalon, type SalonFixture } from "./fixtures";
 import { createLocalRpcClient } from "./rpcClient";
 import { createRpcGbpStore } from "@/lib/gbp/supabaseStore";
-import { createGbpInbox, type GbpInbox } from "@/lib/gbp/inbox";
+import { createGbpInbox, type GbpInbox, type GbpInboxDeps } from "@/lib/gbp/inbox";
 import { createSimulatedGbp, simulatedGbpToken, type SimulatedGbp } from "@/lib/gbp/simulated";
 import { simulatedGbpUsers, SIM_OWNER_SUB } from "@/lib/gbp/dev/simulatedFixtures";
 import { GbpApiError } from "@/lib/gbp/apiClient";
@@ -60,9 +61,11 @@ interface World {
   sim: SimulatedGbp;
   inbox: GbpInbox;
   canWrite: { value: boolean };
+  /** 同じ店舗・同じ架空の Google で、設定だけを変えた処理を作る。 */
+  make: (extra: Partial<GbpInboxDeps>) => GbpInbox;
 }
 
-async function world(opts: { bindGmail?: boolean } = {}): Promise<World> {
+async function world(opts: { bindGmail?: boolean; replySettleMs?: number } = {}): Promise<World> {
   const salon = await createSalon(sql, { plan: "salonpack" });
   const accountId = randomUUID();
   await sql`
@@ -75,15 +78,18 @@ async function world(opts: { bindGmail?: boolean } = {}): Promise<World> {
   await sql`insert into public.salon_feature_overrides (salon_id, feature_key, mode) values (${salon.salonId}, 'google_reviews', 'allow')`;
   const sim = createSimulatedGbp({ users: simulatedGbpUsers() });
   const canWrite = { value: true };
-  const inbox = createGbpInbox({
-    store: createRpcGbpStore(createLocalRpcClient(sql)),
-    api: sim.api,
-    access: accessFor(sql),
-    reviewKeySecret: SECRET,
-    canWrite: () => canWrite.value,
-    minRefreshIntervalMs: 0,
-  });
-  return { salon, accountId, ctx: { salonId: salon.salonId, userId: salon.userId }, sim, inbox, canWrite };
+  const make = (extra: Partial<GbpInboxDeps>) =>
+    createGbpInbox({
+      store: createRpcGbpStore(createLocalRpcClient(sql)),
+      api: sim.api,
+      access: accessFor(sql),
+      reviewKeySecret: SECRET,
+      canWrite: () => canWrite.value,
+      minRefreshIntervalMs: 0,
+      ...(opts.replySettleMs !== undefined ? { replySettleMs: opts.replySettleMs } : {}),
+      ...extra,
+    });
+  return { salon, accountId, ctx: { salonId: salon.salonId, userId: salon.userId }, sim, inbox: make({}), canWrite, make };
 }
 
 async function connected(w: World, location = "locations/sim-101") {
@@ -117,6 +123,10 @@ describe("連携 → 店舗の選択 → 一覧", () => {
   it("未連携 → 選択待ち(選べない店舗を区別)→ 選ぶと初回の取り込みが済み、未返信・確認が必要・返信済みに分かれる", async () => {
     await releaseLocations();
     const w = await world();
+    // 同意の前は、店舗の候補も取らない(Google を呼ばない)
+    expect(await w.inbox.getConnection(w.ctx)).toEqual({ kind: "consent_required", googleEmail: "owner@example.test" });
+    expect(w.sim.calls).toEqual([]);
+    await w.inbox.recordConsent(w.ctx);
     const before = await w.inbox.getConnection(w.ctx);
     expect(before.kind).toBe("selecting");
     if (before.kind !== "selecting") throw new Error();
@@ -152,6 +162,51 @@ describe("連携 → 店舗の選択 → 一覧", () => {
     expect((await items(w, "all")).summary.newCount).toBe(0);
   });
 });
+
+describe("同意(共通の Google 連携の画面から連携した場合・同意の版が変わった場合)", () => {
+  it("同意を記録するまで、店舗の候補・口コミの取得・保存・一覧のどれも始まらない(Google を呼ばない)", async () => {
+    await releaseLocations();
+    const w = await world();
+    // 口コミの結び付けはある(共通の Google 連携の画面から連携した)が、同意の記録が無い
+    expect((await w.inbox.getConnection(w.ctx)).kind).toBe("consent_required");
+    expect(await w.inbox.selectLocation(w.ctx, "locations/sim-101")).toMatchObject({ ok: false });
+    expect(await w.inbox.refresh(w.ctx)).toMatchObject({ ok: false });
+    expect(await w.inbox.listReviews(w.ctx, DEFAULT_LIST_QUERY, null)).toMatchObject({ kind: "error" });
+    expect(w.sim.calls).toEqual([]);
+    const [n] = await sql`
+      select (select count(*) from public.gbp_locations where salon_id = ${w.salon.salonId})::int as locations,
+             (select count(*) from public.gbp_review_index where salon_id = ${w.salon.salonId})::int as reviews`;
+    expect(n).toEqual({ locations: 0, reviews: 0 });
+  });
+
+  it("同意の版が変わったら、記録し直すまで取得・確認・AI の入力・下書き・投稿を止める(Google を呼ばない)", async () => {
+    await releaseLocations();
+    const w = await world();
+    await connected(w);
+    const list = await items(w, "all");
+    const id = list.items.find((i) => i.comment.includes("カットの相談"))!.id;
+    const next = w.make({ consentVersion: "gbp-connect-test-next" });
+    const callsBefore = w.sim.calls.length;
+
+    expect((await next.getConnection(w.ctx)).kind).toBe("consent_required");
+    expect(await next.listReviews(w.ctx, DEFAULT_LIST_QUERY, null)).toMatchObject({ kind: "error" });
+    expect(await next.refresh(w.ctx)).toMatchObject({ ok: false });
+    expect(await next.checkReview(w.ctx, id)).toMatchObject({ ok: false });
+    expect((await next.getReview(w.ctx, id)).kind).toBe("not_found");
+    expect(await next.getReplyInput(w.ctx, id)).toMatchObject({ ok: false });
+    expect(await next.isCurrent(w.ctx, id, list.summary.locationId)).toBe(false);
+    expect(await next.saveDraft(w.ctx, id, "下書き")).toMatchObject({ ok: false });
+    expect(await next.setSeen(w.ctx, id, true)).toMatchObject({ ok: false });
+    const sent = await next.submitReply(w.ctx, { reviewId: id, opId: randomUUID(), action: "upsert", text: "返信", expectedReply: null });
+    expect(sent.kind).toBe("unavailable");
+    expect(w.sim.calls.length).toBe(callsBefore);
+    expect(w.sim.replyOf(R1)).toBeNull();
+
+    await next.recordConsent(w.ctx);
+    expect((await next.getConnection(w.ctx)).kind).toBe("connected");
+  });
+});
+
 
 describe("返信(§2)", () => {
   it("受け付けは「送信結果を確認中」、Google で確かめると審査中(返信済み)", async () => {
@@ -190,6 +245,60 @@ describe("返信(§2)", () => {
     const sent = await w.inbox.submitReply(w.ctx, { reviewId: id, opId: randomUUID(), action: "upsert", text: "ありがとうございます", expectedReply: null });
     expect(sent.kind).toBe("unavailable");
     expect(w.sim.replyOf(R1)).toBeNull();
+  });
+
+  it("結果が分からない間は、送るのをやめる・同じ操作の送り直し・別の返信の送信を受け付けず、Google に送らない", async () => {
+    await releaseLocations();
+    const w = await world({ replySettleMs: 120_000 });
+    await connected(w);
+    const id = await idOf(w, "カットの相談");
+    const writes = () => w.sim.calls.filter((c) => c === "reply" || c === "delete_reply").length;
+    const opId = randomUUID();
+    w.sim.failNext("reply", new GbpApiError("timeout"));
+    const sent = await w.inbox.submitReply(w.ctx, { reviewId: id, opId, action: "upsert", text: "最初の返信", expectedReply: null });
+    expect(sent.kind).toBe("unknown");
+    expect(writes()).toBe(1);
+
+    expect(await w.inbox.dismissReplyOperation(w.ctx, id)).toMatchObject({ ok: false });
+    expect(await w.inbox.submitReply(w.ctx, { reviewId: id, opId, action: "upsert", text: "最初の返信", expectedReply: null })).toMatchObject({ kind: "busy" });
+    expect(await w.inbox.submitReply(w.ctx, { reviewId: id, opId: randomUUID(), action: "upsert", text: "別の返信", expectedReply: null })).toMatchObject({
+      kind: "busy",
+    });
+    expect(writes()).toBe(1);
+    // 送ってから時間がたつ前の確認では、反映が見えなくても結果不明のまま
+    const checked = await w.inbox.checkReview(w.ctx, id);
+    expect(checked.ok && [checked.value.operation, checked.value.bucket]).toEqual(["unknown", "attention"]);
+  });
+
+  it("時間がたってから確認して反映されていなければ「送信できませんでした」になり、そこで初めて送り直せる", async () => {
+    await releaseLocations();
+    const w = await world({ replySettleMs: 0 });
+    await connected(w);
+    const id = await idOf(w, "カットの相談");
+    w.sim.failNext("reply", new GbpApiError("timeout"));
+    expect((await w.inbox.submitReply(w.ctx, { reviewId: id, opId: randomUUID(), action: "upsert", text: "最初の返信", expectedReply: null })).kind).toBe("unknown");
+    const checked = await w.inbox.checkReview(w.ctx, id);
+    expect(checked.ok && [checked.value.operation, checked.value.bucket]).toEqual(["send_failed", "unreplied"]);
+    const again = await w.inbox.submitReply(w.ctx, { reviewId: id, opId: randomUUID(), action: "upsert", text: "もう一度の返信", expectedReply: null });
+    expect(again.kind).toBe("accepted");
+    expect(w.sim.replyOf(R1)?.comment).toBe("もう一度の返信");
+  });
+
+  it("「送るのをやめる」は Google に何も送らず、送れなかった記録だけを閉じる(未返信のまま)", async () => {
+    await releaseLocations();
+    const w = await world({ replySettleMs: 0 });
+    await connected(w);
+    const id = await idOf(w, "カットの相談");
+    w.sim.failNext("reply", new GbpApiError("timeout"));
+    await w.inbox.submitReply(w.ctx, { reviewId: id, opId: randomUUID(), action: "upsert", text: "最初の返信", expectedReply: null });
+    await w.inbox.checkReview(w.ctx, id);
+    const callsBefore = w.sim.calls.length;
+    expect(await w.inbox.dismissReplyOperation(w.ctx, id)).toEqual({ ok: true, value: undefined });
+    expect(w.sim.calls.length).toBe(callsBefore);
+    const after = await w.inbox.getReview(w.ctx, id);
+    expect(after.kind === "ok" && [after.review.operation, after.review.bucket]).toEqual(["none", "unreplied"]);
+    // 閉じるものが無いときは、何も変えずに知らせる
+    expect(await w.inbox.dismissReplyOperation(w.ctx, id)).toMatchObject({ ok: false });
   });
 });
 

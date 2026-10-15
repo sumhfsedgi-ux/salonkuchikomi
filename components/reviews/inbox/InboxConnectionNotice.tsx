@@ -11,6 +11,7 @@ import type { ActionResult, GbpConnectionState } from "@/lib/googleReviews/types
 //   未連携         : 説明と、連携の前の同意 →「Googleと連携する」(予約メールの Gmail と同じアカウントなら権限の追加も選べる)
 //   再連携が必要   : 連携中のアカウントで再接続する
 //   権限が足りない : 連携中のアカウントに口コミの権限を追加する
+//   同意の確認     : 共通の Google 連携の画面から連携した・同意の版が変わった。同意を記録するまで、店舗の候補も取らない
 //   店舗の選択     : Google のビジネスの一覧から1つ選ぶ(一覧を取れない・0件・選べるものが無い、も区別して出す)
 // どの操作も、共通の Google 連携(lib/google)を使う。予約メール(Gmail)の連携は変えない。
 
@@ -18,12 +19,13 @@ const GOOGLE_BUSINESS_URL = "https://business.google.com/";
 
 interface Props {
   state: Exclude<GbpConnectionState, { kind: "connected" }>;
-  hasConsent: boolean;
   /** 予約メールで連携している Google アカウント(あれば。同じアカウントに権限を追加する案内に使う)。 */
   gmailAccountEmail: string | null;
   connect: (formData: FormData) => Promise<void>;
+  /** 同意だけを記録する(consent_required のとき)。 */
+  agree: (formData: FormData) => Promise<void>;
   stop: (formData: FormData) => Promise<void>;
-  select: (input: { locationName: string; consent: boolean }) => Promise<ActionResult>;
+  select: (input: { locationName: string }) => Promise<ActionResult>;
 }
 
 function Note({ children }: { children: ReactNode }) {
@@ -54,6 +56,24 @@ function ConnectForm({
   );
 }
 
+/** 口コミの取り扱いの説明と、確認のチェック(HTML の required とサーバーの両方で確かめる)。 */
+function ConsentBox() {
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-ivory p-3">
+      <p className="text-sm font-semibold text-ink">口コミの取り扱いについて</p>
+      <ul className="flex list-disc flex-col gap-1 pl-5 text-xs text-ink-muted">
+        {CONSENT_ITEMS.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+      <label className="flex items-start gap-2 text-sm text-ink">
+        <input type="checkbox" name="consent" value="yes" required className="mt-0.5 h-5 w-5 shrink-0 accent-sage-dark" />
+        上の内容を確認しました
+      </label>
+    </div>
+  );
+}
+
 function StopForm({ stop }: { stop: Props["stop"] }) {
   return (
     <form action={stop} className="contents">
@@ -65,7 +85,7 @@ function StopForm({ stop }: { stop: Props["stop"] }) {
   );
 }
 
-export default function InboxConnectionNotice({ state, hasConsent, gmailAccountEmail, connect, stop, select }: Props) {
+export default function InboxConnectionNotice({ state, gmailAccountEmail, connect, agree, stop, select }: Props) {
   if (state.kind === "not_connected") {
     return (
       <Card className="flex flex-col gap-4">
@@ -77,18 +97,7 @@ export default function InboxConnectionNotice({ state, hasConsent, gmailAccountE
         </div>
         {/* 同意のチェックは、連携を始めるどのボタンにも必要(HTML の required とサーバーの両方で確かめる)。 */}
         <form action={connect} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2 rounded-lg border border-border bg-ivory p-3">
-            <p className="text-sm font-semibold text-ink">口コミの取り扱いについて</p>
-            <ul className="flex list-disc flex-col gap-1 pl-5 text-xs text-ink-muted">
-              {CONSENT_ITEMS.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-            <label className="flex items-start gap-2 text-sm text-ink">
-              <input type="checkbox" name="consent" value="yes" required className="mt-0.5 h-5 w-5 shrink-0 accent-sage-dark" />
-              上の内容を確認しました
-            </label>
-          </div>
+          <ConsentBox />
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             {gmailAccountEmail ? (
               <>
@@ -148,6 +157,29 @@ export default function InboxConnectionNotice({ state, hasConsent, gmailAccountE
     );
   }
 
+  if (state.kind === "consent_required") {
+    return (
+      <Card className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-sm font-semibold text-ink">口コミの取り扱いについて確認してください</h2>
+          <p className="text-sm text-ink-muted">
+            Googleアカウント{state.googleEmail ? `(${state.googleEmail})` : ""}と連携しています。確認が済むまで、Googleから店舗や口コミは取得しません。
+          </p>
+        </div>
+        <form action={agree} className="flex flex-col gap-4">
+          <ConsentBox />
+          <button type="submit" className={`${buttonClassName({ variant: "primary" })} self-start`}>
+            確認して、店舗の選択へ進む
+          </button>
+        </form>
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <StopForm stop={stop} />
+        </div>
+        <Note>{GMAIL_NOTE}</Note>
+      </Card>
+    );
+  }
+
   // 店舗の選択
   const locations = state.accounts.flatMap((account) => account.locations);
   const selectable = locations.filter((location) => location.unavailableReason === null).length;
@@ -192,7 +224,7 @@ export default function InboxConnectionNotice({ state, hasConsent, gmailAccountE
               このGoogleアカウントで管理しているビジネスは、どれも下の理由で選べません。別のGoogleアカウントで確認するか、Googleビジネスプロフィールで状態を確認してください。
             </p>
           )}
-          <LocationPicker accounts={state.accounts} needsConsent={!hasConsent} select={select} />
+          <LocationPicker accounts={state.accounts} select={select} />
         </>
       )}
 

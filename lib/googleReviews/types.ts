@@ -34,6 +34,8 @@ export type GbpConnectionState =
   | { kind: "not_connected" }
   | { kind: "needs_reconnect"; googleEmail: string | null }
   | { kind: "scope_missing"; googleEmail: string | null }
+  /** 連携はできているが、口コミの取り扱いの同意(今の版)を記録していない。Google の口コミの API は呼んでいない。 */
+  | { kind: "consent_required"; googleEmail: string | null }
   | { kind: "selecting"; googleEmail: string | null; accounts: GbpAccountOption[]; loadError?: string }
   | { kind: "connected"; googleEmail: string | null; location: GbpLinkedLocation; connectedAt: string };
 

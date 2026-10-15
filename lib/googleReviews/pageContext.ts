@@ -13,7 +13,6 @@ import type { GbpConnectionState } from "@/lib/googleReviews/types";
 export interface InboxPageContext {
   access: Extract<GoogleReviewsAccess, { ok: true }>;
   connection: GbpConnectionState;
-  hasConsent: boolean;
   /** 予約メールで連携している Google アカウント(同じアカウントで口コミを連携する案内に使う)。 */
   gmailAccountEmail: string | null;
 }
@@ -23,17 +22,12 @@ export const getInboxPageContext = cache(async (): Promise<InboxPageContext> => 
   await requireFeatureAccess(supabase, "google_reviews");
   const access = await resolveGoogleReviewsAccess();
   if (!access.ok) notFound();
-  const [connection, hasConsent, bindings] = await Promise.all([
-    access.inbox.getConnection(access.ctx),
-    access.inbox.hasConsent(access.ctx),
-    listSalonGoogleBindings(access.salon.id),
-  ]);
+  const [connection, bindings] = await Promise.all([access.inbox.getConnection(access.ctx), listSalonGoogleBindings(access.salon.id)]);
   const gmail = bindings.find((b) => b.feature === "gmail");
   const gbp = bindings.find((b) => b.feature === "gbp");
   return {
     access,
     connection,
-    hasConsent,
     gmailAccountEmail: !gbp && gmail ? (gmail.accountEmail ?? gmail.account.email ?? null) : null,
   };
 });

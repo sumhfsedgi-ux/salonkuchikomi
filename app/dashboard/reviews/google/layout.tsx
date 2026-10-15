@@ -7,7 +7,13 @@ import ReviewsSubNav from "@/components/reviews/ReviewsSubNav";
 import ReviewsInbox from "@/components/reviews/inbox/ReviewsInbox";
 import InboxConnectionNotice from "@/components/reviews/inbox/InboxConnectionNotice";
 import ConnectResultMessage from "@/components/reviews/inbox/ConnectResultMessage";
-import { listReviewsAction, refreshReviewsAction, selectLocationAction, startReviewsConnectAction } from "@/app/dashboard/reviews/google/inboxActions";
+import {
+  agreeReviewsConsentAction,
+  listReviewsAction,
+  refreshReviewsAction,
+  selectLocationAction,
+  startReviewsConnectAction,
+} from "@/app/dashboard/reviews/google/inboxActions";
 import { stopFeatureAction } from "@/app/dashboard/settings/google/actions";
 
 // 届いた口コミ(計画 第2版 §2)。「口コミ」の中のタブの1つ。
@@ -28,7 +34,7 @@ export default async function DashboardReviewsGoogleLayout({ children }: LayoutP
       {isSimulatedGoogleEnabled() && (
         <Alert variant="warning">検証用の架空のGoogleにつないでいます。実際のGoogleの口コミ・返信ではありません。</Alert>
       )}
-      <ConnectResultMessage selecting={connection.kind === "selecting"} />
+      <ConnectResultMessage next={connection.kind === "selecting" || connection.kind === "consent_required" ? connection.kind : null} />
       {connection.kind === "connected" && initialResult ? (
         <ReviewsInbox initialResult={initialResult} actions={{ list: listReviewsAction, refresh: refreshReviewsAction }}>
           {children}
@@ -36,9 +42,9 @@ export default async function DashboardReviewsGoogleLayout({ children }: LayoutP
       ) : connection.kind !== "connected" ? (
         <InboxConnectionNotice
           state={connection}
-          hasConsent={context.hasConsent}
           gmailAccountEmail={context.gmailAccountEmail}
           connect={startReviewsConnectAction}
+          agree={agreeReviewsConsentAction}
           stop={stopFeatureAction}
           select={selectLocationAction}
         />

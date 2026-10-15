@@ -40,6 +40,9 @@ import type {
 
 // 届いた口コミのサーバー処理(計画 第2版 §2・§3)。Google の API・DB・共通の Google 連携は差し替えられる(deps)。
 //   連携    : 共通の Google 連携の口コミの結び付けを使う(口コミ専用の OAuth・トークンは持たない)。
+//   同意    : 連携の同意(口コミの一時保存・AI での処理・投稿はボタンを押したときだけ、など)を今の版で記録している
+//             店舗だけ、口コミの API を呼ぶ・保存する・AI の入力を渡す・投稿する。記録が無ければ、店舗の候補も取らない
+//             (共通の Google 連携の画面から連携した場合も同じ。同意の版を上げたら、記録し直すまで止まる)。
 //   店舗選択: 一覧はその場で Google から取る(保存しない)。選んだロケーションだけ保存し、初回の取り込みを行う。
 //   同期    : 口コミを索引(HMAC のキー)と一時保存(25日)に入れる。1回の同期(run)は時間・ページ数で区切り、
 //             途中経過を DB に残して次回に続きから読む。最後まで読み終えたときだけ watermark を進める。
@@ -70,6 +73,8 @@ export interface GbpInboxDeps {
   syncPageReserveMs?: number;
   minRefreshIntervalMs?: number;
   consentVersion?: string;
+  /** 結果不明・受け付けの返信を、取り直しても反映が見えないときに「反映されなかった」と決めるまでの時間。 */
+  replySettleMs?: number;
 }
 
 export interface ReplyInput {
@@ -99,7 +104,10 @@ export interface GbpInbox {
   /** その口コミが、まだ同じ世代で使えるか(生成のあとの確認)。 */
   isCurrent(ctx: SourceContext, id: string, locationId: string): Promise<boolean>;
   submitReply(ctx: SourceContext, request: ReplySubmitRequest): Promise<ReplySubmitResult>;
-  /** 結果不明・送れなかった返信の操作を、表示しないようにする(「送るのをやめる」)。 */
+  /**
+   * 送れなかったと分かっている返信の操作(failed)を、表示しないようにする(「送るのをやめる」)。Google には何も送らない。
+   * 結果不明・送信中・反映を確かめていない操作は変えない(「Googleで確認する」で確かめるまで、そのまま)。
+   */
   dismissReplyOperation(ctx: SourceContext, id: string): Promise<ActionResult>;
 }
 
@@ -115,8 +123,12 @@ const REPLY_LEASE_SECONDS = 60;
 const REPLY_WRITE_WINDOW_SECONDS = Math.ceil(GBP_API_TIMEOUT_MS / 1000) + 20;
 /** Google の返信の編集の上限(1つのビジネスにつき1分に10回)。 */
 const REPLY_EDITS_PER_MINUTE = 10;
-const KNOWN_REPLY_STATES = new Set(["PENDING", "APPROVED", "REJECTED"]);
-export const GBP_CONSENT_VERSION = "gbp-connect-2026-10";
+/**
+ * 結果不明・受け付けの返信を「反映されなかった」と決めるまでの時間。書き込みの時間切れ(10秒)と処理権の延長より十分長くし、
+ * 時間切れのあとに Google が遅れて反映する場合に、送り直しと入れ替わらないようにする。
+ */
+export const GBP_REPLY_SETTLE_MS = 2 * 60_000;
+export const GBP_CONSENT_VERSION = "gbp-connect-2026-10-15";
 
 const NOT_CONNECTED = "Google口コミを連携していません。";
 const FETCH_FAILED = "最新の口コミを取得できませんでした。少し時間をおいて、もう一度お試しください。";
@@ -137,6 +149,9 @@ const REPLY_UNKNOWN =
   "Googleからの応答を確認できませんでした。返信が反映されているかもしれません。「Googleで確認する」で確かめてください。確認できるまで、もう一度送らないでください。";
 const LOCATION_CHANGED = "Google連携または店舗が変わったため、返信は送っていません。一覧を読み込み直してください。";
 const NOT_ENTITLED = "届いた口コミを利用できなくなったため、返信は送っていません。";
+const CONSENT_REQUIRED = "口コミの取り扱いについての確認がまだ済んでいません。届いた口コミの画面で内容を確認してください。";
+const REPLY_UNRESOLVED =
+  "前に送った返信の結果を、まだ確かめられていません。返信は送っていません。「Googleで確認する」で確かめてから、もう一度お試しください。";
 
 type SyncOutcome = { kind: "complete" | "partial"; at: string | null } | { kind: "throttled"; at: string | null } | { kind: "busy" } | { kind: "inactive" };
 
@@ -215,7 +230,17 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
   const syncPageReserveMs = deps.syncPageReserveMs ?? 10_000;
   const minRefreshIntervalMs = deps.minRefreshIntervalMs ?? GBP_MIN_REFRESH_INTERVAL_MS;
   const consentVersion = deps.consentVersion ?? GBP_CONSENT_VERSION;
+  const replySettleSeconds = Math.ceil((deps.replySettleMs ?? GBP_REPLY_SETTLE_MS) / 1000);
   const iso = (ms: number) => new Date(ms).toISOString();
+
+  /** 今の版の連携の同意を記録している店舗か(確かめられなければ、記録していない扱い)。 */
+  async function consented(salonId: string): Promise<boolean> {
+    try {
+      return await store.hasConnectConsent(salonId, consentVersion);
+    } catch {
+      return false;
+    }
+  }
 
   async function tokenFor(salonId: string, binding: GbpBinding, fresh = false): Promise<string> {
     try {
@@ -461,15 +486,22 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
     return { comment: cached.replyComment, updateTime: cached.replyUpdateTime ?? cached.updateTime, state: cached.replyState ?? "UNSPECIFIED", policyViolation: cached.policyViolation };
   }
 
+  /** Google から取り直した直後の口コミ(review)でだけ呼ぶ。 */
   async function reconcileOperations(salonId: string, id: string, review: GoogleReviewJson) {
     const cached = toCachedReview(review, deps.reviewKeySecret);
     try {
-      await store.reconcileReplyOperations(salonId, id, { replySha256: replyHash(cached.replyComment), replyState: cached.replyState, replyUpdateTime: cached.replyUpdateTime });
+      await store.reconcileReplyOperations(
+        salonId,
+        id,
+        { replySha256: replyHash(cached.replyComment), replyState: cached.replyState, replyUpdateTime: cached.replyUpdateTime },
+        replySettleSeconds,
+      );
     } catch {
       console.warn("gbp: could not reconcile reply operations");
     }
   }
 
+  /** 口コミを扱える状態(結び付けが使える・店舗を選んだ)か。同意は呼び出し側が先に確かめる。 */
   async function connectedContext(salonId: string): Promise<{ binding: GbpBinding; location: InboxSummaryRow } | null> {
     const binding = await access.binding(salonId);
     if (!usableBinding(binding) || binding.selectionState !== "selected") return null;
@@ -484,6 +516,8 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
       if (!binding) return { kind: "not_connected" };
       if (binding.authState !== "active") return { kind: "needs_reconnect", googleEmail: binding.email };
       if (binding.scopeMissing || !binding.scopeGranted) return { kind: "scope_missing", googleEmail: binding.email };
+      // 同意の前は、店舗の候補(Google のビジネスの一覧)も取らない。
+      if (!(await consented(ctx.salonId))) return { kind: "consent_required", googleEmail: binding.email };
       const location = binding.selectionState === "selected" ? await store.getInboxSummary(ctx.salonId) : null;
       if (!location || location.googleAccountId !== binding.googleAccountId) {
         const { accounts, loadError } = await loadBusinesses(ctx.salonId, binding);
@@ -502,14 +536,11 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
     },
 
     async hasConsent(ctx) {
-      try {
-        return await store.hasConnectConsent(ctx.salonId, consentVersion);
-      } catch {
-        return false;
-      }
+      return consented(ctx.salonId);
     },
 
     async selectLocation(ctx, locationName) {
+      if (!(await consented(ctx.salonId))) return { ok: false, error: CONSENT_REQUIRED };
       const binding = await access.binding(ctx.salonId);
       if (!usableBinding(binding)) return { ok: false, error: "Google連携を確認できません。Google連携の画面から、もう一度お試しください。" };
       const { locations, loadError } = await loadBusinesses(ctx.salonId, binding);
@@ -558,6 +589,7 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
 
     async listReviews(ctx, query, cursor): Promise<ReviewListResult> {
       try {
+        if (!(await consented(ctx.salonId))) return { kind: "error", message: CONSENT_REQUIRED };
         const connected = await connectedContext(ctx.salonId);
         if (!connected) return { kind: "not_connected" };
         const { location } = connected;
@@ -582,7 +614,7 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
     },
 
     async getReview(ctx, id): Promise<ReviewDetailResult> {
-      if (!UUID.test(id)) return { kind: "not_found" };
+      if (!UUID.test(id) || !(await consented(ctx.salonId))) return { kind: "not_found" };
       const stored = await store.getReview(ctx.salonId, id);
       if (stored.kind === "not_found" || stored.kind === "stale") return { kind: "not_found" };
       if (stored.kind === "deleted") return { kind: "deleted_on_google", draft: stored.draft };
@@ -591,6 +623,7 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
     },
 
     async refresh(ctx) {
+      if (!(await consented(ctx.salonId))) return { ok: false, error: CONSENT_REQUIRED };
       const connected = await connectedContext(ctx.salonId);
       if (!connected) return { ok: false, error: NOT_CONNECTED };
       try {
@@ -608,6 +641,7 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
     async checkReview(ctx, id) {
       const failed = { ok: false as const, error: "最新の状態を取得できませんでした。少し時間をおいて、もう一度お試しください。" };
       if (!UUID.test(id)) return failed;
+      if (!(await consented(ctx.salonId))) return { ok: false, error: CONSENT_REQUIRED };
       const connected = await connectedContext(ctx.salonId);
       if (!connected) return { ok: false, error: NOT_CONNECTED };
       const stored = await store.getReview(ctx.salonId, id);
@@ -644,12 +678,14 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
 
     async setSeen(ctx, id, seen) {
       if (!UUID.test(id)) return { ok: false, error: "口コミが見つかりません。" };
+      if (!(await consented(ctx.salonId))) return { ok: false, error: CONSENT_REQUIRED };
       return (await store.setSeen(ctx.salonId, id, seen)) ? { ok: true, value: undefined } : { ok: false, error: "口コミが見つかりません。" };
     },
 
     async saveDraft(ctx, id, text) {
       const failed = { ok: false as const, error: "下書きを保存できませんでした。" };
       if (!UUID.test(id) || [...text].length > 5000) return failed;
+      if (!(await consented(ctx.salonId))) return { ok: false, error: CONSENT_REQUIRED };
       try {
         const savedAt = await store.saveDraft(ctx.salonId, id, text, GBP_CONTENT_TTL_SECONDS);
         return savedAt ? { ok: true, value: { savedAt } } : { ok: false, error: STALE };
@@ -661,6 +697,8 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
     async getReplyInput(ctx, id) {
       const failed = { ok: false as const, error: "この口コミの内容を読み込めませんでした。" };
       if (!UUID.test(id)) return failed;
+      // 同意の前は、口コミの本文を AI の入力として渡さない。
+      if (!(await consented(ctx.salonId))) return { ok: false, error: CONSENT_REQUIRED };
       const stored = await store.getReview(ctx.salonId, id);
       if (stored.kind === "expired") return { ok: false, error: "一時保存の期限が過ぎています。「Googleで確認する」で取り直してからお試しください。" };
       if (stored.kind === "stale") return { ok: false, error: STALE };
@@ -677,7 +715,7 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
     },
 
     async isCurrent(ctx, id, locationId) {
-      if (!UUID.test(id)) return false;
+      if (!UUID.test(id) || !(await consented(ctx.salonId))) return false;
       const stored = await store.getReview(ctx.salonId, id);
       return stored.kind === "ok" && stored.review.locationId === locationId;
     },
@@ -705,9 +743,7 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
       }
       const { binding } = connected;
       // 連携のときの同意(返信は「Googleに返信する」を押したときだけ、その内容で投稿する)を記録していること。
-      if (!(await store.hasConnectConsent(ctx.salonId, consentVersion))) {
-        return { kind: "unavailable", message: "返信の投稿についての同意を確認できません。届いた口コミの画面で、連携の内容を確認してください。" };
-      }
+      if (!(await consented(ctx.salonId))) return { kind: "unavailable", message: `${CONSENT_REQUIRED}返信は送っていません。` };
       const stored = await store.getReview(ctx.salonId, request.reviewId);
       if (stored.kind === "deleted") return { kind: "deleted_on_google", message: DELETED };
       if (stored.kind === "stale" || stored.kind === "not_found") return { kind: "unavailable", message: LOCATION_CHANGED };
@@ -733,6 +769,9 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
           return { kind: "mismatch", message: "この操作は受け付けられませんでした(同じ操作の中で内容が変わっています)。画面を読み込み直してから、もう一度お試しください。" };
         case "busy":
           return { kind: "busy", message: "この口コミへの返信を送っている途中です。少し時間をおいて、結果を確認してください。" };
+        case "unresolved":
+          // 前の送信の結果が分からない・反映を確かめていない。取り直して確かめるまで、送り直さない・新しく送らない。
+          return { kind: "busy", message: REPLY_UNRESOLVED };
         case "rate_limited":
           return { kind: "failed", message: "Googleへの返信は、1つの店舗につき1分に10回までです。返信は送っていません。少し時間をおいて、もう一度お試しください。", retryable: true };
         case "not_found":
@@ -775,10 +814,6 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
           await finish("failed", "deleted_on_google");
           return { kind: "deleted_on_google", message: DELETED };
         }
-        if (begun.outcome === "retry") {
-          await finish("unknown", "precheck_failed"); // 今回は何も送っていない。前回の結果は分からないまま
-          return { kind: "unknown", message: REPLY_UNKNOWN, review: await detail() };
-        }
         await finish("failed", "precheck_failed");
         return { kind: "failed", message: callMessage(err, "Googleの最新の返信を確認できなかったため、返信は送っていません。少し時間をおいて、もう一度お試しください。"), retryable: true, review: await detail() };
       }
@@ -786,16 +821,12 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
       await reconcileOperations(ctx.salonId, request.reviewId, fresh);
       const observed = replyHash(fresh.reviewReply?.comment);
 
-      // 2. すでにそうなっている(前回の送信が反映済み・同じ内容)なら、送らない。
+      // 2. すでにそうなっている(同じ内容の返信がある・削除済み)なら、送らない。取り直したデータで見えているので確認済み。
       if (action === "upsert" ? observed === textSha256 : observed === null) {
-        const known = action === "delete" || KNOWN_REPLY_STATES.has(fresh.reviewReply?.reviewReplyState ?? "");
-        const code = begun.outcome === "retry" ? "applied_before_retry" : "already_same";
-        if (!(await finish(known ? "confirmed" : "accepted", code, fresh, action === "upsert"))) {
-          return begun.outcome === "retry" ? { kind: "unknown", message: REPLY_UNKNOWN, review: await detail() } : stopped();
-        }
+        if (!(await finish("confirmed", "already_same", fresh, action === "upsert"))) return stopped();
         return { kind: "accepted", review: await detail(), replayed: true };
       }
-      // 3. 画面で見ていた返信から変わっていたら送らない(結果不明からの再試行でも、外で変わった返信を上書きしない)。
+      // 3. 画面で見ていた返信から変わっていたら送らない(外で変わった返信を上書きしない)。
       if (observed !== begun.baseReplySha256) {
         if (!(await finish("conflict", "reply_changed", fresh))) return stopped();
         return { kind: "conflict", current: googleReplyOf(fresh), review: await detail() };
@@ -854,8 +885,14 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
 
     async dismissReplyOperation(ctx, id) {
       if (!UUID.test(id)) return { ok: false, error: "口コミが見つかりません。" };
-      await store.dismissReplyOperations(ctx.salonId, id);
-      return { ok: true, value: undefined };
+      if (!(await consented(ctx.salonId))) return { ok: false, error: CONSENT_REQUIRED };
+      try {
+        if ((await store.dismissReplyOperations(ctx.salonId, id)) > 0) return { ok: true, value: undefined };
+      } catch {
+        return { ok: false, error: "取り下げられませんでした。もう一度お試しください。" };
+      }
+      // 結果不明・送信中・反映を確かめていない操作は、ここでは閉じない(Google で確かめるまで、そのまま)。
+      return { ok: false, error: "取り下げられる送信がありません。送信の結果を確認中のときは、「Googleで確認する」で確かめてください。" };
     },
   };
 }

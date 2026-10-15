@@ -35,6 +35,7 @@ async function loadSettingsOrDefault(salonId: string): Promise<LoadedReplySettin
 const STATUS: Record<GbpConnectionState["kind"], { label: string; tone: "success" | "warning" | "neutral" }> = {
   connected: { label: "連携済み", tone: "success" },
   selecting: { label: "店舗を選んでください", tone: "warning" },
+  consent_required: { label: "取り扱いの確認が必要です", tone: "warning" },
   scope_missing: { label: "権限が不足しています", tone: "warning" },
   needs_reconnect: { label: "再接続が必要です", tone: "warning" },
   not_connected: { label: "未連携", tone: "neutral" },

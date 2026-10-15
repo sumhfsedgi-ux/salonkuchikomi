@@ -162,15 +162,16 @@ export interface BeginReplyOperationInput {
   ratePerMinute: number;
 }
 
-/** 返信の操作を始める・続ける(0029 の gbp_begin_reply_operation)。 */
+/** 返信の操作を始める(0029 の gbp_begin_reply_operation)。 */
 export type BeginReplyOperation =
   | { outcome: "new"; operationId: string; leaseToken: string; baseReplySha256: string | null }
-  | { outcome: "retry"; operationId: string; leaseToken: string; baseReplySha256: string | null }
   | { outcome: "done"; operationId: string }
   | { outcome: "failed"; operationId: string }
   | { outcome: "conflict"; operationId: string }
   | { outcome: "dismissed"; operationId: string }
   | { outcome: "busy" }
+  /** 前の操作の結果が分からない・反映を確かめていない(Google から取り直して確かめるまで、送り直さない・新しく始めない)。 */
+  | { outcome: "unresolved" }
   | { outcome: "mismatch" }
   | { outcome: "rate_limited" }
   | { outcome: "not_found" }
@@ -235,7 +236,12 @@ export interface GbpStore {
   beginReplyOperation(input: BeginReplyOperationInput): Promise<BeginReplyOperation>;
   startReplySend(salonId: string, operationId: string, leaseToken: string, input: StartReplySendInput): Promise<StartSendOutcome>;
   finishReplyOperation(salonId: string, operationId: string, leaseToken: string, input: FinishReplyInput): Promise<boolean>;
-  reconcileReplyOperations(salonId: string, reviewIndexId: string, observed: ObservedReply): Promise<number>;
+  /**
+   * Google から取り直した直後のデータ(observed)で、その口コミの操作の状態を確かめる。結果不明・受け付けのまま
+   * settleSeconds 以上たっても反映が見えない操作は、反映されなかったと確かめた(failed)にする。
+   */
+  reconcileReplyOperations(salonId: string, reviewIndexId: string, observed: ObservedReply, settleSeconds: number): Promise<number>;
+  /** 反映されていないと分かっている操作(failed)だけを閉じる(「送るのをやめる」)。閉じた数を返す。 */
   dismissReplyOperations(salonId: string, reviewIndexId: string): Promise<number>;
   deactivateSalonLocations(salonId: string): Promise<number>;
   purgeExpiredContent(): Promise<Record<string, number>>;

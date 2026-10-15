@@ -17,11 +17,17 @@ const MESSAGES: Record<string, { variant: "success" | "error" | "warning"; text:
   feature_not_allowed: { variant: "error", text: "ご契約に含まれていない機能です。" },
   not_available: { variant: "warning", text: "届いた口コミは現在ご利用いただけません。" },
   not_connected: { variant: "warning", text: "Googleと連携していません。" },
-  consent_required: { variant: "warning", text: "口コミの取り扱いについて確認し、チェックを入れてから連携してください。" },
+  consent_required: { variant: "warning", text: "口コミの取り扱いについて確認し、チェックを入れてください。" },
+  consent_failed: { variant: "error", text: "確認の内容を記録できませんでした。もう一度お試しください。" },
   start_failed: { variant: "error", text: "Googleとの連携を始められませんでした。少し時間をおいて、もう一度お試しください。" },
 };
 
-export default function ConnectResultMessage({ selecting }: { selecting: boolean }) {
+const FOLLOW_UP = {
+  selecting: " 口コミを受け取るビジネスを選んでください。",
+  consent_required: " 口コミの取り扱いについて確認してください。",
+} as const;
+
+export default function ConnectResultMessage({ next }: { next: keyof typeof FOLLOW_UP | null }) {
   const params = useSearchParams();
   const key = params.get("google");
   const message = key ? MESSAGES[key] : undefined;
@@ -29,7 +35,7 @@ export default function ConnectResultMessage({ selecting }: { selecting: boolean
   return (
     <Alert variant={message.variant}>
       {message.text}
-      {key === "connected" && selecting ? " 口コミを受け取るビジネスを選んでください。" : ""}
+      {key === "connected" && next ? FOLLOW_UP[next] : ""}
     </Alert>
   );
 }

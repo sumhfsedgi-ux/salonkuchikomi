@@ -109,25 +109,35 @@ export async function dismissReplyOperationAction(id: string): Promise<ActionRes
 }
 
 /**
- * 口コミを受け取る店舗(ロケーション)を選ぶ。連携の前の同意がまだ記録されていない(Google連携の画面から連携した)ときは、
- * この画面の同意のチェックを必須にし、先に記録してから選ぶ(同意の無いまま口コミを取り込まない)。
+ * 口コミを受け取る店舗(ロケーション)を選ぶ。同意を記録していない店舗は選べない(lib/gbp/inbox.ts が確かめる。
+ * 同意の前は店舗の候補も取らないので、画面には同意の確認が先に出る)。
  */
-export async function selectLocationAction(input: { locationName: string; consent: boolean }): Promise<ActionResult> {
+export async function selectLocationAction(input: { locationName: string }): Promise<ActionResult> {
   const access = await resolveGoogleReviewsAccess();
   if (!access.ok) return { ok: false, error: access.error };
   const locationName = typeof input?.locationName === "string" ? input.locationName : "";
   if (!/^locations\/[^/\s]{1,100}$/.test(locationName)) return { ok: false, error: "選んだビジネスが見つかりません。" };
-  if (!(await access.inbox.hasConsent(access.ctx))) {
-    if (input.consent !== true) return { ok: false, error: "口コミの取り扱いについて確認し、チェックを入れてください。" };
-    const recorded = await access.inbox.recordConsent(access.ctx);
-    if (!recorded.ok) return recorded;
-  }
   const result = await access.inbox.selectLocation(access.ctx, locationName);
   if (result.ok) {
     revalidatePath(INBOX_PATH, "layout");
     revalidatePath("/dashboard/settings/google");
   }
   return result;
+}
+
+/**
+ * 口コミの取り扱いの同意だけを記録する(共通の Google 連携の画面から連携した・同意の版が変わった店舗)。
+ * チェックが無ければ記録しない。記録するまで、店舗の候補の取得・口コミの取得・AI・投稿は始まらない。
+ */
+export async function agreeReviewsConsentAction(formData: FormData): Promise<void> {
+  const access = await resolveGoogleReviewsAccess();
+  if (!access.ok) redirect(`${INBOX_PATH}?google=not_available`);
+  if (formData.get("consent") !== "yes") redirect(`${INBOX_PATH}?google=consent_required`);
+  const recorded = await access.inbox.recordConsent(access.ctx);
+  if (!recorded.ok) redirect(`${INBOX_PATH}?google=consent_failed`);
+  revalidatePath(INBOX_PATH, "layout");
+  revalidatePath("/dashboard/reviews/settings");
+  redirect(INBOX_PATH);
 }
 
 type ConnectMode = "connect" | "same_account" | "add_scope" | "reauth" | "switch_account";

@@ -83,7 +83,7 @@ export const REPLY_STATE_VIEW: Record<ReplyDisplayState, { label: string; tone: 
 /** 状態ごとの補足(詳細の返信の欄に出す)。結果が分からない状態では、もう一度送るよう促さない。 */
 export const REPLY_STATE_NOTE: Partial<Record<ReplyDisplayState, string>> = {
   checking: "Googleに送った返信が反映されたかを、まだ確認できていません。「Googleで確認する」で最新の状態を取り直してください。確認できるまで、もう一度送らないでください。",
-  send_failed: "前回の送信はGoogleに反映されていません。文章を確認して、もう一度送れます。",
+  send_failed: "前回の送信はGoogleに反映されていません。文章を確認して、もう一度送れます。送らない場合は「送るのをやめる」でこの表示を消せます(Googleには何も送りません)。",
   replace_failed: "置き換えできませんでした。以前の返信がGoogleに残っています。",
   delete_failed: "削除できませんでした。返信がGoogleに残っています。",
 };

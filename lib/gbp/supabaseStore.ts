@@ -305,7 +305,6 @@ export function createRpcGbpStore(client: RpcClient): GbpStore {
       const base = str(row?.base_reply_sha256);
       switch (outcome) {
         case "new":
-        case "retry":
           return { outcome, operationId: operationId!, leaseToken: String(row.lease_token), baseReplySha256: base };
         case "done":
         case "failed":
@@ -313,6 +312,7 @@ export function createRpcGbpStore(client: RpcClient): GbpStore {
         case "dismissed":
           return { outcome, operationId: operationId! };
         case "busy":
+        case "unresolved":
         case "mismatch":
         case "rate_limited":
         case "not_entitled":
@@ -348,7 +348,7 @@ export function createRpcGbpStore(client: RpcClient): GbpStore {
       return data === true;
     },
 
-    async reconcileReplyOperations(salonId, reviewIndexId, observed) {
+    async reconcileReplyOperations(salonId, reviewIndexId, observed, settleSeconds) {
       return (
         num(
           await call("gbp_reconcile_reply_operations", {
@@ -357,6 +357,7 @@ export function createRpcGbpStore(client: RpcClient): GbpStore {
             p_reply_sha256: observed.replySha256,
             p_reply_state: observed.replyState,
             p_reply_update_time: observed.replyUpdateTime,
+            p_settle_seconds: settleSeconds,
           }),
         ) ?? 0
       );
