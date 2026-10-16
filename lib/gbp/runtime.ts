@@ -45,6 +45,25 @@ export function getGbpInbox(): GbpInbox | null {
   });
 }
 
+/**
+ * 自動取得(第2段階の定期処理)に使う同期。手動の［更新］と同じ処理で、1店舗に使う時間を定期処理の締切に合わせて短くする。
+ * GOOGLE_REVIEWS_OAUTH_ENABLED が空・鍵が無いなら null(自動取得もしない)。
+ */
+export function getGbpAutoSyncInbox(): GbpInbox | null {
+  if (!isGoogleReviewsOAuthEnabled()) return null;
+  const secret = getReviewKeySecret();
+  if (!secret) return null;
+  const api = isSimulatedGoogleEnabled() ? getDevSimulatedGbp(() => simulatedGbpDevUsers()).api : createGbpHttpApiClient();
+  return createGbpInbox({
+    store: createRpcGbpStore(rpcClient()),
+    api,
+    access: createGoogleGbpAccess(),
+    reviewKeySecret: secret,
+    canWrite: () => isGoogleReviewsOAuthEnabled(),
+    syncBudgetMs: 15_000,
+  });
+}
+
 /** 期限切れの内容の削除だけに使う(利用可否・フラグ・Google の接続に関係なく使える。Google は呼ばない)。 */
 export function getGbpMaintenanceStore(): GbpStore {
   return createRpcGbpStore(rpcClient());
