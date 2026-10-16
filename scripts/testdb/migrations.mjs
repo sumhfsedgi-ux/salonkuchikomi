@@ -22,8 +22,10 @@ export function listMigrationFiles(options = {}) {
     .sort()
     .filter((name) => !options.through || name.slice(0, 4) <= options.through)
     .map((name) => {
-      const text = readFileSync(path.join(dir, name), "utf8");
-      return { name, text, sha: sha256(text) };
+      // git が LF で持つ内容にそろえて適用・記録する。Windows の作業ツリーは CRLF で取り出されるため、以前に CRLF のまま
+      // 記録したものもあり、どちらの改行の記録でも「適用済み」と判定する(改行だけの違いは内容の変更ではない)。
+      const text = readFileSync(path.join(dir, name), "utf8").replace(/\r\n/g, "\n");
+      return { name, text, sha: sha256(text), shaCrlf: sha256(text.replace(/\n/g, "\r\n")) };
     });
 }
 
@@ -37,7 +39,7 @@ export class MigrationError extends Error {}
 
 /**
  * @param {import("postgres").Sql} sql 接続先を確かめた接続
- * @param {{ ref: string, files: { name: string, text: string, sha: string }[], hasMarker: boolean, apply?: boolean,
+ * @param {{ ref: string, files: { name: string, text: string, sha: string, shaCrlf?: string }[], hasMarker: boolean, apply?: boolean,
  *   reapplyChanged?: boolean, assumeThrough?: string | null, log?: (line: string) => void }} options
  */
 export async function runMigrations(sql, options) {
@@ -55,7 +57,8 @@ export async function runMigrations(sql, options) {
   if (hasLog) for (const row of await sql`select name, sha256 from testdb_meta.applied_migrations`) applied.set(row.name, row.sha256);
   const rows = options.files.map((f) => {
     const recorded = applied.get(f.name);
-    return { ...f, state: recorded === undefined ? "pending" : recorded === f.sha ? "applied" : "changed" };
+    const same = recorded === f.sha || (f.shaCrlf !== undefined && recorded === f.shaCrlf);
+    return { ...f, state: recorded === undefined ? "pending" : same ? "applied" : "changed" };
   });
   const label = { pending: "未適用", applied: "適用済み", changed: "記録のあとに変更あり" };
   for (const r of rows) log(`  ${r.name.padEnd(42)} ${label[r.state]}`);

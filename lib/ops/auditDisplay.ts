@@ -6,6 +6,8 @@ import { PLAN_LABELS } from "@/lib/ops/labels";
 import type { PlanRules } from "@/lib/ops/preview";
 import type { AuditEntry } from "@/lib/ops/queries";
 import { isSwitchOn } from "@/lib/ops/toggle";
+import { isServiceStatus, SERVICE_STATUS_LABELS } from "@/lib/onboarding/serviceStatus";
+import { authEmailErrorLabel } from "@/lib/onboarding/authEmailErrors";
 
 // 運営管理の「変更履歴」の表示(DBに触れない)。DB の記録(operator_audit_log)は書き換えず、表示だけを整える。
 // 出すもの: 変更日時・変更者・何をどう変えたか・運営担当者のメモ。
@@ -47,7 +49,51 @@ function overrideText(value: unknown, key: string | undefined, rules: PlanRules,
   return isSwitchOn(value as OverrideMode, defaultOn) ? ACCESS_STATE_LABELS.allowed : ACCESS_STATE_LABELS.not_allowed;
 }
 
+function statusLabel(value: unknown): string | null {
+  return isServiceStatus(value) ? SERVICE_STATUS_LABELS[value] : null;
+}
+
+const INVITATION_KIND_TEXT: Record<string, string> = {
+  invite: "招待のメール",
+  salon_notice: "店舗登録のお知らせ",
+  verify_link: "本人確認のご案内",
+};
+
 function changeText(e: Pick<AuditEntry, "target" | "before" | "after">, rules: PlanRules, plan: SalonPlan): string {
+  if (e.target === "service_status") {
+    const before = statusLabel(e.before);
+    const after = statusLabel(e.after);
+    if (!after) return "利用区分の変更";
+    return before ? `利用区分: ${before} → ${after}` : `利用区分を${after}に設定`;
+  }
+  if (e.target === "registration") {
+    const a = (e.after ?? {}) as { source?: unknown; plan?: unknown; service_status?: unknown };
+    // 登録のときのプランの意味(0026): 利用開始待ちでは案内予定のプラン(契約ではない)、テスト用では契約プラン。
+    // お客様が自分で登録したときは、プランを決めていない(0025 の記録の口コミプランは仮の値)。
+    const plan = planLabel(a.plan);
+    const planText =
+      a.source === "self_signup" || !plan ? "プラン未定" : a.service_status === "pending" ? `案内予定のプラン: ${plan}` : `契約プラン: ${plan}`;
+    const detail = [planText, statusLabel(a.service_status)].filter(Boolean).join("・");
+    if (a.source === "self_signup") return `お客様が店舗を登録(${detail})`;
+    if (a.source === "operator") return `運営が店舗を本登録(${detail})`;
+    return "店舗の登録";
+  }
+  if (e.target === "contract_plan") {
+    // 利用開始待ちから利用中にしたとき、そのときから契約プランとして使うプラン(0026)。
+    const a = (e.after ?? {}) as { plan?: unknown; service_status?: unknown };
+    const plan = planLabel(a.plan);
+    const status = statusLabel(a.service_status);
+    return plan ? `利用開始: 契約プランは${plan}${status ? `(${status})` : ""}` : "利用開始のときの契約プラン";
+  }
+  if (e.target === "invitation") {
+    const a = (e.after ?? {}) as { kind?: unknown; result?: unknown; error?: unknown };
+    const label = (typeof a.kind === "string" && INVITATION_KIND_TEXT[a.kind]) || "案内のメール";
+    // 「送信を受け付けた」は、届いた・読まれたという意味ではない。
+    if (a.result === "accepted") return `${label}: 送信を受け付けました`;
+    if (a.result === "simulated") return `${label}: 検証モードのため送信していません`;
+    if (a.result === "failed") return `${label}: 送信できませんでした(${authEmailErrorLabel(typeof a.error === "string" ? a.error : null)})`;
+    return `${label}の送信`;
+  }
   if (e.target === "plan") {
     const before = planLabel(e.before);
     const after = planLabel(e.after);
@@ -65,8 +111,8 @@ function changeText(e: Pick<AuditEntry, "target" | "before" | "after">, rules: P
     }
     case "hold": {
       const label = featureLabel(key);
-      // 権限による停止は、利用許可がなくなったときにだけ DB が開く(supabase/migrations/0024 の salon_entitlement_settle)。
-      if (e.after === "open") return `${label}を権限により停止(利用許可がなくなったため)`;
+      // 権限による停止は、使えなくなったとき(利用許可がなくなった・利用区分を利用開始待ちに止めた)に DB が開く(0024 の salon_entitlement_settle。0025 で利用区分も対象)。
+      if (e.after === "open") return `${label}を権限により停止(利用許可・利用区分の変更で使えなくなったため)`;
       if (e.after === "released") return `${label}の権限による停止を解除`;
       return `${label}の権限による停止の変更`;
     }
@@ -107,8 +153,12 @@ function actorName(e: Pick<AuditEntry, "actorKind" | "actorEmail" | "actorLabel"
       // 運用CLI は作業者(--by)を記録する。それ以外のラベルは人の名前ではないため出さない。
       return e.actorLabel?.match(CLI_OPERATOR)?.[1] ?? null;
     case "sql":
+      // migration が書いた記録(0025 の移行など)。
+      if (e.actorLabel?.startsWith("migration:")) return `移行(${e.actorLabel.slice("migration:".length)})`;
       // SQL での変更は DB のロール名しか残らない。運用CLI がメモの先頭に作業者を記録している場合だけ、その名前を出す。
       return e.note?.match(CLI_OPERATOR_PREFIX)?.[1] ?? null;
+    case "owner":
+      return "お客様(店舗のオーナー)";
     default:
       return null;
   }

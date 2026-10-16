@@ -47,9 +47,10 @@ export async function updateSession(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
 
   const { pathname } = request.nextUrl;
-  const isDashboardRoute = pathname.startsWith("/dashboard");
+  // ログインが必要な画面(店舗の画面・店舗の登録と利用開始待ち・本人確認)。/signup・/auth/confirm は公開のまま。
+  const requiresLogin = ["/dashboard", "/onboarding", "/auth/verify"].some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
-  if (isDashboardRoute && !data?.claims) {
+  if (requiresLogin && !data?.claims) {
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
   }

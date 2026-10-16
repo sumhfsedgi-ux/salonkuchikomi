@@ -6,15 +6,14 @@ import { getPlanExperience, isFeatureIntroduced } from "@/lib/features/access";
 import { loadSetupContext } from "@/lib/features/setupContext";
 import { resolveFeatureStates } from "@/lib/features/featureState";
 import { reviewsDirectDestination, toHomeCard } from "@/lib/features/homeCards";
-import OnboardingWizard from "@/components/admin/OnboardingWizard";
 import FeatureCard from "@/components/dashboard/FeatureCard";
 import CopyUrlButton from "@/components/admin/CopyUrlButton";
 import Alert from "@/components/ui/Alert";
 import PageHeader from "@/components/ui/PageHeader";
 import { ReviewIcon, BlogIcon, BellIcon, InboxIcon } from "@/components/ui/icons";
 
-// ホーム兼、初期設定の入口。
-//   1. 店舗が無ければ、共通の店舗情報だけを入力する
+// ホーム兼、初期設定の入口(利用中の店舗だけ。店舗の登録・利用開始待ちは /onboarding)。
+//   1. (店舗の情報は /onboarding/salon か運営の本登録で入力済み)
 //   2. 口コミプランは機能一覧のホームを使わず、口コミの画面(未作成なら今まで通りの初期設定)へ直接進む
 //   3. SalonPack は画面に出す全機能(registry の listed)をカードで並べる。契約外・準備中の機能も、説明を読めるようにグレーで紹介する
 //      (利用権限は lib/features/access.ts。カードの種類は lib/features/homeCards.ts)
@@ -25,7 +24,8 @@ const ICONS = { reviews: ReviewIcon, blog: BlogIcon, reservation_notifications: 
 export default async function DashboardHomePage({ searchParams }: PageProps<"/dashboard">) {
   const supabase = await createClient();
   const salon = await getCurrentSalon(supabase);
-  if (!salon) return <OnboardingWizard flow="store_info" />;
+  // 店舗が無い・利用開始待ちは layout が先に移す(ここに来るのは利用中の店舗だけ)。
+  if (!salon) redirect("/onboarding/salon");
 
   const params = await searchParams;
   const justOnboarded = params?.onboarded === "1";

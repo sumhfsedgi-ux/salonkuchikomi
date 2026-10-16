@@ -9,7 +9,7 @@ const hrefs = (items: { href: string }[]) => items.map((item) => item.href);
 
 // app/dashboard/layout.tsx と同じ組み立て(契約プランごとの画面の作り × 利用できる機能)。
 function navFor(plan: SalonPlan) {
-  const input = { plan, googleReviewsAvailable: isGoogleReviewsOAuthEnabled(), entitlements: entitlementsFor(plan) };
+  const input = { plan, serviceActive: true, googleReviewsAvailable: isGoogleReviewsOAuthEnabled(), entitlements: entitlementsFor(plan) };
   return getNavItems(getPlanExperience(plan), listUsableFeatureKeys(input));
 }
 

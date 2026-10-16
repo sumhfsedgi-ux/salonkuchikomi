@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentSalon } from "@/lib/supabase/queries";
+import { isServiceActive } from "@/lib/onboarding/serviceStatus";
 
 const updateSalonSchema = z.object({
   name: z.string().trim().min(1, "店舗名を入力してください").max(100).optional(),
@@ -26,6 +27,8 @@ export async function updateSalonAction(
   const supabase = await createClient();
   const salon = await getCurrentSalon(supabase);
   if (!salon) return { error: "店舗情報が見つかりません。" };
+  // 利用開始待ちの店舗の登録内容の修正は /onboarding/status(updateRegistrationAction)で行う。
+  if (!isServiceActive(salon.serviceStatus)) return { error: "利用開始のあとに、お使いいただけます。" };
 
   const raw: Record<string, string> = {};
   for (const key of ["name", "description", "business_type"] as const) {

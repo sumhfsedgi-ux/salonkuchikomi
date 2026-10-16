@@ -1,15 +1,16 @@
 // 0024 の表・関数に、ブラウザ(anon / authenticated)から触れないこと。PostgREST と同じく、ロールと
-// request.jwt.claim.sub を設定して確かめる。
+// request.jwt.claims(sub・session_id)を設定して確かめる(0025 からオーナーの RLS は信頼できるセッションを見る)。
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Sql, TransactionSql } from "postgres";
 import { createDatabase, dropDatabase } from "./db";
-import { adminSave, createOperator, createSalon, makeReservationActive, type SalonFixture } from "./fixtures";
+import { adminSave, createOperator, createSalon, createSession, makeReservationActive, type SalonFixture } from "./fixtures";
 
 const DB = "salonpack_localdb_rls";
 let sql: Sql;
 let operator: string;
 let mine: SalonFixture;
 let other: SalonFixture;
+const claimsOf = new Map<string, string>();
 
 beforeAll(async () => {
   sql = await createDatabase(DB);
@@ -20,6 +21,7 @@ beforeAll(async () => {
     await adminSave(sql, { actor: operator, salonId: s.salonId, expectedVersion: 0, expected: { plan: "salonpack", overrides: { blog: "inherit" } }, changes: { overrides: { blog: "deny" } } });
   }
   await makeReservationActive(sql, mine.salonId);
+  for (const s of [mine, other]) claimsOf.set(s.userId, (await createSession(sql, s.userId)).claims);
 });
 afterAll(async () => {
   await dropDatabase(sql, DB);
@@ -31,7 +33,10 @@ async function as<T>(role: "anon" | "authenticated", userId: string | null, fn: 
   await sql
     .begin(async (tx) => {
       await tx.unsafe(`set local role ${role}`);
-      if (userId) await tx`select set_config('request.jwt.claim.sub', ${userId}, true)`;
+      if (userId) {
+        await tx`select set_config('request.jwt.claim.sub', ${userId}, true)`;
+        await tx`select set_config('request.jwt.claims', ${claimsOf.get(userId) ?? JSON.stringify({ sub: userId })}, true)`;
+      }
       result = await fn(tx);
       throw new Error("__rollback__");
     })
@@ -46,7 +51,10 @@ async function denied(role: "anon" | "authenticated", userId: string | null, que
   await sql
     .begin(async (tx) => {
       await tx.unsafe(`set local role ${role}`);
-      if (userId) await tx`select set_config('request.jwt.claim.sub', ${userId}, true)`;
+      if (userId) {
+        await tx`select set_config('request.jwt.claim.sub', ${userId}, true)`;
+        await tx`select set_config('request.jwt.claims', ${claimsOf.get(userId) ?? JSON.stringify({ sub: userId })}, true)`;
+      }
       try {
         await query(tx);
       } catch (e) {

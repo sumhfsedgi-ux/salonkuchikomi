@@ -13,7 +13,8 @@ import { cn } from "@/lib/cn";
 import type { SalonPlan } from "@/lib/access/plan";
 import type { EntitlementReason, FeatureLifecycle, OverrideMode } from "@/lib/features/entitlements";
 import type { FeatureCategory, FeatureIcon } from "@/lib/features/registry";
-import { previewAccess, type CatalogEntry, type PlanRules } from "@/lib/ops/preview";
+import { previewServiceAccess, type CatalogEntry, type PlanRules } from "@/lib/ops/preview";
+import type { ServiceStatus } from "@/lib/onboarding/serviceStatus";
 import { describeChanges } from "@/lib/ops/impact";
 import { isSwitchOn, overrideForSwitch } from "@/lib/ops/toggle";
 import { PLAN_LABELS } from "@/lib/ops/labels";
@@ -60,12 +61,14 @@ interface Props {
   catalog: Partial<Record<string, CatalogEntry>>;
   rules: PlanRules;
   reservationStarted: boolean;
+  /** 利用区分。保存後の予測も DB と同じく区分まで含める(利用開始待ちなら、許可した機能も「利用開始待ち」)。 */
+  serviceStatus: ServiceStatus;
 }
 
 const ICONS = { review: ReviewIcon, blog: BlogIcon, bell: BellIcon, inbox: InboxIcon } as const;
 const SEARCH_THRESHOLD = 8;
 
-export default function EntitlementEditor({ salonId, version, plan, features, categories, catalog, rules, reservationStarted }: Props) {
+export default function EntitlementEditor({ salonId, version, plan, features, categories, catalog, rules, reservationStarted, serviceStatus }: Props) {
   const router = useRouter();
   const savedOverrides = useMemo(() => Object.fromEntries(features.map((f) => [f.key, f.override])) as Record<string, OverrideMode>, [features]);
   const [draftPlan, setDraftPlan] = useState<SalonPlan>(plan);
@@ -99,7 +102,7 @@ export default function EntitlementEditor({ salonId, version, plan, features, ca
 
   const rows = features.map((f) => {
     const draftOverride = draftOverrides[f.key] ?? "inherit";
-    const after = previewAccess(catalog[f.key], rules, draftPlan, f.key, draftOverride);
+    const after = previewServiceAccess(catalog[f.key], rules, draftPlan, f.key, draftOverride, serviceStatus);
     return { f, draftOverride, after, inPlan: rules[draftPlan]?.[f.key] !== undefined, defaultOn: rules[draftPlan]?.[f.key] === true };
   });
   const changedOverrides = rows.filter((r) => r.draftOverride !== r.f.override);

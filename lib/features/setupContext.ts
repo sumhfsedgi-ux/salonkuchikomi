@@ -1,4 +1,5 @@
 import "server-only";
+import { isServiceActive } from "@/lib/onboarding/serviceStatus";
 import { getNotificationsSupabaseAdmin as getServiceRoleClient } from "@/lib/notifications/admin";
 import { isGoogleReviewsOAuthEnabled } from "@/lib/google/config";
 import { listSalonGoogleBindings } from "@/lib/google/db/bindings";
@@ -11,7 +12,7 @@ import { loadSalonEntitlements } from "@/lib/features/loadEntitlements";
 // 機能の状態判定(lib/features/featureState.ts)に渡す材料を1か所で集める。
 // salon は呼び出し元が getCurrentSalon() で解決したもの(クライアントから受け取らない)。
 
-export async function loadSetupContext(salon: Pick<OwnerSalon, "id" | "plan" | "onboardingCompleted" | "googleReviewUrl">): Promise<SetupContext> {
+export async function loadSetupContext(salon: Pick<OwnerSalon, "id" | "plan" | "serviceStatus" | "onboardingCompleted" | "googleReviewUrl">): Promise<SetupContext> {
   const supabase = getServiceRoleClient();
   const [entitlements, reservationSwitch, survey, salonSettings, lines, ops, bindings, master, scan] = await Promise.all([
     loadSalonEntitlements(salon.id),
@@ -58,6 +59,7 @@ export async function loadSetupContext(salon: Pick<OwnerSalon, "id" | "plan" | "
 
   return {
     plan: salon.plan,
+    serviceActive: isServiceActive(salon.serviceStatus),
     entitlements,
     reservationSwitch: switchRow ? { selected: switchRow.selected, updatedAt: switchRow.updated_at } : null,
     hasActiveSurvey: (survey.data ?? []).length > 0,

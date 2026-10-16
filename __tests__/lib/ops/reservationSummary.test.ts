@@ -100,6 +100,22 @@ describe("summarizeReservation", () => {
     expect(denied.reasons[0].text).toBe("利用を許可していません。");
   });
 
+  it("利用区分を止めている店舗は、利用許可の保存ではなく、利用区分の変更を案内する", () => {
+    const stopped = summarizeReservation({ ...base, entitlement: { allowed: false, reason: "service_pending" }, holdOpen: true });
+    expect(stopped.status).toBe("stopped");
+    expect(stopped.reasons[0]).toEqual({
+      key: "not_entitled",
+      text: "利用区分が「利用開始待ち」のため、使えません。",
+      action: "再開する場合は、「利用区分」を変更してください(「契約プラン・使える機能」の保存では再開しません)。",
+      owner: "operator",
+    });
+    expect(stopped.reasons[1].action).toBe("「利用区分」を利用中に戻したあと、権限による停止を解除してください。");
+    // 一度も始めていない店舗(新しい店舗)には、再開の案内を出さない
+    const fresh = summarizeReservation({ ...base, entitlement: { allowed: false, reason: "service_pending" }, reservation: { ...base.reservation, state: null } });
+    expect(fresh.status).toBe("not_in_use");
+    expect(fresh.reasons).toEqual([{ key: "not_entitled", text: "利用区分が「利用開始待ち」のため、使えません。", action: null, owner: null }]);
+  });
+
   it("稼働中でも予約メールの確認が止まっていれば「確認できません」", () => {
     const s = summarizeReservation({ ...base, reservation: { ...base.reservation, lastMailCheckAt: "2026-10-13T02:00:00Z" } });
     expect(s).toMatchObject({ status: "unverified", sending: false });

@@ -53,8 +53,8 @@ async function bindGmail(salon: TestSalonFixture) {
 }
 
 async function salonRow(salonId: string) {
-  const { data } = await admin.from("salons").select("id, plan, onboarding_completed, google_review_url").eq("id", salonId).single();
-  return { id: data!.id, plan: data!.plan, onboardingCompleted: data!.onboarding_completed, googleReviewUrl: data!.google_review_url };
+  const { data } = await admin.from("salons").select("id, plan, service_status, onboarding_completed, google_review_url").eq("id", salonId).single();
+  return { id: data!.id, plan: data!.plan, serviceStatus: data!.service_status, onboardingCompleted: data!.onboarding_completed, googleReviewUrl: data!.google_review_url };
 }
 
 async function selectionRows(salonId: string) {

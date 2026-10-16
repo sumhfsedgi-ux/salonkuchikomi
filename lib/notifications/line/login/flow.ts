@@ -28,7 +28,8 @@ export type FlowOutcome =
   | "temporary_failure"
   | "invite_invalid";
 
-export type InviteStatus = "valid" | "expired" | "used" | "revoked" | "not_found";
+// unavailable: 店舗が利用中の区分ではない(0025。利用開始待ちに戻した店舗など)。DB の line_invite_status が返す。
+export type InviteStatus = "valid" | "expired" | "used" | "revoked" | "not_found" | "unavailable";
 
 export function newBindingValue(): string {
   return randomToken(32);

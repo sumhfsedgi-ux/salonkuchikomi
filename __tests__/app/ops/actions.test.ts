@@ -12,19 +12,28 @@ let currentUser: { id: string; email: string } | null = null;
 let operators = new Set<string>();
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({}) }));
 vi.mock("@/lib/supabase/queries", () => ({ getAuthedUser: async () => currentUser }));
+// 0025: 管理画面は、信頼できるセッション(本人確認のあと・サインアウトしていない)でだけ使える。
+const sessionTrusted = true;
+vi.mock("@/lib/onboarding/accountState", () => ({
+  getAccountState: async () => ({ emailConfirmed: true, verified: true, verificationMode: "set_new", sessionTrusted, emailLinkSession: false, isOperator: true }),
+}));
 
 const rpc = vi.fn<(name: string, params: Record<string, unknown>) => Promise<{ data: unknown; error: null }>>(async () => ({
   data: { result: "saved", version: 1, inflight_sends: 0 },
   error: null,
 }));
+// 店舗の今の利用区分(0026: 利用開始待ちの店舗では、契約プランと利用許可を変えない)
+let salonStatus = "complimentary";
+let salonSource = "operator";
 vi.mock("@/lib/supabase/admin", () => ({
   getSupabaseAdmin: () => ({
     rpc,
-    from: () => ({
+    from: (table: string) => ({
       select: () => ({
-        eq: (_c: string, userId: string) => ({
-          is: () => ({ maybeSingle: async () => ({ data: operators.has(userId) ? { user_id: userId } : null, error: null }) }),
-        }),
+        eq: (_c: string, value: string) =>
+          table === "salons"
+            ? { maybeSingle: async () => ({ data: { service_status: salonStatus, registration_source: salonSource }, error: null }) }
+            : { is: () => ({ maybeSingle: async () => ({ data: operators.has(value) ? { user_id: value } : null, error: null }) }) },
       }),
     }),
   }),
@@ -42,9 +51,30 @@ beforeEach(() => {
   vi.clearAllMocks();
   currentUser = null;
   operators = new Set(["ops-user"]);
+  salonStatus = "complimentary";
+  salonSource = "operator";
 });
 
 describe("saveEntitlementsAction", () => {
+  it("止めている既存の店舗(利用開始待ち・existing)は、契約プランと利用許可を変えられる(区分の変更・停止の解除はしない)", async () => {
+    const { saveEntitlementsAction } = await import("@/app/ops/salons/[id]/actions");
+    currentUser = { id: "ops-user", email: "ops@example.test" };
+    salonStatus = "pending";
+    salonSource = "existing";
+    expect((await saveEntitlementsAction(input)).ok).toBe(true);
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual(["admin_update_salon_entitlements"]);
+  });
+
+  it("利用開始待ちの新しい店舗では、契約プランと利用許可を変えない(DB を呼ばない。予定のプランを契約として記録しない)", async () => {
+    const { saveEntitlementsAction } = await import("@/app/ops/salons/[id]/actions");
+    currentUser = { id: "ops-user", email: "ops@example.test" };
+    salonStatus = "pending";
+    const res = await saveEntitlementsAction(input);
+    expect(res).toMatchObject({ ok: false });
+    expect(res.ok ? "" : res.error).toMatch(/利用開始待ちの店舗では、契約プランと機能の利用許可は変更できません/);
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
   it("未ログイン・一般のユーザーは 404 で、DB を呼ばない", async () => {
     const { saveEntitlementsAction } = await import("@/app/ops/salons/[id]/actions");
     await expect(saveEntitlementsAction(input)).rejects.toThrow("NOT_FOUND");

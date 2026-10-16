@@ -97,7 +97,7 @@ export async function POST(request: Request) {
   const pipeline = pipelineVersion();
 
   let survey;
-  let reviewsAvailable: boolean;
+  let reviewsAvailable: boolean | null;
   try {
     // 口コミを今使えるか(運営による利用停止)を、アンケートと同時に読む(待ち時間は増やさない)。
     [survey, reviewsAvailable] = await timer.measure("survey", async () => {
@@ -108,8 +108,9 @@ export async function POST(request: Request) {
     console.error("generate-review: failed to load survey", { salonId });
     return finish(timer, NextResponse.json({ error: GENERIC_ERROR }, { status: 503 }), { outcome: "survey_error", salonId });
   }
-  // 運営が口コミの利用を止めている店舗は、画面を通さない呼び出しでも生成しない(理由は返さない)。
-  if (survey && !reviewsAvailable) {
+  // 運営が口コミの利用を止めている店舗・利用開始待ちの店舗は、画面を通さない呼び出しでも生成しない(理由は返さない)。
+  // 使えない店舗のアンケートは RLS で読めない(0025)ため、アンケートの有無ではなく店舗の有無で 403 と 404 を分ける。
+  if (reviewsAvailable === false) {
     return finish(timer, NextResponse.json({ error: UNAVAILABLE_ERROR }, { status: 403 }), { outcome: "unavailable", salonId });
   }
   if (!survey) {

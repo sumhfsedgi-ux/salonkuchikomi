@@ -54,7 +54,7 @@ async function openStops() {
 }
 
 async function featureStatuses() {
-  const ctx = await loadSetupContext({ id: salon.salonId, plan: "salonpack", onboardingCompleted: false, googleReviewUrl: null });
+  const ctx = await loadSetupContext({ id: salon.salonId, plan: "salonpack", serviceStatus: "complimentary", onboardingCompleted: false, googleReviewUrl: null });
   const { states } = resolveFeatureStates(ctx);
   const of = (key: string) => states.find((s) => s.key === key)!;
   return { reservation: of("reservation_notifications"), reviews: of("google_reviews") };

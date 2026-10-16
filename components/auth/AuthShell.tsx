@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import AuthHeading from "@/components/auth/AuthHeading";
 import Logo from "@/components/ui/Logo";
 import { SERVICE_TAGLINE } from "@/lib/brand";
 
@@ -23,12 +24,7 @@ export default function AuthShell({ title, description, children }: AuthShellPro
           <p className="text-sm text-ink-muted">{SERVICE_TAGLINE}</p>
         </div>
         <div className="rounded-2xl border border-border bg-white p-6 sm:p-8">
-          {title && (
-            <div className="mb-6">
-              <h1 className="text-lg font-semibold text-ink">{title}</h1>
-              {description && <p className="mt-1 text-sm text-ink-muted">{description}</p>}
-            </div>
-          )}
+          {title && <AuthHeading title={title} description={description} />}
           {children}
         </div>
       </div>

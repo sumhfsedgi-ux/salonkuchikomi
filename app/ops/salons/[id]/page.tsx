@@ -4,7 +4,9 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { requireOperator } from "@/lib/ops/operator";
 import { getSalonDetail, listAuditLog } from "@/lib/ops/queries";
-import { PLAN_LABELS, formatJst } from "@/lib/ops/labels";
+import { formatJst } from "@/lib/ops/labels";
+import { ACCESS_STATE_LABELS } from "@/lib/ops/featureDisplay";
+import { planDisplay, type PlanDisplay } from "@/lib/ops/onboardingDisplay";
 import { FEATURE_CATEGORIES, FEATURE_REGISTRY, getFeatureDefinition, isFeatureKey } from "@/lib/features/registry";
 import { describeAuditEntry } from "@/lib/ops/auditDisplay";
 import { customerPageUrl, requestOrigin } from "@/lib/ops/customerPageUrl";
@@ -25,6 +27,14 @@ import {
   type ReservationStatus,
 } from "@/lib/ops/reservationSummary";
 import type { BadgeVariant } from "@/components/ui/Badge";
+import { getSalonOnboarding } from "@/lib/ops/onboardingQueries";
+import { REGISTRATION_SOURCE_LABELS } from "@/lib/onboarding/serviceStatus";
+import { authEmailErrorLabel } from "@/lib/onboarding/authEmailErrors";
+import ServiceStatusEditor from "@/components/ops/ServiceStatusEditor";
+import ServiceStatusBadge from "@/components/ops/ServiceStatusBadge";
+import InvitationPanel from "@/components/ops/InvitationPanel";
+import type { FeatureKey } from "@/lib/features/registry";
+import type { OverrideMode } from "@/lib/features/entitlements";
 
 // サロン詳細(運営管理)。基本情報・連携と稼働状況は閲覧のみ(秘密の値は読まない・出さない)。
 // 契約プラン・使える機能(利用許可)は EntitlementEditor で、確認のうえ保存する。実際に動いているかは「連携と稼働状況」で出し、
@@ -53,6 +63,34 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
       {/* 長いメールアドレス・URLでも枠からはみ出さない。 */}
       <dd className="min-w-0 text-sm text-ink [overflow-wrap:anywhere]">{children}</dd>
     </div>
+  );
+}
+
+// 利用開始待ちの店舗の「契約プラン・使える機能」(読み取りだけ)。予定のプランを「現在の契約」として出さず、
+// 契約プランの変更の履歴も残さないため、ここでは変更できない(利用を始めるときに、そのときのプランが契約になる)。
+function PendingContractSummary({ plan, features }: { plan: PlanDisplay; features: EditorFeature[] }) {
+  const individual = features.filter((f) => f.override !== "inherit");
+  return (
+    <Card>
+      <dl className="divide-y divide-border">
+        <Row label={plan.label}>{plan.text}</Row>
+        <Row label="機能ごとの個別設定">
+          {plan.kind === "unset" ? (
+            "プランが未定のため、ありません。"
+          ) : individual.length === 0 ? (
+            "ありません(利用を始めるときは、プランの標準に従います)。"
+          ) : (
+            <ul className="flex flex-col gap-0.5">
+              {individual.map((f) => (
+                <li key={f.key}>
+                  {f.label}: {f.override === "deny" ? ACCESS_STATE_LABELS.not_allowed : ACCESS_STATE_LABELS.allowed}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Row>
+      </dl>
+    </Card>
   );
 }
 
@@ -92,9 +130,40 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
   const historyBefore = beforeRaw && /^\d+$/.test(beforeRaw) ? beforeRaw : null;
   const releasedRaw = Array.isArray(query.released) ? query.released[0] : query.released;
   const released = releasedRaw && isFeatureKey(releasedRaw) ? getFeatureDefinition(releasedRaw) : null;
+  const registeredRaw = Array.isArray(query.registered) ? query.registered[0] : query.registered;
 
-  const [detail, audit, headerList] = await Promise.all([getSalonDetail(id), listAuditLog(id, historyBefore), headers()]);
-  if (!detail) notFound();
+  const [detail, audit, headerList, onboarding] = await Promise.all([
+    getSalonDetail(id),
+    listAuditLog(id, historyBefore),
+    headers(),
+    getSalonOnboarding(id),
+  ]);
+  if (!detail || !onboarding) notFound();
+  const plan = planDisplay({
+    plan: detail.plan,
+    planPlaceholder: detail.planPlaceholder,
+    serviceStatus: onboarding.serviceStatus,
+    registrationSource: onboarding.registrationSource,
+  });
+  const overrides = Object.fromEntries(
+    Object.entries(detail.entitlements).map(([k, e]) => [k, e!.override]),
+  ) as Partial<Record<FeatureKey, OverrideMode>>;
+  // 本登録の直後の結果(サロンは登録済み。案内のメールの送信だけ失敗した場合も、ここで分けて出す)。
+  const registeredNotice =
+    registeredRaw === "accepted"
+      ? { ok: true, text: "サロンを登録し、案内のメールの送信を受け付けました(届いたか・読まれたかは確認できません)。" }
+      : registeredRaw === "simulated"
+        ? { ok: true, text: "サロンを登録しました。検証モードのため、案内のメールは送信していません。" }
+        : registeredRaw === "already"
+          ? { ok: true, text: "この下書きは、すでに本登録済みです(サロン・アカウントは重複して作っていません)。" }
+          : registeredRaw === "failed" || registeredRaw === "cooldown" || registeredRaw === "daily_limit" || registeredRaw === "error"
+            ? {
+                ok: false,
+                text: `サロンは登録済みですが、招待メールを送信できませんでした。${
+                  onboarding.lastError ? authEmailErrorLabel(onboarding.lastError) : ""
+                }「招待と案内」から再送してください。`,
+              }
+            : null;
   const origin = requestOrigin(headerList);
   const customerUrl = origin ? customerPageUrl(origin, detail.slug) : null;
 
@@ -135,7 +204,16 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
         <Link href="/ops/salons" className="text-sm text-sage-dark underline underline-offset-2">
           ← サロン一覧へ
         </Link>
-        <PageHeader title={detail.name} description={`${PLAN_LABELS[detail.plan]}・登録日 ${formatJst(detail.createdAt)}`} />
+        <PageHeader
+          title={detail.name}
+          description={`${plan.label} ${plan.text}・登録日 ${formatJst(detail.createdAt)}・${REGISTRATION_SOURCE_LABELS[onboarding.registrationSource]}`}
+          action={<ServiceStatusBadge status={onboarding.serviceStatus} />}
+        />
+        {registeredNotice && (
+          <div aria-live="polite">
+            <Alert variant={registeredNotice.ok ? "success" : "error"}>{registeredNotice.text}</Alert>
+          </div>
+        )}
         <nav aria-labelledby="page-menu-title" className="flex flex-col gap-1.5">
           <p id="page-menu-title" className="text-xs text-ink-muted">
             ページ内メニュー
@@ -143,6 +221,8 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
           <div className="flex flex-wrap gap-2">
             {[
               ["#basic", "基本情報"],
+              ["#service", "利用区分"],
+              ["#invitation", "招待と案内"],
               ["#entitlements", "契約プラン・使える機能"],
               ["#integrations", "連携と稼働状況"],
               ["#history", "変更履歴"],
@@ -160,6 +240,14 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
           <dl className="divide-y divide-border">
             <Row label="店舗名">{detail.name}</Row>
             <Row label="ログイン用メールアドレス">{detail.ownerEmail ?? "—"}</Row>
+            <Row label="利用区分">
+              <ServiceStatusBadge status={onboarding.serviceStatus} />
+            </Row>
+            <Row label="登録経路">{REGISTRATION_SOURCE_LABELS[onboarding.registrationSource]}</Row>
+            <Row label={plan.label}>{plan.text}</Row>
+            <Row label="担当者名">{onboarding.contactName ?? "—"}</Row>
+            <Row label="連絡用メールアドレス">{onboarding.contactEmail ?? "ログイン用と同じ"}</Row>
+            <Row label="電話番号">{onboarding.contactPhone ?? "—"}</Row>
             <Row label="業種">{detail.businessType ?? "—"}</Row>
             <Row label="お客様用ページ">
               <span className="block">{customerUrl ?? `/review/${detail.slug}`}</span>
@@ -186,18 +274,86 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
         </Card>
       </Section>
 
-      <Section id="entitlements" title="契約プラン・使える機能" description="使える機能を変更できます。変更内容を確認してから保存します。">
-        <EntitlementEditor
+      <Section
+        id="service"
+        title="利用区分"
+        description="店舗の今の利用の状態です。通常のお客様は、プラン選択・お支払いの手続き(準備中)が済むと利用を始めます。運営が変更できるのは、テスト用の指定と、利用の停止(利用開始待ちに変更)です。既存の店舗は、無料提供に戻すこともできます。"
+      >
+        <ServiceStatusEditor
           salonId={detail.id}
           version={detail.version}
+          status={onboarding.serviceStatus}
+          registrationSource={onboarding.registrationSource}
+          planPlaceholder={detail.planPlaceholder}
           plan={detail.plan}
-          features={features}
-          categories={FEATURE_CATEGORIES}
           catalog={detail.catalog}
           rules={detail.rules}
-          reservationStarted={reservationStarted}
+          overrides={overrides}
+          reservationActive={detail.reservation.state === "active"}
         />
       </Section>
+
+      <Section
+        id="invitation"
+        title="招待と案内"
+        description="担当者の本人確認(招待手続き)と、案内のメールの送信の状態です。手続きが済んでも、使えるかどうかは利用区分で決まります。"
+      >
+        {onboarding.hasInvitation ? (
+          <InvitationPanel
+            salonId={detail.id}
+            loginEmail={detail.ownerEmail}
+            ownerEmailConfirmed={onboarding.ownerEmailConfirmed}
+            ownerVerified={onboarding.ownerVerified}
+            ownerVerificationMethod={onboarding.ownerVerificationMethod}
+            lastKind={onboarding.lastKind}
+            lastAttemptAt={onboarding.lastAttemptAt}
+            lastResult={onboarding.lastResult}
+            lastError={onboarding.lastError}
+            lastAcceptedAt={onboarding.lastAcceptedAt}
+            firstAcceptedAt={onboarding.firstAcceptedAt}
+            attempts24h={onboarding.attempts24h}
+            nextSendAt={onboarding.nextSendAt}
+            serverNow={new Date().toISOString()}
+          />
+        ) : (
+          <Card>
+            <p className="text-sm text-ink-muted">
+              {onboarding.registrationSource === "self_signup"
+                ? "お客様が自分で登録した店舗です(運営からの招待はありません)。"
+                : "移行の時点で存在した店舗です(運営からの招待はありません)。"}
+            </p>
+          </Card>
+        )}
+      </Section>
+
+      {onboarding.serviceStatus === "pending" && onboarding.registrationSource !== "existing" ? (
+        <Section
+          id="entitlements"
+          title="契約プラン・使える機能"
+          description="利用開始待ちのため、契約プランはまだありません。ここでは変更できません(予定の内容を表示しています)。"
+        >
+          <PendingContractSummary plan={plan} features={features} />
+        </Section>
+      ) : (
+        <Section id="entitlements" title="契約プラン・使える機能" description="使える機能を変更できます。変更内容を確認してから保存します。">
+          {onboarding.serviceStatus === "pending" && (
+            <Alert variant="warning">
+              この店舗は利用を止めています。ここで保存しても利用は再開せず、予約通知の停止も解除されません(再開は「利用区分」の変更と、停止の解除で行います)。
+            </Alert>
+          )}
+          <EntitlementEditor
+            salonId={detail.id}
+            version={detail.version}
+            plan={detail.plan}
+            features={features}
+            categories={FEATURE_CATEGORIES}
+            catalog={detail.catalog}
+            rules={detail.rules}
+            reservationStarted={reservationStarted}
+            serviceStatus={onboarding.serviceStatus}
+          />
+        </Section>
+      )}
 
       <Section id="integrations" title="連携と稼働状況">
         {released && !detail.holds.some((h) => h.featureKey === released.key) && (
@@ -260,7 +416,7 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
               </div>
               {/* 解除の操作の近くで、解除が必要な理由と、解除しても残るものを説明する。 */}
               <p className="text-sm text-ink">
-                {formatJst(h.openedAt)}に利用許可がなくなったため止めています。利用を許可しただけでは再開せず、ここでの解除が必要です(運営側)。
+                {formatJst(h.openedAt)}に使えなくなった(利用許可・利用区分の変更)ため止めています。使える状態に戻しただけでは再開せず、ここでの解除が必要です(運営側)。
               </p>
               <HoldReleasePanel
                 salonId={detail.id}
@@ -268,6 +424,7 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
                 featureLabel={def.label}
                 holdId={h.id}
                 entitled={Boolean(e?.allowed)}
+                servicePending={e?.reason === "service_pending"}
                 remaining={h.featureKey === "reservation_notifications" ? remainingAfterRelease(reservation) : []}
               />
             </Card>

@@ -17,17 +17,26 @@ interface Props {
   holdId: string;
   /** 今、利用許可があるか(無ければ解除できない)。 */
   entitled: boolean;
+  /** 使えない理由が、利用区分が利用開始待ちであること(利用許可の保存では再開しない)。 */
+  servicePending?: boolean;
   /** 解除しても残る停止(表示用)。 */
   remaining: string[];
 }
 
-export default function HoldReleasePanel({ salonId, featureKey, featureLabel, holdId, entitled, remaining }: Props) {
+export default function HoldReleasePanel({ salonId, featureKey, featureLabel, holdId, entitled, servicePending = false, remaining }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
 
+  if (!entitled && servicePending) {
+    return (
+      <p className="text-sm text-ink-muted">
+        利用区分が「利用開始待ち」のため、解除できません。先に「利用区分」を利用中に戻してください(「契約プラン・使える機能」の保存では再開しません)。
+      </p>
+    );
+  }
   if (!entitled) {
     return <p className="text-sm text-ink-muted">利用を許可していないため、解除できません。先に「契約プラン・使える機能」で利用を許可して保存してください。</p>;
   }

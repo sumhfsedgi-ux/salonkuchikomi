@@ -39,7 +39,7 @@ describe("変更内容", () => {
   it("契約プラン・権限による停止・解除", () => {
     expect(describeAuditEntry(entry({ target: "plan", before: "reviews", after: "salonpack" }), ctx).change).toBe("契約プラン: 口コミプラン → SalonPack");
     expect(describeAuditEntry(entry({ target: "hold:reservation_notifications", before: "none", after: "open", actorKind: "system" }), ctx).change).toBe(
-      "予約通知を権限により停止(利用許可がなくなったため)",
+      "予約通知を権限により停止(利用許可・利用区分の変更で使えなくなったため)",
     );
     expect(describeAuditEntry(entry({ target: "hold:reservation_notifications", before: { opened_at: "2026-10-12T13:00:00Z" }, after: "released" }), ctx).change).toBe(
       "予約通知の権限による停止を解除",

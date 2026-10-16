@@ -8,21 +8,92 @@ export interface SalonFixture {
   email: string;
 }
 
-export async function createSalon(sql: Sql, opts: { plan?: "reviews" | "salonpack"; name?: string; email?: string } = {}): Promise<SalonFixture> {
+export type ServiceStatus = "pending" | "complimentary" | "test";
+
+/** その DB に列・表があるか(0025 の前の DB でも同じ fixture を使うため)。 */
+async function hasColumn(sql: Sql, table: string, column: string): Promise<boolean> {
+  const [row] = await sql<{ ok: boolean }[]>`
+    select exists (select 1 from information_schema.columns
+                    where table_schema = 'public' and table_name = ${table} and column_name = ${column}) as ok`;
+  return row.ok;
+}
+async function hasTable(sql: Sql, table: string): Promise<boolean> {
+  const [row] = await sql<{ ok: boolean }[]>`select to_regclass(${"public." + table}) is not null as ok`;
+  return row.ok;
+}
+
+export type RegistrationSource = "existing" | "self_signup" | "operator";
+
+/**
+ * 既存のオーナーと同じ状態の店舗(メール確認済み・本人確認は legacy)。0025 のあとの DB では、利用区分と登録経路も入れる
+ * (既定は complimentary・existing。後から UPDATE すると版数・履歴が増えるため、INSERT で直接入れる)。
+ * 0026 のあとの DB では、プランが仮の値か(planPlaceholder。既定 false)も入れる。
+ */
+export async function createSalon(
+  sql: Sql,
+  opts: {
+    plan?: "reviews" | "salonpack";
+    name?: string;
+    email?: string;
+    serviceStatus?: ServiceStatus;
+    registrationSource?: RegistrationSource;
+    planPlaceholder?: boolean;
+    verified?: boolean;
+  } = {},
+): Promise<SalonFixture> {
   const userId = randomUUID();
   const email = opts.email ?? `owner-${userId.slice(0, 8)}@example.test`;
-  await sql`insert into auth.users (id, email) values (${userId}, ${email})`;
+  await sql`insert into auth.users (id, email, email_confirmed_at) values (${userId}, ${email}, now())`;
   const [profile] = await sql<{ id: string }[]>`select id from public.profiles where user_id = ${userId}`;
-  const [salon] = await sql<{ id: string }[]>`
-    insert into public.salons (owner_id, name, slug, plan)
-    values (${profile.id}, ${opts.name ?? `テスト店舗 ${userId.slice(0, 4)}`}, ${`s-${userId.slice(0, 12)}`}, ${opts.plan ?? "salonpack"})
-    returning id`;
+  const name = opts.name ?? `テスト店舗 ${userId.slice(0, 4)}`;
+  const slug = `s-${userId.slice(0, 12)}`;
+  const plan = opts.plan ?? "salonpack";
+  const [salon] = (await hasColumn(sql, "salons", "plan_placeholder"))
+    ? await sql<{ id: string }[]>`
+        insert into public.salons (owner_id, name, slug, plan, service_status, registration_source, plan_placeholder)
+        values (${profile.id}, ${name}, ${slug}, ${plan}, ${opts.serviceStatus ?? "complimentary"},
+                ${opts.registrationSource ?? "existing"}, ${opts.planPlaceholder ?? false})
+        returning id`
+    : (await hasColumn(sql, "salons", "service_status"))
+    ? await sql<{ id: string }[]>`
+        insert into public.salons (owner_id, name, slug, plan, service_status, registration_source)
+        values (${profile.id}, ${name}, ${slug}, ${plan}, ${opts.serviceStatus ?? "complimentary"}, ${opts.registrationSource ?? "existing"})
+        returning id`
+    : await sql<{ id: string }[]>`
+        insert into public.salons (owner_id, name, slug, plan)
+        values (${profile.id}, ${name}, ${slug}, ${plan})
+        returning id`;
+  if (opts.verified !== false && (await hasTable(sql, "account_verifications"))) {
+    await sql`insert into public.account_verifications (user_id, method) values (${userId}, 'legacy') on conflict (user_id) do nothing`;
+  }
   return { salonId: salon.id, userId, email };
+}
+
+/**
+ * Supabase Auth のセッションを1つ作り、PostgREST と同じ request.jwt.claims の値(JSON の文字列)を返す。
+ * amr は認証方法(password / otp / invite / magiclink / recovery など)。createdAt で作成日時を指定できる。
+ */
+export async function createSession(
+  sql: Sql,
+  userId: string,
+  opts: { amr?: string[]; createdAt?: Date; notAfter?: Date | null } = {},
+): Promise<{ sessionId: string; claims: string }> {
+  const sessionId = randomUUID();
+  // 作成日時は、指定が無ければ DB の時刻(本人確認の記録の verified_at と同じ時計)にする。
+  await sql`insert into auth.sessions (id, user_id, created_at, not_after)
+            values (${sessionId}, ${userId}, coalesce(${opts.createdAt ?? null}::timestamptz, clock_timestamp()), ${opts.notAfter ?? null})`;
+  for (const method of opts.amr ?? ["password"]) {
+    await sql`insert into auth.mfa_amr_claims (session_id, authentication_method) values (${sessionId}, ${method})`;
+  }
+  return { sessionId, claims: JSON.stringify({ sub: userId, session_id: sessionId, role: "authenticated" }) };
 }
 
 export async function createOperator(sql: Sql, email = `ops-${randomUUID().slice(0, 8)}@example.test`): Promise<string> {
   const userId = randomUUID();
-  await sql`insert into auth.users (id, email) values (${userId}, ${email})`;
+  await sql`insert into auth.users (id, email, email_confirmed_at) values (${userId}, ${email}, now())`;
+  if (await hasTable(sql, "account_verifications")) {
+    await sql`insert into public.account_verifications (user_id, method) values (${userId}, 'legacy') on conflict (user_id) do nothing`;
+  }
   await sql`insert into public.operator_admins (user_id, granted_by) values (${userId}, 'test')`;
   return userId;
 }

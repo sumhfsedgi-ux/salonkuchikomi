@@ -6,8 +6,8 @@ import type { Feature } from "@/lib/appMode";
 // していないブログ・予約通知を使えてしまわないよう、必ずこちらも判定する。
 //
 // 【重要】planの値は必ず人間(管理者)が確定させる。APP_MODEやユーザー自身の
-// 操作から自動的に'salonpack'を付与してはならない -- 新規店舗は常に'reviews'
-// から始まる(app/dashboard/actions.tsのcreateSalonAction参照)。
+// 操作から自動的に'salonpack'を付与してはならない -- お客様が登録した店舗は常に'reviews'
+// から始まる(DB の create_own_salon。運営の本登録 admin_register_salon では運営がプランを選ぶ。0025)。
 
 export type SalonPlan = "reviews" | "salonpack";
 

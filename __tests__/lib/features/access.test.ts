@@ -36,7 +36,7 @@ describe("契約プランごとの画面の作り(機能ごとの利用権限と
 });
 
 describe("機能ごとの利用権限: 契約・APP_MODE → 提供状況の順に判定する", () => {
-  const input = (plan: SalonPlan, googleReviewsAvailable = false, entitlements = entitlementsFor(plan)) => ({ plan, googleReviewsAvailable, entitlements });
+  const input = (plan: SalonPlan, googleReviewsAvailable = false, entitlements = entitlementsFor(plan)) => ({ plan, serviceActive: true, googleReviewsAvailable, entitlements });
   const statuses = (plan: SalonPlan, googleReviewsAvailable = false) =>
     Object.fromEntries(resolveAllFeatureAccess(input(plan, googleReviewsAvailable)).map((a) => [a.key, a.status]));
 
@@ -71,7 +71,7 @@ describe("機能ごとの利用権限: 契約・APP_MODE → 提供状況の順�
 describe("DB の利用権限(個別設定・提供状態)をそのまま使う", () => {
   const blog = FEATURE_REGISTRY.find((d) => d.key === "blog")!;
   const reviews = FEATURE_REGISTRY.find((d) => d.key === "reviews")!;
-  const input = (plan: SalonPlan, entitlements: SalonEntitlements) => ({ plan, googleReviewsAvailable: false, entitlements });
+  const input = (plan: SalonPlan, entitlements: SalonEntitlements) => ({ plan, serviceActive: true, googleReviewsAvailable: false, entitlements });
 
   it("個別に利用不可は、契約外と同じ「ご契約外」(「利用停止中」や運営内部の事情は書かない)", () => {
     const a = resolveFeatureAccess(blog, input("salonpack", entitlementsFor("salonpack", { overrides: { blog: "deny" } })));
@@ -102,9 +102,9 @@ describe("DB の利用権限(個別設定・提供状態)をそのまま使う",
 
   it("サーバー側の入口も、個別に利用不可を契約外として拒否する", async () => {
     dbEntitlements = entitlementsFor("salonpack", { overrides: { reviews: "deny" } });
-    expect(await featureAccessStatus({ id: "salon-1", plan: "salonpack" }, "user-1", "reviews")).toBe("not_allowed");
-    expect(await canAccessFeature({ id: "salon-1", plan: "salonpack" }, "user-1", "reviews")).toBe(false);
-    expect(await canAccessFeature({ id: "salon-1", plan: "salonpack" }, "user-1", "settings")).toBe(true);
+    expect(await featureAccessStatus({ id: "salon-1", plan: "salonpack", serviceStatus: "complimentary" as const }, "user-1", "reviews")).toBe("not_allowed");
+    expect(await canAccessFeature({ id: "salon-1", plan: "salonpack", serviceStatus: "complimentary" as const }, "user-1", "reviews")).toBe(false);
+    expect(await canAccessFeature({ id: "salon-1", plan: "salonpack", serviceStatus: "complimentary" as const }, "user-1", "settings")).toBe(true);
   });
 });
 
@@ -117,8 +117,8 @@ describe("サーバー側の入口(canAccessFeature)と、ホーム・メニュ�
         for (const plan of PLANS) {
           dbEntitlements = entitlementsFor(plan);
           for (const def of FEATURE_REGISTRY) {
-            const access = resolveFeatureAccess(def, { plan, googleReviewsAvailable: flag === "1", entitlements: dbEntitlements });
-            const allowed = await canAccessFeature({ id: "salon-1", plan }, "user-1", def.accessFeature);
+            const access = resolveFeatureAccess(def, { plan, serviceActive: true, googleReviewsAvailable: flag === "1", entitlements: dbEntitlements });
+            const allowed = await canAccessFeature({ id: "salon-1", plan, serviceStatus: "complimentary" as const }, "user-1", def.accessFeature);
             expect({ mode, flag, plan, key: def.key, allowed }).toEqual({ mode, flag, plan, key: def.key, allowed: access.status === "allowed" });
           }
         }
@@ -161,7 +161,7 @@ describe("画面で紹介してよい機能", () => {
         for (const status of all) expect(isFeatureIntroduced({ definition: googleReviews, status }, experience, surface)).toBe(false);
       }
     }
-    expect(listUsableFeatureKeys({ plan: "salonpack", googleReviewsAvailable: true, entitlements: entitlementsFor("salonpack") })).not.toContain("google_reviews");
+    expect(listUsableFeatureKeys({ plan: "salonpack", serviceActive: true, googleReviewsAvailable: true, entitlements: entitlementsFor("salonpack") })).not.toContain("google_reviews");
     expect(FEATURE_REGISTRY.filter((d) => d.listed).map((d) => d.key)).toEqual(["reviews", "blog", "reservation_notifications"]);
   });
 });

@@ -77,6 +77,8 @@ export function summarizeReservation(input: {
   const reasons: StopReason[] = [];
   const add = (key: StopReasonKey, text: string, action: string | null, owner: ActionOwner | null) => reasons.push({ key, text, action, owner });
 
+  // 利用区分が利用開始待ち(止めている既存の店舗など)。利用許可を保存しても再開しないため、利用区分の変更を案内する。
+  const servicePending = input.entitlement?.reason === "service_pending";
   if (!entitled) {
     const state = input.entitlement ? accessState(input.entitlement) : "not_allowed";
     const text =
@@ -86,15 +88,26 @@ export function summarizeReservation(input: {
           ? "提供の準備中です。"
           : state === "ended"
             ? "提供を終了しています。"
-            : "利用を許可していません。";
-    const action = state === "not_in_plan" || state === "not_allowed" ? "使う場合は、「契約プラン・使える機能」でプランと利用許可を見直してください。" : null;
+            : state === "service_pending"
+              ? "利用区分が「利用開始待ち」のため、使えません。"
+              : "利用を許可していません。";
+    const action =
+      state === "not_in_plan" || state === "not_allowed"
+        ? "使う場合は、「契約プラン・使える機能」でプランと利用許可を見直してください。"
+        : state === "service_pending" && started
+          ? "再開する場合は、「利用区分」を変更してください(「契約プラン・使える機能」の保存では再開しません)。"
+          : null;
     add("not_entitled", text, action, action ? "operator" : null);
   }
   if (input.holdOpen) {
     add(
       "hold",
       "権限による停止中です。",
-      entitled ? "下の「停止を解除する」で解除してください。" : "利用を許可したあと、権限による停止を解除してください。",
+      entitled
+        ? "下の「停止を解除する」で解除してください。"
+        : servicePending
+          ? "「利用区分」を利用中に戻したあと、権限による停止を解除してください。"
+          : "利用を許可したあと、権限による停止を解除してください。",
       "operator",
     );
   }

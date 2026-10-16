@@ -7,6 +7,7 @@ export const ACTOR_KIND_LABELS: Record<string, string> = {
   cli: "運用CLI",
   sql: "SQL・移行",
   system: "自動",
+  owner: "お客様",
 };
 
 export function formatJst(iso: string | null | undefined): string {

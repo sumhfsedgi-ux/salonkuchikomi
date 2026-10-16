@@ -44,6 +44,8 @@ export interface ReservationSwitchSnapshot {
 
 export interface SetupContext {
   plan: SalonPlan;
+  /** 利用区分が利用中か(利用開始待ちの店舗は、どの機能も使えない)。 */
+  serviceActive: boolean;
   /** DB から読んだ機能ごとの利用権限(lib/features/loadEntitlements.ts。権限による停止の有無も含む)。 */
   entitlements: SalonEntitlements;
   reservationSwitch: ReservationSwitchSnapshot | null;
@@ -270,7 +272,12 @@ function googleReviewsStatus(ctx: SetupContext): { status: FeatureStatus; messag
 export function resolveFeatureStates(ctx: SetupContext): { states: FeatureState[] } {
   const states: FeatureState[] = [];
   for (const def of FEATURE_REGISTRY) {
-    const access = resolveFeatureAccess(def, { plan: ctx.plan, googleReviewsAvailable: ctx.googleReviewsAvailable, entitlements: ctx.entitlements });
+    const access = resolveFeatureAccess(def, {
+      plan: ctx.plan,
+      serviceActive: ctx.serviceActive,
+      googleReviewsAvailable: ctx.googleReviewsAvailable,
+      entitlements: ctx.entitlements,
+    });
     const setupItems: SetupItemState[] = def.setupItems.map((key) => {
       const item = { ...SETUP_ITEMS[key], complete: itemComplete(key, ctx) };
       // LINE の通知先を招待で追加できない間は、押せないボタンへ案内しない(運営への問い合わせを案内する)。
