@@ -17,17 +17,17 @@
 |---|---|
 | リポジトリ | `sumhfsedgi-ux/salonkuchikomi`(Vercel は1つのプロジェクトで、master へのマージで本番に自動デプロイ) |
 | ブランチ | `feature/reviews-inbox`(push 済み。Preview のデプロイは `vercel.json` で止めてある:コミット 44949bf) |
-| PR | Draft PR #10。base は `feature/salon-onboarding`(PR #9)。PR #9 が master に入ったら base を master に変える |
-| 分岐元 | `6f52a64`(PR #9 の先頭。2026-10-16 時点で `origin/feature/salon-onboarding` と同じ) |
-| master | `78df7e5`(2026-10-16 に確認。このブランチの共通の祖先と同じ。master はその後動いていない) |
-| コードの最後のコミット | `d1bbadf`(画面の文言・操作の整理と、返信欄を1つにする変更) |
-| ブランチの先頭 | この文書を含むコミット(文書だけの変更) |
+| PR | Draft PR #10。base は master(2026-10-16 に、PR #9 のマージ後に `feature/salon-onboarding` から変更) |
+| 分岐元 | `6f52a64`(PR #9 の先頭。2026-10-16 08:09 UTC に merge commit `81f951f` で master にマージ済み) |
+| master | `81f951f`(PR #9 のマージ。2026-10-16)。このブランチは master を取り込み済み(`443e78f`。取り込みの前後でツリーは同じ) |
+| コードの最後のコミット | `0ab8ae9`(返信生成 reply-v1.4。[記録](reply-generation-quality-2026-10-16.md))。その前の `d1bbadf` が、画面の文言・操作の整理と、返信欄を1つにする変更 |
+| ブランチの先頭 | master の取り込み `443e78f`(このあとに文書だけのコミットが続くことがある) |
 
 PR の URL:https://github.com/sumhfsedgi-ux/salonkuchikomi/pull/10(Draft。2026-10-16 作成)
 
 PR #9(https://github.com/sumhfsedgi-ux/salonkuchikomi/pull/9):
-- Draft で、まだ master に入っていない。先頭は 6f52a64 で、master との衝突は無い(2026-10-16 時点)。
-- 0025・0026(登録・招待・利用区分)を含む。このブランチは PR #9 の上にある。
+- **マージ済み**(2026-10-16 08:09 UTC、merge commit `81f951f`)。本番にデプロイ済み(Vercel の状態は success)。
+- 0025・0026(登録・招待・利用区分)を含む。本番の DB への適用は §4。
 
 コミット(古い順。PR #9 の分は含めない):
 
@@ -76,12 +76,12 @@ PR #9(https://github.com/sumhfsedgi-ux/salonkuchikomi/pull/9):
 - 利用可否は DB の機能一覧で判定する(google_reviews は `coming_soon`、プランの標準は使えない、店舗ごとの許可)。
 - 同意の版は `gbp-connect-2026-10-15-v2`。
 
-検証(2026-10-16、コードの最後のコミット d1bbadf と同じ内容):
-- tsc・eslint:問題なし。
-- vitest:834/834。
-- test:localdb:165/165。
-- build:成功。
-- ブラウザの通しの確認:97/97(共有テスト用 DB・架空の Google・架空の AI、PC 1280px・スマートフォン 390px)。
+検証(2026-10-16):
+- tsc・eslint:問題なし(master を取り込んだ今の先頭で)。
+- vitest:859/859(今の先頭。`0ab8ae9` の分を含む)。
+- test:localdb:165/165(`d1bbadf` の時点。DB の変更は無い)。
+- build:成功(`0ab8ae9` の記録による)。
+- ブラウザの通しの確認:97/97(`d1bbadf` の時点。共有テスト用 DB・架空の Google・架空の AI、PC 1280px・スマートフォン 390px)。`0ab8ae9` のあとは再実行していない。
 - test:testdb(共有テスト用 DB の結合テスト):2026-10-15 に実行し、登録側と同じ既知の2件以外は成功。その後の変更は画面と文言だけで、再実行していない。
 
 画面の画像:https://claude.ai/artifact/1k5ptyUrzyAYUCrworbREz(非公開。共有は利用者が行う)
@@ -90,7 +90,7 @@ PR #9(https://github.com/sumhfsedgi-ux/salonkuchikomi/pull/9):
 
 | 環境 | 0025・0026(PR #9) | 0027〜0031(このブランチ) | 状態 |
 |---|---|---|---|
-| 本番 | 未適用 | 未適用 | 触っていない。master は 0024 まで |
+| 本番 | **適用済み**(2026-10-16。事前確認・適用後の確認とも期待どおり) | 未適用 | 店舗3(すべて無料提供・既存)・新規登録は閉じている。CLI の記録(`supabase_migrations`)は 0001〜0007 だけなので、本番に `supabase db push` は使わない |
 | 共有テスト用 DB(ref `cxnm…`) | 適用済み | 適用済み(2026-10-15) | google_reviews は `coming_soon`、店舗ごとの許可なし、口コミの表は空、確認用のデータは片付け済み |
 | 手元の PostgreSQL(54329) | テストのたびに適用 | 同左 | test:localdb 165/165 |
 
@@ -113,7 +113,7 @@ PR #9(https://github.com/sumhfsedgi-ux/salonkuchikomi/pull/9):
 
 前提:master へのマージで、すぐに本番へ自動デプロイされる。新しいアプリが前提にする DB は、マージの前に本番へ入れておく。DB を先に入れても、旧アプリが壊れないことを各段で確かめる。
 
-### 段 A:PR #9(0025・0026)
+### 段 A:PR #9(0025・0026)(2026-10-16 に 1〜5 を完了。6 の一部が残る)
 `docs/plans/salon-onboarding-runbook.md` の B の順に行う。
 1. 独自の SMTP・Redirect URLs(`/auth/confirm`)を設定する。
 2. 本番で `0025-precheck.sql` を流す。
@@ -126,7 +126,7 @@ PR #9(https://github.com/sumhfsedgi-ux/salonkuchikomi/pull/9):
 段 3〜4 の間は、旧アプリで新しい店舗を登録できない(runbook の「3〜4 のあいだの、旧アプリへの影響」)。この間は運営が登録しない。
 
 ### 段 B:このブランチ(0027〜0031)。段 A の完了と、本番の安定を確かめてから
-1. PR の base を master に変え、master をこのブランチにマージする(rebase・force-push はしない)。migration の番号の重なりを確かめ、tsc・vitest・test:localdb・build を流す。
+1. (完了 2026-10-16)PR の base を master に変え、master をこのブランチにマージした(rebase・force-push はしていない)。migration の番号の重なりは無い。tsc・eslint・vitest は通った。
 2. 本番の事前の確認(読み取りのみ)を行う。
    - 0024〜0026 が適用済みであること。
    - `review_reply_settings`・`gbp_*` の表、`feature_catalog` の `google_reviews` の行が無いこと。
