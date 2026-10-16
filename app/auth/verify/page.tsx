@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthedUser, getCurrentSalon } from "@/lib/supabase/queries";
 import { getAccountState } from "@/lib/onboarding/accountState";
 import { resolveNextStep } from "@/lib/onboarding/nextStep";
+import { RETURN_COOKIE, safeReturnPath, withReturnPath } from "@/lib/auth/returnPath";
 import { logoutAction } from "@/app/dashboard/actions";
 import AuthShell from "@/components/auth/AuthShell";
 import VerifyIdentityForm from "@/components/auth/VerifyIdentityForm";
@@ -26,7 +28,8 @@ export default async function VerifyPage() {
   if (!account) redirect("/login");
   if (account.sessionTrusted) {
     const salon = await getCurrentSalon(supabase);
-    redirect(resolveNextStep({ account, salon }));
+    // 店舗の画面へ進むときだけ、ログインの前に開こうとしていた口コミ詳細へ戻す(cookie は期限で消える)。
+    redirect(withReturnPath(resolveNextStep({ account, salon }), safeReturnPath((await cookies()).get(RETURN_COOKIE)?.value)));
   }
 
   if (account.verified) {

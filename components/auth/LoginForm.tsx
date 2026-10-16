@@ -11,7 +11,7 @@ import Button from "@/components/ui/Button";
 import { useSendWaits } from "@/components/auth/useSendWaits";
 import { formatWait } from "@/lib/onboarding/signupNotice";
 
-export default function LoginForm({ signupEnabled = false }: { signupEnabled?: boolean }) {
+export default function LoginForm({ signupEnabled = false, returnPath = null }: { signupEnabled?: boolean; returnPath?: string | null }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -50,8 +50,9 @@ export default function LoginForm({ signupEnabled = false }: { signupEnabled?: b
     // A full navigation (not router.push) so the dashboard always starts
     // from a clean, unzoomed page load, regardless of anything odd that
     // happened to the viewport while this form was focused/filled in.
-    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.href = "/dashboard";
+    // 戻り先(口コミ詳細)はサーバーで形を確かめた値だけ。本人確認・店舗の登録が済んでいなければ、
+    // 店舗の画面の入口(app/dashboard/layout.tsx)がその手順へ移し、終わったあとに戻る(lib/auth/returnPath.ts)。
+    window.location.href = returnPath ?? "/dashboard";
   }
 
   return (

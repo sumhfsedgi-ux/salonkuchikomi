@@ -1,6 +1,6 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -26,6 +26,7 @@ import {
   type VerificationFailure,
 } from "@/lib/onboarding/verification";
 import { hashIp } from "@/lib/reviewGeneration/rateLimit";
+import { RETURN_COOKIE, safeReturnPath, withReturnPath } from "@/lib/auth/returnPath";
 
 // 認証まわりの Server Action。どれもブラウザから直接呼べるため、入口で入力・セッションを確かめる。
 // 応答には、アカウントの有無・送信の可否など第三者に漏れて困ることを書かない。パスワード・トークンはログに出さない。
@@ -174,7 +175,7 @@ function verificationDeps(userClient: Awaited<ReturnType<typeof createClient>>) 
 
 /** 本人確認(/auth/verify)。登録したパスワードを入れ直す(confirm)か、新しく設定する(set)。 */
 export async function verifyIdentityAction(input: { mode: "confirm" | "set"; password: string; passwordConfirm?: string }): Promise<
-  { ok: true; next: NextStep } | { ok: false; error?: string; fieldErrors?: Record<string, string>; reason?: VerificationFailure }
+  { ok: true; next: NextStep | string } | { ok: false; error?: string; fieldErrors?: Record<string, string>; reason?: VerificationFailure }
 > {
   const supabase = await createClient();
   const parsed = passwordSchema.safeParse(input?.password ?? "");
@@ -248,14 +249,23 @@ export async function resetPasswordAction(input: { password: string }): Promise<
   return { ok: true };
 }
 
-async function nextStepFor(supabase: Awaited<ReturnType<typeof createClient>>): Promise<NextStep> {
+/**
+ * 次に進む場所。店舗の画面へ進むとき(/dashboard)だけ、ログインの前に開こうとしていた口コミ詳細(cookie。
+ * lib/auth/returnPath.ts)に置き換え、使った戻り先は消す。本人確認・店舗の登録などの手順は先に通す。
+ */
+async function nextStepFor(supabase: Awaited<ReturnType<typeof createClient>>): Promise<NextStep | string> {
   const account = await getAccountState(supabase);
   const salon = account?.sessionTrusted ? await getCurrentSalon(supabase) : null;
-  return resolveNextStep({ account, salon });
+  const next = resolveNextStep({ account, salon });
+  if (next !== "/dashboard") return next;
+  const store = await cookies();
+  const returnPath = safeReturnPath(store.get(RETURN_COOKIE)?.value);
+  if (returnPath) store.delete(RETURN_COOKIE);
+  return withReturnPath(next, returnPath);
 }
 
 /** メールのリンクを確かめたあと(/auth/confirm)、次に進む場所。 */
-export async function nextStepAction(): Promise<NextStep> {
+export async function nextStepAction(): Promise<NextStep | string> {
   const supabase = await createClient();
   try {
     return await nextStepFor(supabase);

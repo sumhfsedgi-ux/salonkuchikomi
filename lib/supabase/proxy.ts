@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { loginPathFor, RETURN_COOKIE, RETURN_COOKIE_MAX_AGE_SECONDS, safeReturnPath } from "@/lib/auth/returnPath";
 
 /**
  * Refreshes the Supabase auth session cookie on every request, and gates
@@ -51,8 +52,20 @@ export async function updateSession(request: NextRequest) {
   const requiresLogin = ["/dashboard", "/onboarding", "/auth/verify"].some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   if (requiresLogin && !data?.claims) {
-    const loginUrl = new URL("/login", request.url);
-    return NextResponse.redirect(loginUrl);
+    // 口コミ詳細(LINE の通知のリンク)だけは、ログインのあとに戻れるよう戻り先を持たせる(lib/auth/returnPath.ts)。
+    // クエリ付きなど形の違う URL は戻り先にしない。
+    const returnPath = request.nextUrl.search ? null : safeReturnPath(pathname);
+    const redirect = NextResponse.redirect(new URL(loginPathFor(returnPath), request.url));
+    if (returnPath) {
+      redirect.cookies.set(RETURN_COOKIE, returnPath, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: RETURN_COOKIE_MAX_AGE_SECONDS,
+      });
+    }
+    return redirect;
   }
 
   return response;

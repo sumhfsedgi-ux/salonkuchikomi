@@ -40,4 +40,29 @@ describe("認証の転送(Proxy)", () => {
     const response = await updateSession(request("/dashboard"));
     expect(response.headers.get("location")).toBeNull();
   });
+
+  it("未ログインで口コミ詳細を開いたら、ログインのあとに戻れるよう next と短い時間の cookie を付ける", async () => {
+    getClaims.mockResolvedValue({ data: null });
+    const id = "0b5f3c1e-8a2d-4c6b-9e1f-2a3b4c5d6e7f";
+    const response = await updateSession(request(`/dashboard/reviews/google/${id}`));
+    expect(response.status).toBe(307);
+    const location = new URL(response.headers.get("location")!);
+    expect(location.pathname).toBe("/login");
+    expect(location.searchParams.get("next")).toBe(`/dashboard/reviews/google/${id}`);
+    const cookie = response.cookies.get("sp_return_to");
+    expect(cookie?.value).toBe(`/dashboard/reviews/google/${id}`);
+    expect(cookie?.httpOnly).toBe(true);
+  });
+
+  it.each(["/dashboard/reviews/google/not-a-uuid", "/dashboard/reviews/settings", "/dashboard/reviews/google/0b5f3c1e-8a2d-4c6b-9e1f-2a3b4c5d6e7f?x=1"])(
+    "口コミ詳細の形でなければ戻り先を付けない(%s)",
+    async (pathname) => {
+      getClaims.mockResolvedValue({ data: null });
+      const response = await updateSession(request(pathname));
+      const location = new URL(response.headers.get("location")!);
+      expect(location.pathname).toBe("/login");
+      expect(location.search).toBe("");
+      expect(response.cookies.get("sp_return_to")).toBeUndefined();
+    },
+  );
 });
