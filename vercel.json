@@ -1,9 +1,12 @@
 {
-  "regions": ["bom1"],
+  "regions": [
+    "bom1"
+  ],
   "git": {
     "deploymentEnabled": {
       "feature/salon-onboarding": false,
-      "feature/reviews-inbox": false
+      "feature/reviews-inbox": false,
+      "feature/privacy-reviews-inbox": false
     }
   }
 }
