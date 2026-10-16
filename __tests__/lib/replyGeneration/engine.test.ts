@@ -23,9 +23,9 @@ describe("classifyReview", () => {
     [5, "スタッフさんが丁寧でした", "positive"],
     [4, "落ち着いた雰囲気でした", "positive"],
     [4, "施術はよかったけど待ち時間が長くて残念でした", "mixed"],
-    [3, "普通でした", "mixed"],
+    [3, "普通でした", "positive"],
     [2, "説明が分かりにくかった", "careful"],
-    [1, "", "careful"],
+    [1, "", "thanks_only"],
     [5, "", "thanks_only"],
     [3, "   ", "thanks_only"],
   ] as const)("★%s「%s」は %s", (rating, text, mode) => {
@@ -148,10 +148,10 @@ describe("prompts", () => {
     expect(prompt).toContain("前の案の書き出し「このたびはありがとうございます。」とは違う");
   });
 
-  it("慎重モードは再来店を書かせず、短めにする", () => {
+  it("慎重モードは再来店を書かせず、選択した長さを使う", () => {
     const prompt = buildReplyUserPrompt({ ...input, mode: "careful", rating: 1 });
     expect(prompt).toContain("再来店の誘いは書かない");
-    expect(targetLength("careful", { ...DEFAULT_REPLY_SETTINGS, length: "long" }).max).toBeLessThanOrEqual(160);
+    expect(targetLength("careful", { ...DEFAULT_REPLY_SETTINGS, length: "long" }).max).toBe(300);
   });
 
   it("直させるプロンプトには問題の説明と下書きが入る", () => {

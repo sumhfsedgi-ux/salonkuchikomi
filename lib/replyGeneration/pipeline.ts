@@ -1,12 +1,9 @@
 import "server-only";
 import { callOpenAIJson, OpenAICallError, resolveOpenAIModel, type OpenAITask } from "@/lib/ai/openai";
-import { countChars } from "@/lib/ai/naturalJapanese/analyze";
 import { classifyReview, type ReplyMode, type ReplyModeTrigger, type StarRating } from "@/lib/replyGeneration/classify";
 import {
   blockingIssues,
-  joinSentences,
   lintReply,
-  REPAIR_FIRST_CODES,
   REPAIR_HINTS,
   REVIEW_WARNING_MESSAGES,
   toSentences,
@@ -26,11 +23,13 @@ import {
 } from "@/lib/replyGeneration/prompts";
 import type { ReplySettings } from "@/lib/replyGeneration/settings";
 import type { CallJson } from "@/lib/reviewGeneration/verify";
+import { replyLengthProblems, replyQualityProblems } from "@/lib/replyGeneration/quality";
+import { REPLY_MAX_BYTES, utf8Bytes } from "@/lib/replyGeneration/text";
 
 // 口コミ返信の下書きを作る(docs/plans/google-reviews-inbox-plan.md §9)。
 //   ① ★と本文からモードを決める(コード)
 //   ② LLM 1回で下書きを作る
-//   ③ 決定的に検査し(lint.ts)、問題のある文を削る。削ると返信として成り立たなければ1回だけ直させる
+//   ③ 禁止表現と品質を検査し、重要な内容を残して1回だけ直させる。文の自動削除はしない
 //   ④ ★1〜2なら連絡先の案内、設定があれば署名をコードで付け足す
 // 口コミ本文・下書きはどこにも保存せず、ログにも出さない(エラーは種類だけを返す)。
 
@@ -106,9 +105,6 @@ const REPAIR_TEMPERATURE = 0.2;
 const MAX_OUTPUT_TOKENS = 1_200;
 // 推論系のモデルは既定以外の temperature を受け付けないので送らない。
 const REASONING_MODEL = /^(o\d|gpt-5)/i;
-// 文を削ったあと、これより短ければ返信として成り立たないとみなす(★だけの口コミは短くてよい)。
-const MIN_REPLY_CHARS = 30;
-const MIN_THANKS_ONLY_CHARS = 12;
 
 function temperatureFor(model: string | null, value: number): number | undefined {
   return model && REASONING_MODEL.test(model) ? undefined : value;
@@ -128,30 +124,16 @@ export function cleanReply(text: string): string {
     .trim();
 }
 
-function minChars(mode: ReplyMode): number {
-  return mode === "thanks_only" ? MIN_THANKS_ONLY_CHARS : MIN_REPLY_CHARS;
-}
-
-/** 問題のある文を削る。削ったあとも返信として成り立てばその文章を、成り立たなければ null を返す。 */
-function removeBlockedSentences(reply: string, issues: readonly ReplyLintIssue[], mode: ReplyMode): string | null {
-  if (issues.some((issue) => issue.sentenceIndex === null)) return null;
-  const blocked = new Set(issues.map((issue) => issue.sentenceIndex));
-  const kept = toSentences(reply).filter((_, index) => !blocked.has(index));
-  if (kept.length === 0) return null;
-  const joined = joinSentences(kept);
-  return countChars(joined) >= minChars(mode) ? joined : null;
-}
-
 function firstSentence(text: string | null | undefined): string | null {
   if (!text) return null;
   return toSentences(text)[0]?.text ?? null;
 }
 
 /** 署名と、★1〜2のときの連絡先の案内を付け足す(LLM には書かせない)。 */
-export function appendClosings(reply: string, mode: ReplyMode, settings: ReplySettings): string {
+export function appendClosings(reply: string, mode: ReplyMode, settings: ReplySettings, rating?: StarRating): string {
   const parts = [reply];
   const contact = settings.contactNote.trim();
-  if (mode === "careful" && contact) parts.push(contact);
+  if ((mode === "careful" || (rating !== undefined && rating <= 2)) && contact) parts.push(contact);
   const signature = settings.signature.trim();
   if (signature && !reply.trimEnd().endsWith(signature)) parts.push(signature);
   return parts.join("\n");
@@ -225,6 +207,7 @@ export async function generateReplyDraft(input: ReplyInput, deps: ReplyPipelineD
 
   // ② 作文
   let draft: string;
+  let quotes: unknown = [];
   try {
     metadata.llmCalls++;
     const result = await callJson<ReplyDraftOutput>({
@@ -239,6 +222,7 @@ export async function generateReplyDraft(input: ReplyInput, deps: ReplyPipelineD
     metadata.model = result.model;
     addUsage(result.usage);
     draft = cleanReply(typeof result.data?.reply === "string" ? result.data.reply : "");
+    quotes = result.data?.respond_to;
   } catch (err) {
     return fail("返信案を作れませんでした。", toErrorKind(err));
   }
@@ -248,18 +232,16 @@ export async function generateReplyDraft(input: ReplyInput, deps: ReplyPipelineD
   let issues = lintReply(draft, lintContext);
   metadata.lintCodes = uniqueCodes(issues);
   let blocking = blockingIssues(issues);
+  let quality = replyQualityProblems(draft, promptInput, quotes);
+  let lengthProblems = replyLengthProblems(draft, promptInput);
+  if (quality.length) metadata.lintCodes.push("reply_quality");
+  if (lengthProblems.length) metadata.lintCodes.push("reply_length");
 
-  if (blocking.length > 0) {
-    // お詫びの文そのものに関わる指摘は、削ると返信の中心が無くなるので、先に直させる。
-    const repairFirst = blocking.some((issue) => REPAIR_FIRST_CODES.has(issue.code));
-    const removed = repairFirst ? null : removeBlockedSentences(draft, blocking, classification.mode);
-    if (removed !== null) {
-      draft = removed;
-      metadata.repairAction = "removed";
-    } else if (deadline - now() >= MIN_CALL_BUDGET_MS) {
+  if (blocking.length > 0 || quality.length > 0 || lengthProblems.length > 0) {
+    if (deadline - now() >= MIN_CALL_BUDGET_MS) {
       try {
         metadata.llmCalls++;
-        const problems = [...new Set(blocking.map((issue) => REPAIR_HINTS[issue.code]))];
+        const problems = [...new Set([...blocking.map((issue) => REPAIR_HINTS[issue.code]), ...quality, ...lengthProblems])];
         const repaired = await callJson<RepairOutput>({
           task: TASK,
           systemPrompt: REPLY_SYSTEM_PROMPT,
@@ -273,31 +255,29 @@ export async function generateReplyDraft(input: ReplyInput, deps: ReplyPipelineD
         const candidate = cleanReply(typeof repaired.data?.reply === "string" ? repaired.data.reply : "");
         if (candidate) {
           draft = candidate;
+          quotes = repaired.data?.respond_to;
           metadata.repairAction = "repaired";
         }
       } catch {
-        // 直せなければ、下の再検査で削れるか確かめる。
+        // 修正に失敗したら元の案を再検査し、問題が残る場合は返さない。
       }
     }
 
     issues = lintReply(draft, lintContext);
     blocking = blockingIssues(issues);
-    if (blocking.length > 0) {
-      const removedAgain = removeBlockedSentences(draft, blocking, classification.mode);
-      if (removedAgain === null) return fail("安全な返信案を作れませんでした。", "unsafe_output");
-      draft = removedAgain;
-      if (metadata.repairAction === "none") metadata.repairAction = "removed";
-      issues = lintReply(draft, lintContext);
-    }
+    quality = replyQualityProblems(draft, promptInput, quotes);
+    lengthProblems = replyLengthProblems(draft, promptInput);
+    if (blocking.length > 0 || quality.length > 0) return fail("適切な返信案を作れませんでした。", "unsafe_output");
   }
 
   // ④ 連絡先の案内・署名
-  const reply = appendClosings(draft, classification.mode, input.settings);
+  const reply = appendClosings(draft, classification.mode, input.settings, input.rating);
+  if (utf8Bytes(reply) > REPLY_MAX_BYTES) return fail("返信案が長すぎます。", "unsafe_output");
   metadata.latencyMs = now() - startedAt;
   return {
     reply,
     mode: classification.mode,
-    warnings: warningsFor(classification.mode, issues),
+    warnings: [...warningsFor(classification.mode, issues), ...(lengthProblems.length ? [{ code: "length_target" as const, message: REVIEW_WARNING_MESSAGES.length_target }] : [])],
     metadata,
   };
 }

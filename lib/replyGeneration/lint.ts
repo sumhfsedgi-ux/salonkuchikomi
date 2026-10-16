@@ -6,7 +6,7 @@ import { REPLY_MAX_BYTES, utf8Bytes } from "@/lib/replyGeneration/text";
 // 返信の下書きを決定的に検査する(docs/plans/google-reviews-inbox-plan.md §9-2)。
 //   block : 投稿させてはいけない内容(補償の約束・責任の全面的な承認・改善の断定・反論・
 //           連絡先や宣伝・医療的な表現・口コミに無い来店の事実・慎重モードでの再来店の誘い・長すぎ)。
-//           その文を削るか、1回だけ LLM に直させる(pipeline.ts)。
+//           重要な内容を残して1回だけ LLM に直させる(pipeline.ts)。
 //   review: 投稿前に人が確かめるべき点。画面に「投稿前にご確認ください」として出す。
 //   style : 記録だけ(画面には出さない)。
 // 語彙の外の言い換えは見逃すので、オフライン評価(scripts/eval/reply-generation.eval.ts)で監視する。
@@ -69,7 +69,7 @@ export function joinSentences(sentences: readonly ReplySentence[]): string {
 const BLOCK_PATTERNS: readonly (readonly [ReplyLintCode, RegExp])[] = [
   [
     "compensation",
-    /返金|全額|無料(で|に|にて|とさせ|対応)|無償|割引(いたし|させ|します)|半額|お詫びの(品|印|しるし)|補償|賠償|弁償|次回.{0,10}(サービス|無料|割引|お安く|半額)|代金.{0,6}(いただきません|お返し)/u,
+    /(?:返金|補償|賠償|弁償)(?:を)?(?:いたし|致し|させて|します|する|対応し|可能|できます|を行|をお約束)|全額(?:を)?(?:お返し|負担)|(?:治療費|医療費|代金|費用).{0,8}(?:支払い|支払う|負担し|お返し)|無料(で|に|にて|とさせ|対応)|無償|割引(いたし|させ|します)|半額|お詫びの(品|印|しるし)|次回.{0,10}(サービス|無料|割引|お安く|半額)|代金.{0,6}(いただきません|お返し)/u,
   ],
   [
     "liability_admission",
@@ -106,7 +106,7 @@ const VISIT_FACT_PHRASES = [
 ];
 
 // 「スタッフの態度によりご不快な思いをさせてしまい」のように、口コミの出来事を原因として認める書き方。
-// 謝罪の文そのものなので、削らずに直させる(REPAIR_FIRST_CODES)。
+// 謝罪の文そのものなので、削らずに直させる。
 // 「回数券の勧誘でご不快な思いをさせてしまい」「〜についてご不快な思いをさせてしまい」のように、
 // 具体的な出来事に結び付けて「させてしまった」と書くのも同じ扱い。出来事に結び付けない
 // 「ご不快な思いをさせてしまい申し訳ございません」は、気持ちへのお詫びとして問題にしない。
@@ -124,13 +124,8 @@ const INCIDENT_ADMISSION_PATTERNS = [
   /(説明|案内|連絡|確認)(が|も|の)?(不足|不十分|足りず|足りな|行き届かず|行き届いておらず|行き届かな)(?!.{0,6}(とのこと|と感じ|とお感じ|という|との))/u,
   /(遅れて|遅くなって|変更して|忘れて|間違えて|失念して|伝え漏れて)(しまい|しまっ|おり)/u,
   /不手際|手違い|(当店|こちら|スタッフ|担当者?)の(ミス|落ち度|不注意)|配慮(が足りず|が足りなかった|不足)/u,
+  /お?時間を無駄に(して|させて)(しま|おり)/u,
 ];
-
-/** 削ると返信の中心(お詫びの文)が無くなるので、削る前に LLM に直させる指摘。 */
-export const REPAIR_FIRST_CODES: ReadonlySet<ReplyLintCode> = new Set<ReplyLintCode>([
-  "causal_admission",
-  "incident_admission",
-]);
 
 const REVISIT_PATTERN = /またの(ご来店|ご利用|お越し)|また(お|ご)?(越し|来店|待ち)|ぜひまた|またぜひ|再来店|お待ちしております|お待ちしています/u;
 const APOLOGY_PATTERN = /申し訳|お詫び|おわび|すみません|失礼いたしました/gu;
@@ -144,7 +139,8 @@ function countMatches(text: string, pattern: RegExp): number {
 function unsupportedNumbers(sentence: string, reviewText: string, rating: number): string[] {
   const numbers = normalize(sentence).match(/\d+/g) ?? [];
   const review = normalize(reviewText);
-  return numbers.filter((n) => n !== String(rating) && !review.includes(n));
+  const sourceNumbers: string[] = review.match(/\d+/g) ?? [];
+  return numbers.filter((n) => !sourceNumbers.includes(n) && !(n === String(rating) && /★|星|評価|stars?|rating/i.test(sentence)));
 }
 
 export interface ReplyLintContext {
@@ -163,6 +159,13 @@ export function lintReply(reply: string, context: ReplyLintContext): ReplyLintIs
     for (const [code, pattern] of BLOCK_PATTERNS) {
       if (pattern.test(text)) issues.push({ code, severity: "block", sentenceIndex: index });
     }
+    // 英語は空白を消さず検査する。要望への言及と店舗からの約束を区別する。
+    if (/\b(?:we|i)\s+(?:(?:will|shall|can|promise to|guarantee to)\s+)?(?:refund|reimburse|compensate|pay for|cover (?:your|the) (?:medical|treatment))\b|\b(?:offer|give|provide)\s+(?:you\s+)?(?:a\s+)?(?:free|discount|refund)|\b(?:your|a|the) refund (?:is|will be|has been) (?:approved|processed|issued)/i.test(sentence.text)) issues.push({ code: "compensation", severity: "block", sentenceIndex: index });
+    if (/\b(?:cure|guaranteed results|will heal|will recover)\b/i.test(sentence.text)) issues.push({ code: "medical", severity: "block", sentenceIndex: index });
+    if (/\b(?:entirely our fault|our negligence|we caused|we injured)\b/i.test(sentence.text)) issues.push({ code: "liability_admission", severity: "block", sentenceIndex: index });
+    if (/\b(?:never happen again|have (?:fixed|resolved|improved)|already (?:fixed|resolved))\b/i.test(sentence.text)) issues.push({ code: "improvement_claim", severity: "block", sentenceIndex: index });
+    if (/\b(?:you are wrong|that is not true|did not happen|you misunderstood)\b/i.test(sentence.text)) issues.push({ code: "rebuttal", severity: "block", sentenceIndex: index });
+    if (/\b(?:always|regular customer|first visit)\b/i.test(sentence.text) && !/\b(?:always|regular|first)\b/i.test(context.reviewText)) issues.push({ code: "invented_visit_fact", severity: "block", sentenceIndex: index });
     const medical = findPhrases(sentence.text, MEDICAL_PHRASES).filter(
       (phrase) => !foldedReview.includes(foldSpelling(phrase)),
     );
@@ -185,7 +188,7 @@ export function lintReply(reply: string, context: ReplyLintContext): ReplyLintIs
     ) {
       issues.push({ code: "incident_admission", severity: "block", sentenceIndex: index });
     }
-    if (context.mode === "careful" && REVISIT_PATTERN.test(text)) {
+    if ((context.mode === "careful" || context.rating <= 2) && (REVISIT_PATTERN.test(text) || /\b(?:see you again|welcome you back|next visit|visit us again)\b/i.test(sentence.text))) {
       issues.push({ code: "revisit_in_careful", severity: "block", sentenceIndex: index });
     }
     if (unsupportedNumbers(sentence.text, context.reviewText, context.rating).length > 0) {
@@ -213,7 +216,7 @@ export const REPAIR_HINTS: Record<ReplyLintCode, string> = {
   causal_admission:
     "口コミの出来事を、店舗が原因だと認める書き方をしている(「〜によりご不快な思いをさせてしまい」など)。「〜について、ご不快な思いをされたとのこと」のように、お客様が感じたことへの気持ちとして書き直す",
   incident_admission:
-    "口コミに書かれた出来事(待たせた・説明が不足していた・予約を変更した・スタッフの不手際 など)を、店舗がしたこととして認めている。「お待ちいただいたとのこと」「ご説明が分かりにくかったとのこと」のように、お客様の受け止めとして書き直す(受け止める一言は残す)",
+    "口コミに書かれた出来事を、店舗で確認済みの事実として認めている。『お待たせしたこと』『説明がなかったこと』の断定を残さず、『待ち時間と説明についてのお申し出を拝見しました。お困りになったお気持ちを心苦しく思います』のように、投稿者が伝えた内容への応答に書き直す。口コミの重要な訴えは残す",
   improvement_claim: "改善や再発防止を断定している(改善いたしました・二度と起こりません など)",
   rebuttal: "お客様に反論・否定・言い訳をしている",
   contact_or_promo: "URL・電話番号・メールアドレス・クーポン・キャンペーンなど、連絡先や宣伝を書いている",
@@ -228,6 +231,7 @@ export const REPAIR_HINTS: Record<ReplyLintCode, string> = {
 
 /** 投稿前の確認として画面に出す文言(review の指摘と、慎重モードの注意)。 */
 export const REVIEW_WARNING_MESSAGES = {
+  length_target: "選択した長さの目安から外れています。必要に応じて文章を調整してください。",
   careful_mode:
     "低い評価、またはトラブルにつながる内容を含む口コミのため、慎重な内容にしています。書かれている出来事について事実を確認し、必要に応じて編集してください。",
   unsupported_number: "口コミに書かれていない数字が含まれています。内容が正しいかご確認ください。",

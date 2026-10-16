@@ -15,11 +15,11 @@ vi.mock("@/lib/replyGeneration/mockGenerator", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/replyGeneration/mockGenerator")>();
   return {
     ...original,
-    mockReplyDeps: () => ({
+    mockReplyDeps: (reviewText: string) => ({
       callJson: async (options: CallOpenAIJsonOptions) => {
         sent.push(options);
         return {
-          data: { respond_to: [], reply: "口コミをお寄せいただき、ありがとうございます。いただいたお声を、今後のサロンづくりに生かしてまいります。" },
+          data: { respond_to: [], reply: reviewText.includes("待ち時間") ? "待ち時間が長かったとのお話を拝見しました。ご不便に感じられたことと存じます。" : "口コミをお寄せいただき、ありがとうございます。いただいたお声を、今後のサロンづくりに生かしてまいります。" },
           model: "test-model",
           usage: null,
           latencyMs: 0,

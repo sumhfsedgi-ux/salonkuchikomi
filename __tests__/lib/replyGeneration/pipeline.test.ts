@@ -42,24 +42,25 @@ describe("generateReplyDraft", () => {
     expect(calls[0].task).toBe("reply_generation");
   });
 
-  it("問題のある文は、削っても返信として成り立つなら削る(LLM は呼び直さない)", async () => {
+  it("問題文は削除だけで済ませず、具体的な応答を残して一度修正する", async () => {
     const { callJson, calls } = fakeCall(
       reply("このたびは口コミをありがとうございます。説明を丁寧と感じていただけて嬉しいです。次回は無料でご案内いたします。"),
+      reply("このたびは口コミをありがとうございます。説明を丁寧と感じていただけて嬉しいです。"),
     );
     const result = await generateReplyDraft(
       { reviewText: "説明が丁寧でした", rating: 5, settings: DEFAULT_REPLY_SETTINGS, salon: SALON },
       deps(callJson),
     );
     expect(result.reply).not.toContain("無料");
-    expect(result.metadata.repairAction).toBe("removed");
+    expect(result.metadata.repairAction).toBe("repaired");
     expect(result.metadata.lintCodes).toContain("compensation");
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(2);
   });
 
   it("削ると成り立たないなら1回だけ直させる", async () => {
     const { callJson, calls } = fakeCall(
       reply("全額返金いたします。"),
-      () => ({ reply: "ご不快な思いをおかけし、申し訳ございません。いただいたご意見は真摯に受け止めます。" }),
+      () => ({ reply: "待ち時間が長かったとのこと、申し訳ございません。いただいたご意見は真摯に受け止めます。" }),
     );
     const result = await generateReplyDraft(
       { reviewText: SECRET_REVIEW, rating: 1, settings: DEFAULT_REPLY_SETTINGS, salon: SALON },
@@ -74,10 +75,10 @@ describe("generateReplyDraft", () => {
 
   it("出来事を原因として認めるお詫びは、削らずに先に直させる", async () => {
     const { callJson, calls } = fakeCall(
-      reply("口コミをお寄せいただきありがとうございます。スタッフの態度によりご不快な思いをさせてしまい申し訳ございません。いただいたご意見は今後の参考にさせていただきます。"),
+      reply("口コミをお寄せいただきありがとうございます。スタッフの態度によりご不快な思いをさせてしまい申し訳ございません。いただいたご意見は重く受け止めております。"),
       () => ({
         reply:
-          "口コミをお寄せいただきありがとうございます。スタッフの対応について、ご不快な思いをされたとのこと、申し訳ございません。いただいたご意見は今後の参考にさせていただきます。",
+          "口コミをお寄せいただきありがとうございます。スタッフの対応について、ご不快な思いをされたとのこと、申し訳ございません。いただいたご意見は重く受け止めております。",
       }),
     );
     const result = await generateReplyDraft(
@@ -108,7 +109,7 @@ describe("generateReplyDraft", () => {
   });
 
   it("★1〜2では連絡先の案内を、設定があれば署名を、コードで付け足す", async () => {
-    const { callJson } = fakeCall(reply("ご不快な思いをおかけし、申し訳ございません。ご意見を真摯に受け止めます。"));
+    const { callJson } = fakeCall(reply("待ち時間が長かったとのこと、申し訳ございません。ご意見を真摯に受け止めます。"));
     const settings = { ...DEFAULT_REPLY_SETTINGS, signature: "スタッフ一同", contactNote: "お手数ですが店舗までご連絡ください。" };
     const result = await generateReplyDraft({ reviewText: SECRET_REVIEW, rating: 2, settings, salon: SALON }, deps(callJson));
     expect(result.reply.endsWith("\nお手数ですが店舗までご連絡ください。\nスタッフ一同")).toBe(true);

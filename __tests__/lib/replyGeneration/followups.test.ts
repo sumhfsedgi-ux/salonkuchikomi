@@ -16,7 +16,7 @@ describe("classifyReview: ★だけで決めない", () => {
     [4, "全体的には良かったけど、返金してほしいくらいの仕上がりでした。", "careful", "serious_text"],
     [5, "店内が不衛生でしたが、施術は上手でした。", "careful", "serious_text"],
     [2, "とても良かったです。", "careful", "rating"],
-    [3, "普通でした。", "mixed", "rating"],
+    [3, "普通でした。", "positive", "none"],
   ] as const)("★%s「%s」は %s(%s)", (rating, text, mode, trigger) => {
     const result = classifyReview(text, rating);
     expect(result.mode).toBe(mode);

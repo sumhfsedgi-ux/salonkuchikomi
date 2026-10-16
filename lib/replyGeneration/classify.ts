@@ -10,11 +10,11 @@ import { NEGATION_AFTER_MARKER } from "@/lib/ai/naturalJapanese/phrases";
 export type StarRating = 1 | 2 | 3 | 4 | 5;
 
 export type ReplyMode =
-  /** ★3以上で本文が無い(★だけの口コミ)。短いお礼だけ。 */
+  /** 評価によらず本文が無い。出来事・意見を想定しない。 */
   | "thanks_only"
-  /** ★4〜5で、不満・要望・トラブルが書かれていない。 */
+  /** ★3以上で、明確な不満・要望・トラブルを検出していない(中立を含む)。 */
   | "positive"
-  /** ★3、または★4〜5でも不満・要望が書かれている。 */
+  /** ★3以上で、不満・要望が書かれている。 */
   | "mixed"
   /** ★1〜2、または★にかかわらずトラブルにつながる内容が書かれている。慎重モード。 */
   | "careful";
@@ -53,6 +53,8 @@ const COMPLAINT_MARKERS = [
   "聞いていな",
   "聞いてな",
   "冷たく感じ",
+  "イメージと少し違",
+  "イメージと違",
 ];
 
 // ★の数にかかわらず慎重に返信すべき内容(体・お金・衛生・安全・法的な話)。
@@ -126,21 +128,21 @@ export function classifyReview(reviewText: string, rating: StarRating): ReviewCl
   const complaintMarkers = hasText
     ? [...new Set([...findNegativeMarkers(text), ...findMarkers(text, COMPLAINT_MARKERS)])]
     : [];
+  // 英語の補助語彙。多言語全般や複雑な否定を網羅する分類ではない。
+  if (/\b(?:refund|burned|burnt|rash|unhygienic|injur\w*|medical bills?|rude)\b/i.test(text)) seriousMarkers.push("english_serious");
+  if (/\b(?:waited|disappointed|expensive|dirty|unfriendly|overcharged)\b|(?:hard|difficult) to book|not (?:good|happy|satisfied)/i.test(text)) complaintMarkers.push("english_complaint");
 
   let mode: ReplyMode;
   let trigger: ReplyModeTrigger;
-  if (rating <= 2) {
+  if (!hasText) {
+    mode = "thanks_only";
+    trigger = "no_text";
+  } else if (rating <= 2) {
     mode = "careful";
     trigger = "rating";
   } else if (seriousMarkers.length > 0) {
     mode = "careful";
     trigger = "serious_text";
-  } else if (!hasText) {
-    mode = "thanks_only";
-    trigger = "no_text";
-  } else if (rating === 3) {
-    mode = "mixed";
-    trigger = "rating";
   } else if (complaintMarkers.length > 0) {
     mode = "mixed";
     trigger = "complaint_text";
