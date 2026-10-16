@@ -84,7 +84,7 @@
 
 ### このブランチの Preview
 
-`vercel.json` の `git.deploymentEnabled` で `claude/inspiring-keller-ffvsw5` の Preview のデプロイを止めている(Preview は本番 Supabase に接続するため)。このブランチは最初に古い master の内容で push 済みだったため、その時点の Preview が Vercel に作られていないかを確認すること。本番 DB につながる Preview は検証に使わない。
+`vercel.json` の `git.deploymentEnabled` で `claude/inspiring-keller-ffvsw5` の Preview のデプロイを止めている(Preview は本番 Supabase に接続するため)。このブランチを最初に push したとき(2026-10-16)には、この設定のコミットがすでに含まれていた。念のため、Vercel にこのブランチの Preview が作られていないことを確認すること。本番 DB につながる Preview は検証に使わない。master にマージするときは、この行を残しても害はない(このブランチ名だけに効く)。
 
 ## 5. 切り戻し
 
