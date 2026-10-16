@@ -6,7 +6,8 @@
     "deploymentEnabled": {
       "feature/salon-onboarding": false,
       "feature/reviews-inbox": false,
-      "feature/privacy-reviews-inbox": false
+      "feature/privacy-reviews-inbox": false,
+      "claude/inspiring-keller-ffvsw5": false
     }
   }
 }
