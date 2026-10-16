@@ -30,11 +30,8 @@ import type { BadgeVariant } from "@/components/ui/Badge";
 import { getSalonOnboarding } from "@/lib/ops/onboardingQueries";
 import { REGISTRATION_SOURCE_LABELS } from "@/lib/onboarding/serviceStatus";
 import { authEmailErrorLabel } from "@/lib/onboarding/authEmailErrors";
-import ServiceStatusEditor from "@/components/ops/ServiceStatusEditor";
 import ServiceStatusBadge from "@/components/ops/ServiceStatusBadge";
 import InvitationPanel from "@/components/ops/InvitationPanel";
-import type { FeatureKey } from "@/lib/features/registry";
-import type { OverrideMode } from "@/lib/features/entitlements";
 
 // サロン詳細(運営管理)。基本情報・連携と稼働状況は閲覧のみ(秘密の値は読まない・出さない)。
 // 契約プラン・使える機能(利用許可)は EntitlementEditor で、確認のうえ保存する。実際に動いているかは「連携と稼働状況」で出し、
@@ -145,9 +142,6 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
     serviceStatus: onboarding.serviceStatus,
     registrationSource: onboarding.registrationSource,
   });
-  const overrides = Object.fromEntries(
-    Object.entries(detail.entitlements).map(([k, e]) => [k, e!.override]),
-  ) as Partial<Record<FeatureKey, OverrideMode>>;
   // 本登録の直後の結果(サロンは登録済み。案内のメールの送信だけ失敗した場合も、ここで分けて出す)。
   const registeredNotice =
     registeredRaw === "accepted"
@@ -221,7 +215,6 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
           <div className="flex flex-wrap gap-2">
             {[
               ["#basic", "基本情報"],
-              ["#service", "利用区分"],
               ["#invitation", "招待と案内"],
               ["#entitlements", "契約プラン・使える機能"],
               ["#integrations", "連携と稼働状況"],
@@ -272,25 +265,6 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
             <Row label="店舗情報の最終更新">{formatJst(detail.updatedAt)}</Row>
           </dl>
         </Card>
-      </Section>
-
-      <Section
-        id="service"
-        title="利用区分"
-        description="店舗の今の利用の状態です。通常のお客様は、プラン選択・お支払いの手続き(準備中)が済むと利用を始めます。運営が変更できるのは、テスト用の指定と、利用の停止(利用停止中に変更)です。既存の店舗は、無料提供に戻すこともできます。"
-      >
-        <ServiceStatusEditor
-          salonId={detail.id}
-          version={detail.version}
-          status={onboarding.serviceStatus}
-          registrationSource={onboarding.registrationSource}
-          planPlaceholder={detail.planPlaceholder}
-          plan={detail.plan}
-          catalog={detail.catalog}
-          rules={detail.rules}
-          overrides={overrides}
-          reservationActive={detail.reservation.state === "active"}
-        />
       </Section>
 
       <Section
