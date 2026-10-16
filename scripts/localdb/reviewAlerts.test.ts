@@ -11,6 +11,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Sql } from "postgres";
 import { applyFile, createDatabase, dropDatabase, migrationFiles } from "./db";
 import { createSalon, type SalonFixture } from "./fixtures";
+import { createLocalRpcClient } from "./rpcClient";
+import { createRpcReviewAlertStore } from "@/lib/reviews/alerts/store";
+import { deliverReviewAlerts, evaluateReviewAlerts } from "@/lib/reviews/alerts/deliver";
+import { createDeadline } from "@/lib/notifications/jobs/runBudget";
+import type { LineSendResult } from "@/lib/notifications/line/LineClient";
 
 const DB = "salonpack_localdb_review_alerts";
 let sql: Sql;
@@ -568,5 +573,77 @@ describe("テスト通知の連打防止", () => {
     const slot = async () => (await sql<{ ok: boolean }[]>`select public.review_alert_test_slot(${salon.salonId}) as ok`)[0].ok;
     expect(await slot()).toBe(true);
     expect(await slot()).toBe(false);
+  });
+});
+
+describe("評価と配信の流れ(アプリの部品と本物の SQL。LINE はモック)", () => {
+  async function drain() {
+    // ほかのテストの店舗の配信は送らないよう、通知を止めておく
+    await sql`update public.review_alert_settings set enabled = false`;
+    await sql`update public.review_alert_deliveries set status = 'skipped', skip_reason = 'test_reset'
+               where status in ('pending', 'unknown', 'retry_wait', 'claimed')`;
+    await sql`update public.review_alert_events set decision = 'skipped' where decision = 'pending'`;
+  }
+
+  it("新しい口コミ1件を、ON の通知先ごとに1回だけ送る。次の回は何も送らない", async () => {
+    await drain();
+    const r = await readySalon(sql, { recipients: 2 });
+    await ingest(sql, r.salon.salonId, r.locationId, [review(`flow-${randomUUID().slice(0, 4)}`)]);
+    const store = createRpcReviewAlertStore(createLocalRpcClient(sql));
+    const ev = await evaluateReviewAlerts({ store, baseUrl: BASE, consentVersion: CONSENT, deadline: createDeadline(45_000) });
+    expect(ev).toMatchObject({ evaluated: 1, notify: 1 });
+    const sent: { dest: string; key: string; url: string }[] = [];
+    const sender = async (dest: string, message: { url: string }, key: string): Promise<LineSendResult> => {
+      sent.push({ dest, key, url: message.url });
+      return { outcome: "sent", requestId: `req-${sent.length}` };
+    };
+    const s1 = await deliverReviewAlerts({ store, send: sender, consentVersion: CONSENT, deadline: createDeadline(45_000) });
+    expect(s1.sent).toBe(2);
+    expect(new Set(sent.map((x) => x.dest)).size).toBe(2);
+    const s2 = await deliverReviewAlerts({ store, send: sender, consentVersion: CONSENT, deadline: createDeadline(45_000) });
+    expect(s2.sent).toBe(0);
+    expect(sent).toHaveLength(2);
+  });
+
+  it("結果不明は同じ retry key・同じ内容で送り直し、LINE が受付済み(409)と答えたら送信済みにする", async () => {
+    await drain();
+    const r = await readySalon(sql);
+    await ingest(sql, r.salon.salonId, r.locationId, [review(`retry-${randomUUID().slice(0, 4)}`)]);
+    const store = createRpcReviewAlertStore(createLocalRpcClient(sql));
+    await evaluateReviewAlerts({ store, baseUrl: BASE, consentVersion: CONSENT, deadline: createDeadline(45_000) });
+    const attempts: { key: string; message: unknown }[] = [];
+    const answers: LineSendResult[] = [{ outcome: "unknown", reason: "timeout" }, { outcome: "sent", requestId: "accepted-1" }];
+    const sender = async (_dest: string, message: unknown, key: string) => {
+      attempts.push({ key, message });
+      return answers.shift()!;
+    };
+    expect((await deliverReviewAlerts({ store, send: sender, consentVersion: CONSENT, deadline: createDeadline(45_000) })).unknown).toBe(1);
+    await sql`update public.review_alert_deliveries set next_attempt_at = now() where salon_id = ${r.salon.salonId}`;
+    expect((await deliverReviewAlerts({ store, send: sender, consentVersion: CONSENT, deadline: createDeadline(45_000) })).sent).toBe(1);
+    expect(attempts).toHaveLength(2);
+    expect(attempts[1]).toEqual(attempts[0]);
+    const [d] = await deliveriesOf(sql, r.salon.salonId);
+    expect(d.status).toBe("sent");
+  });
+
+  it("停止したあとは、結果不明の配信も送り直さない(取り消せない分は記録のまま残る)", async () => {
+    await drain();
+    const r = await readySalon(sql);
+    await ingest(sql, r.salon.salonId, r.locationId, [review(`halt-${randomUUID().slice(0, 4)}`)]);
+    const store = createRpcReviewAlertStore(createLocalRpcClient(sql));
+    await evaluateReviewAlerts({ store, baseUrl: BASE, consentVersion: CONSENT, deadline: createDeadline(45_000) });
+    let calls = 0;
+    const sender = async (): Promise<LineSendResult> => {
+      calls++;
+      return { outcome: "unknown", reason: "timeout" };
+    };
+    await deliverReviewAlerts({ store, send: sender, consentVersion: CONSENT, deadline: createDeadline(45_000) });
+    expect((await stop(sql, r.salon)).in_flight).toBe(1);
+    await sql`update public.review_alert_deliveries set next_attempt_at = now() where salon_id = ${r.salon.salonId}`;
+    await deliverReviewAlerts({ store, send: sender, consentVersion: CONSENT, deadline: createDeadline(45_000) });
+    expect(calls).toBe(1);
+    const [d] = await deliveriesOf(sql, r.salon.salonId);
+    expect(d.status).toBe("unknown");
+    expect(d.retry_stopped_at).not.toBeNull();
   });
 });

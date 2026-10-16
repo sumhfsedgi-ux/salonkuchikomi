@@ -95,6 +95,19 @@ export interface LineSendOptions {
  * HTTP を呼ぶ前に LineSendBlockedError を投げる(実送信用のトークンが設定されていても送らない)。
  */
 export async function pushText(destinationId: string, text: string, retryKey: string, options?: LineSendOptions): Promise<LineSendResult> {
+  return pushMessages(destinationId, [{ type: "text", text }], retryKey, options);
+}
+
+/**
+ * pushText と同じ決まり(送信の判定・retry key・結果の分類・待ち時間の上限)で、メッセージ(Flex など)を送る。
+ * 口コミの LINE 通知(確認ボタン付き)で使う。再試行では、同じ retry key で同じ内容を送る。
+ */
+export async function pushMessages(
+  destinationId: string,
+  messages: messagingApi.Message[],
+  retryKey: string,
+  options?: LineSendOptions,
+): Promise<LineSendResult> {
   if (!isRealLineSendAllowed(resolveLineSendPolicy(), destinationId)) throw new LineSendBlockedError();
   let sendClient: messagingApi.MessagingApiClient;
   try {
@@ -112,14 +125,23 @@ export async function pushText(destinationId: string, text: string, retryKey: st
     }, Math.min(SEND_TIMEOUT_MS, options?.timeoutMs ?? SEND_TIMEOUT_MS));
   });
   try {
-    const response = await Promise.race([
-      sendClient.pushMessageWithHttpInfo({ to: destinationId, messages: [{ type: "text", text }] }, retryKey),
-      timeout,
-    ]);
+    const response = await Promise.race([sendClient.pushMessageWithHttpInfo({ to: destinationId, messages }, retryKey), timeout]);
     return { outcome: "sent", requestId: headerValue(response.httpResponse.headers, "x-line-request-id") };
   } catch (error) {
     return classifyLineError(error);
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+/**
+ * 今月の送信の上限と使った数(Messaging API の quota / quota/consumption)。上限が無いプランは limit が null。
+ * 実際の送信が許されていない環境では呼ばない(LineSendBlockedError)。
+ */
+export async function getMonthlyMessageQuota(): Promise<{ limit: number | null; used: number }> {
+  const policy = resolveLineSendPolicy();
+  if (policy.mode !== "live" && policy.mode !== "verify") throw new LineSendBlockedError();
+  const sendClient = getClient();
+  const [quota, consumption] = await Promise.all([sendClient.getMessageQuota(), sendClient.getMessageQuotaConsumption()]);
+  return { limit: quota.type === "limited" && typeof quota.value === "number" ? quota.value : null, used: consumption.totalUsage ?? 0 };
 }
