@@ -134,8 +134,8 @@ const REPLY_LEASE_SECONDS = 60;
 const REPLY_WRITE_WINDOW_SECONDS = Math.ceil(GBP_API_TIMEOUT_MS / 1000) + 20;
 /** Google の返信の編集の上限(1つのビジネスにつき1分に10回)。 */
 const REPLY_EDITS_PER_MINUTE = 10;
-/** 連携の前の同意の版。同意の文言(components/reviews/inbox/connectCopy.ts)を変えたら上げる。v2:説明を4つの項目に整理(2026-10-15)。 */
-export const GBP_CONSENT_VERSION = "gbp-connect-2026-10-15-v2";
+/** 連携の前の同意の版。同意の文言(components/reviews/inbox/connectCopy.ts)を変えたら上げる。v2:説明を4つの項目に整理(2026-10-15)。v3:画面を開いていないときの確認・Google の通知・LINE 通知の記録を追加(2026-10-16)。 */
+export const GBP_CONSENT_VERSION = "gbp-connect-2026-10-16-v3";
 
 const NOT_CONNECTED = "Google口コミを連携していません。";
 const FETCH_FAILED = "最新の口コミを取得できませんでした。少し時間をおいて、もう一度お試しください。";
