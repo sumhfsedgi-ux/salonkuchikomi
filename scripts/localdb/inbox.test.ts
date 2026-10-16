@@ -76,7 +76,7 @@ async function world(opts: { bindGmail?: boolean } = {}): Promise<World> {
             ${["openid", "email", GBP_SCOPE, GMAIL_SCOPE]})`;
   await sql`select * from public.google_bind_features(${salon.salonId}, ${accountId}, ${opts.bindGmail ? ["gbp", "gmail"] : ["gbp"]}, null, ${salon.userId}, ${[GBP_SCOPE, GMAIL_SCOPE]})`;
   await sql`update public.feature_catalog set lifecycle = 'available' where feature_key = 'google_reviews'`;
-  await sql`insert into public.salon_feature_overrides (salon_id, feature_key, mode) values (${salon.salonId}, 'google_reviews', 'allow')`;
+  await sql`insert into public.salon_feature_overrides (salon_id, feature_key, mode) values (${salon.salonId}, 'reviews', 'allow')`;
   const sim = createSimulatedGbp({ users: simulatedGbpUsers() });
   const canWrite = { value: true };
   const make = (extra: Partial<GbpInboxDeps>) =>
@@ -352,7 +352,7 @@ describe("連携・店舗の変更や利用不可への変更と、処理が重�
     w.sim.delayNext("review", 400);
     const pending = w.inbox.submitReply(w.ctx, { reviewId: id, opId: randomUUID(), action: "upsert", text: "返信", expectedReply: null });
     await new Promise((r) => setTimeout(r, 100));
-    await sql`update public.salon_feature_overrides set mode = 'deny' where salon_id = ${w.salon.salonId} and feature_key = 'google_reviews'`;
+    await sql`update public.salon_feature_overrides set mode = 'deny' where salon_id = ${w.salon.salonId} and feature_key = 'reviews'`;
     const sent = await pending;
     expect(sent).toMatchObject({ kind: "unavailable" });
     expect(w.sim.replyOf(R1)).toBeNull();

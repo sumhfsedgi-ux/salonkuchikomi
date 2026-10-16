@@ -161,7 +161,8 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
   const origin = requestOrigin(headerList);
   const customerUrl = origin ? customerPageUrl(origin, detail.slug) : null;
 
-  const features: EditorFeature[] = FEATURE_REGISTRY.filter((d) => d.entitlement === "catalog" && detail.entitlements[d.key]).map((d) => {
+  // Google口コミは口コミの許可に連動する(0032)ため、スイッチは出さない
+  const features: EditorFeature[] = FEATURE_REGISTRY.filter((d) => d.entitlement === "catalog" && d.key !== "google_reviews" && detail.entitlements[d.key]).map((d) => {
     const e = detail.entitlements[d.key]!;
     return {
       key: d.key,

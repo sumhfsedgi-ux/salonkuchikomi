@@ -92,7 +92,7 @@ async function summary(db: Sql, salonId: string) {
 
 async function allowGoogleReviews(db: Sql, salonId: string) {
   await db`update public.feature_catalog set lifecycle = 'available' where feature_key = 'google_reviews'`;
-  await db`insert into public.salon_feature_overrides (salon_id, feature_key, mode) values (${salonId}, 'google_reviews', 'allow')
+  await db`insert into public.salon_feature_overrides (salon_id, feature_key, mode) values (${salonId}, 'reviews', 'allow')
            on conflict (salon_id, feature_key) do update set mode = 'allow'`;
 }
 
@@ -561,12 +561,12 @@ describe("返信の操作(§2・§3-A)", () => {
     await allowGoogleReviews(sql, c.salon.salonId);
     const id = c.rows[0].review_index_id;
     const r = await begin(sql, c.salon, id);
-    await sql`update public.salon_feature_overrides set mode = 'deny' where salon_id = ${c.salon.salonId} and feature_key = 'google_reviews'`;
+    await sql`update public.salon_feature_overrides set mode = 'deny' where salon_id = ${c.salon.salonId} and feature_key = 'reviews'`;
     expect(await startSend(sql, c.salon.salonId, r.operation_id, r.lease_token)).toBe("not_entitled");
     const [op] = await sql`select status, error_code, send_started_at from public.gbp_reply_operations where id = ${r.operation_id}`;
     expect(op).toEqual({ status: "failed", error_code: "not_entitled", send_started_at: null });
 
-    await sql`update public.salon_feature_overrides set mode = 'allow' where salon_id = ${c.salon.salonId} and feature_key = 'google_reviews'`;
+    await sql`update public.salon_feature_overrides set mode = 'allow' where salon_id = ${c.salon.salonId} and feature_key = 'reviews'`;
     const r2 = await begin(sql, c.salon, id);
     const [{ location_name }] = await sql`select location_name from public.gbp_locations where id = ${c.locationId}`;
     await selectLocation(sql, c.salon, c.accountId, location_name);
@@ -621,7 +621,7 @@ describe("同時の接続(実 DB のロック)", () => {
     const c1 = await sql.reserve();
     try {
       await c1`begin`;
-      await c1`update public.salon_feature_overrides set mode = 'deny' where salon_id = ${c.salon.salonId} and feature_key = 'google_reviews'`;
+      await c1`update public.salon_feature_overrides set mode = 'deny' where salon_id = ${c.salon.salonId} and feature_key = 'reviews'`;
       const send = startSend(sql, c.salon.salonId, r.operation_id, r.lease_token);
       await new Promise((res) => setTimeout(res, 300));
       await c1`commit`;

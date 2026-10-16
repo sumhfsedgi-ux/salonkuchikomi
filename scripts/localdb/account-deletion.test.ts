@@ -39,7 +39,7 @@ describe("アカウントの削除と届いた口コミのデータ", () => {
                                         '架空の店', null, ${salon.userId}) as id`;
     await sql`select public.gbp_record_consent(${salon.salonId}, ${salon.userId}, 'v-test')`;
     await sql`update public.feature_catalog set lifecycle = 'available' where feature_key = 'google_reviews'`;
-    await sql`insert into public.salon_feature_overrides (salon_id, feature_key, mode) values (${salon.salonId}, 'google_reviews', 'allow')`;
+    await sql`insert into public.salon_feature_overrides (salon_id, feature_key, mode) values (${salon.salonId}, 'reviews', 'allow')`;
     const now = new Date().toISOString();
     const [{ review_index_id }] = await sql`
       select * from public.gbp_ingest_reviews(${salon.salonId}, ${locationId}, null, 'manual', ${sql.json([
