@@ -15,13 +15,13 @@
 |---|---|
 | リポジトリ | `sumhfsedgi-ux/salonkuchikomi`(Vercel は1つのプロジェクトで、master へのマージで本番に自動デプロイ) |
 | ブランチ | `feature/reviews-inbox`(push 済み。Preview のデプロイは `vercel.json` で止めてある:コミット 44949bf) |
-| PR | Draft PR(下の「PR の URL」)。base は `feature/salon-onboarding`(PR #9)。PR #9 が master に入ったら base を master に変える |
+| PR | Draft PR #10。base は `feature/salon-onboarding`(PR #9)。PR #9 が master に入ったら base を master に変える |
 | 分岐元 | `6f52a64`(PR #9 の先頭。2026-10-16 時点で `origin/feature/salon-onboarding` と同じ) |
 | master | `78df7e5`(2026-10-16 に確認。このブランチの共通の祖先と同じ。master はその後動いていない) |
 | コードの最後のコミット | `d1bbadf`(画面の文言・操作の整理と、返信欄を1つにする変更) |
 | ブランチの先頭 | この文書を含むコミット(文書だけの変更) |
 
-PR の URL:https://github.com/sumhfsedgi-ux/salonkuchikomi/pulls?q=head%3Afeature%2Freviews-inbox(作成後に番号つきの URL に置き換える)
+PR の URL:https://github.com/sumhfsedgi-ux/salonkuchikomi/pull/10(Draft。2026-10-16 作成)
 
 PR #9(https://github.com/sumhfsedgi-ux/salonkuchikomi/pull/9):
 - Draft で、まだ master に入っていない。先頭は 6f52a64 で、master との衝突は無い(2026-10-16 時点)。
