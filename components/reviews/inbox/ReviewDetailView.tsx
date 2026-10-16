@@ -172,6 +172,10 @@ export default function ReviewDetailView({ id, result, actions, target }: Props)
         <Alert variant="warning">
           この口コミはGoogle上で削除されました。{result.draft ? "書いていた下書きは下に表示しています(期限まで残ります)。" : ""}
         </Alert>
+        {/* LINE の通知から開いた場合など、2列の画面(戻るリンクが無い)でも一覧へ戻れるようにする */}
+        <Link href={withQuery(basePath, query)} className="self-start text-sm font-medium text-sage-dark underline underline-offset-2">
+          一覧に戻る
+        </Link>
         {result.draft && (
           <Card className="flex flex-col gap-2">
             <p className="text-sm font-semibold text-ink">書いていた下書き</p>

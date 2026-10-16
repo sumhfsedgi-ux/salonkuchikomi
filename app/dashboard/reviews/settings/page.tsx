@@ -13,10 +13,18 @@ import Badge from "@/components/ui/Badge";
 import { buttonClassName } from "@/components/ui/Button";
 import ReviewsSubNav from "@/components/reviews/ReviewsSubNav";
 import ReplySettingsForm from "@/components/reviews/settings/ReplySettingsForm";
+import ReviewAlertsPanel from "@/components/reviews/settings/ReviewAlertsPanel";
 import { changeLocationAction, saveReplySettingsAction } from "@/app/dashboard/reviews/settings/actions";
+import { loadReviewAlertPanel, type ReviewAlertPanelData } from "@/lib/reviews/alerts/ownerData";
+import { reviewAlertTestDestinations } from "@/lib/reviews/alerts/ownerOps";
+import { autoCheckSummary, type ReviewAlertState } from "@/lib/reviews/alerts/status";
+import { isAutoSyncEnabled, isReviewAlertsEnabled } from "@/lib/reviews/alerts/config";
+import { isRealLineSendAllowed, resolveLineSendPolicy } from "@/lib/notifications/line/sendPolicy";
+import { getLineLoginConfig } from "@/lib/notifications/line/login/config";
+import { logSafeError } from "@/lib/google/safeError";
 
-// 口コミの設定タブ(計画 第2版 §2)。Google 連携の状態と店舗の変更、AI返信の設定。
-// LINE 通知は第2段階(ここにはまだ出さない)。届いた口コミを使えない店舗は 404(lib/googleReviews/pageContext.ts)。
+// 口コミの設定タブ(計画 第2版 §2)。Google 連携の状態と店舗の変更、AI返信の設定、
+// 新しい口コミの自動確認と LINE 通知(第2段階)。届いた口コミを使えない店舗は 404(lib/googleReviews/pageContext.ts)。
 export const dynamic = "force-dynamic";
 
 const LOCATION_MESSAGES: Record<string, string> = {
@@ -41,6 +49,19 @@ const STATUS: Record<GbpConnectionState["kind"], { label: string; tone: "success
   not_connected: { label: "未連携", tone: "neutral" },
 };
 
+async function loadAlertPanelOrNull(salonId: string): Promise<{ data: ReviewAlertPanelData; realTestRecipients: number } | null> {
+  try {
+    const [data, destinations] = await Promise.all([loadReviewAlertPanel(salonId), reviewAlertTestDestinations(salonId)]);
+    const policy = resolveLineSendPolicy();
+    return { data, realTestRecipients: destinations.filter((d) => isRealLineSendAllowed(policy, d.destinationId)).length };
+  } catch (error) {
+    logSafeError("reviews/settings alerts", error);
+    return null;
+  }
+}
+
+const UNUSABLE_GOOGLE: ReadonlySet<GbpConnectionState["kind"]> = new Set(["not_connected", "needs_reconnect", "scope_missing"]);
+
 export default async function DashboardReviewsSettingsPage({ searchParams }: PageProps<"/dashboard/reviews/settings">) {
   const { access, connection } = await getInboxPageContext();
   const params = await searchParams;
@@ -48,10 +69,31 @@ export default async function DashboardReviewsSettingsPage({ searchParams }: Pag
   const { settings, storageAvailable } = await loadSettingsOrDefault(access.salon.id);
   const status = STATUS[connection.kind];
   const email = connection.kind === "not_connected" ? null : connection.googleEmail;
+  const alerts = await loadAlertPanelOrNull(access.salon.id);
+  const alertState: ReviewAlertState | null = alerts && {
+    alertsAvailable: isReviewAlertsEnabled(),
+    enabled: alerts.data.settings.enabled,
+    stopReason: alerts.data.settings.stopReason,
+    notifyFrom: alerts.data.settings.notifyFrom,
+    consentOk: alerts.data.consentOk,
+    googleUsable: !UNUSABLE_GOOGLE.has(connection.kind) && !alerts.data.autoSync.authHold,
+    hasLocation: alerts.data.hasLocation,
+    activeRecipients: alerts.data.activeRecipients,
+  };
+  const autoCheck =
+    alerts &&
+    autoCheckSummary({
+      available: isAutoSyncEnabled(),
+      connected: connection.kind === "connected" && alerts.data.consentOk && alerts.data.hasLocation,
+      authHold: alerts.data.autoSync.authHold,
+      lastSuccessAt: alerts.data.autoSync.lastSuccessAt,
+      consecutiveFailures: alerts.data.autoSync.consecutiveFailures,
+      pushState: alerts.data.autoSync.pushState,
+    });
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="口コミ" description="Google連携と、AI返信の案の作り方を設定できます。" />
+      <PageHeader title="口コミ" description="Google連携・AI返信の案の作り方・新しい口コミのLINE通知を設定できます。" />
       <ReviewsSubNav showInbox />
 
       <section className="flex flex-col gap-3" aria-labelledby="google-connection-heading">
@@ -129,6 +171,51 @@ export default async function DashboardReviewsSettingsPage({ searchParams }: Pag
           </p>
         </div>
         <ReplySettingsForm initialSettings={settings} storageAvailable={storageAvailable} save={saveReplySettingsAction} />
+      </section>
+
+      <section className="flex flex-col gap-3" aria-labelledby="auto-check-heading">
+        <h2 id="auto-check-heading" className="text-sm font-semibold text-ink">
+          新しい口コミの自動確認
+        </h2>
+        {autoCheck ? (
+          <Card className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-medium text-ink">自動確認</p>
+              <Badge variant={autoCheck.tone} dot>
+                {autoCheck.label}
+              </Badge>
+            </div>
+            <p className="text-sm text-ink-muted">{autoCheck.detail}</p>
+            {alerts?.data.autoSync.lastSuccessAt && (
+              <p className="text-xs text-ink-muted">最終確認 {formatCheckedAt(alerts.data.autoSync.lastSuccessAt)}</p>
+            )}
+            {alerts?.data.autoSync.authHold && (
+              <Link href="/dashboard/settings/google" className={buttonClassName({ variant: "secondary", size: "sm", className: "w-fit" })}>
+                Google連携の管理
+              </Link>
+            )}
+          </Card>
+        ) : (
+          <Alert variant="warning">自動確認の状態を読み込めませんでした。画面を読み込み直してください。</Alert>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-3" aria-labelledby="line-alerts-heading">
+        <h2 id="line-alerts-heading" className="text-sm font-semibold text-ink">
+          LINE通知
+        </h2>
+        {alerts && alertState ? (
+          <ReviewAlertsPanel
+            salonName={access.salon.name}
+            data={alerts.data}
+            state={alertState}
+            invitesAvailable={getLineLoginConfig() !== null}
+            sendMode={resolveLineSendPolicy().mode}
+            realTestRecipients={alerts.realTestRecipients}
+          />
+        ) : (
+          <Alert variant="warning">LINE通知の状態を読み込めませんでした。画面を読み込み直してください。</Alert>
+        )}
       </section>
     </div>
   );

@@ -221,7 +221,7 @@ describe("0033 の適用", () => {
              has_function_privilege('authenticated', p.oid, 'execute') as authenticated,
              has_function_privilege('service_role', p.oid, 'execute') as service
         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-       where n.nspname = 'public' and (p.proname like 'review_alert_%' or p.proname like 'gbp_auto_%')
+       where n.nspname = 'public' and (p.proname like 'review_alert_%' or p.proname like 'gbp_auto_%' or p.proname = 'line_flow_topics')
          and p.proname not like 'review_alert_on_%'`;
     expect(rows.length).toBeGreaterThan(10);
     for (const r of rows) expect({ name: r.name, anon: r.anon, authenticated: r.authenticated, service: r.service })
@@ -645,5 +645,33 @@ describe("評価と配信の流れ(アプリの部品と本物の SQL。LINE は
     const [d] = await deliveriesOf(sql, r.salon.salonId);
     expect(d.status).toBe("unknown");
     expect(d.retry_stopped_at).not.toBeNull();
+  });
+});
+
+describe("招待ページの文言の出し分け(line_flow_topics)", () => {
+  async function flow(salonId: string, binding: string) {
+    const [invite] = await sql<{ id: string }[]>`
+      insert into public.line_recipient_invites (salon_id, token_hash, display_name, expires_at)
+      values (${salonId}, ${randomUUID().replace(/-/g, "").padEnd(64, "0")}, '架空のスタッフ', now() + interval '1 day') returning id`;
+    const [f] = await sql<{ id: string }[]>`
+      insert into public.line_invite_flows (invite_id, browser_binding_hash, expires_at)
+      values (${invite.id}, ${binding}, now() + interval '1 day') returning id`;
+    return f.id;
+  }
+  const binding = "b".repeat(64);
+
+  it("このブラウザの進行のときだけ、その店舗が予約通知・Google口コミを使えるかを返す", async () => {
+    const reviewsOnly = await createSalon(sql, { plan: "reviews" });
+    const id = await flow(reviewsOnly.salonId, binding);
+    await sql`update public.feature_catalog set lifecycle = 'coming_soon' where feature_key = 'google_reviews'`;
+    expect(await sql`select * from public.line_flow_topics(${id}, ${binding})`).toEqual([{ reservations: false, reviews: false }]);
+    await allowGoogleReviews(sql, reviewsOnly.salonId);
+    expect(await sql`select * from public.line_flow_topics(${id}, ${binding})`).toEqual([{ reservations: false, reviews: true }]);
+    expect(await sql`select * from public.line_flow_topics(${id}, ${"c".repeat(64)})`).toEqual([]);
+
+    const pack = await createSalon(sql, { plan: "salonpack" });
+    const packFlow = await flow(pack.salonId, binding);
+    const [row] = await sql`select * from public.line_flow_topics(${packFlow}, ${binding})`;
+    expect(row.reservations).toBe(true);
   });
 });

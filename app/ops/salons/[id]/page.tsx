@@ -32,6 +32,7 @@ import { REGISTRATION_SOURCE_LABELS } from "@/lib/onboarding/serviceStatus";
 import { authEmailErrorLabel } from "@/lib/onboarding/authEmailErrors";
 import ServiceStatusBadge from "@/components/ops/ServiceStatusBadge";
 import InvitationPanel from "@/components/ops/InvitationPanel";
+import ReviewAlertsOpsCard from "@/components/ops/ReviewAlertsOpsCard";
 
 // サロン詳細(運営管理)。基本情報・連携と稼働状況は閲覧のみ(秘密の値は読まない・出さない)。
 // 契約プラン・使える機能(利用許可)は EntitlementEditor で、確認のうえ保存する。実際に動いているかは「連携と稼働状況」で出し、
@@ -379,6 +380,8 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
             )}
           </dl>
         </Card>
+
+        <ReviewAlertsOpsCard salonId={detail.id} />
 
         {detail.holds.map((h) => {
           const def = getFeatureDefinition(h.featureKey);

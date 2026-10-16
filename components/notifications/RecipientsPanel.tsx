@@ -36,7 +36,7 @@ function formatJst(iso: string): string {
   return new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 }
 
-function IssuedInviteCard({ invite, onClose }: { invite: IssuedInvite; onClose: () => void }) {
+export function IssuedInviteCard({ invite, onClose }: { invite: IssuedInvite; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-sage/30 bg-sage-soft/40 p-4" data-testid="issued-invite">
@@ -106,7 +106,7 @@ function RecipientRow({ recipient, supportContact }: { recipient: Recipient; sup
   }
 
   async function remove() {
-    if (!window.confirm(`「${label}」を通知先から解除します。解除すると、このLINEには予約通知が届かなくなります。よろしいですか?`)) return;
+    if (!window.confirm(`「${label}」を通知先から解除します。解除すると、このLINEには予約通知と口コミ通知の両方が届かなくなります。よろしいですか?`)) return;
     setBusy(true);
     setError(null);
     const result = await removeRecipientAction(recipient.id);
@@ -188,6 +188,9 @@ export default function RecipientsPanel({ recipients, invites, invitesAvailable,
       <div className="flex flex-col gap-1">
         <h2 className="text-sm font-semibold text-ink">LINEの通知先</h2>
         <p className="text-xs text-ink-muted">通知先が1人増えるごとに、予約1件あたりのLINEの送信が1件増えます。</p>
+        <p className="text-xs text-ink-muted">
+          通知先は、口コミのLINE通知と共通です。解除すると、予約通知と口コミ通知の両方が届かなくなります。口コミのために追加した通知先にも、予約通知が届きます(不要なら新規予約・キャンセルをOFFにしてください)。
+        </p>
       </div>
 
       {recipients.length === 0 ? (

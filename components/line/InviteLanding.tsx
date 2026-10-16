@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Alert from "@/components/ui/Alert";
 import { InviteSummary, StartLineLoginForm } from "@/components/line/InviteSummary";
 import { continuePath, INVALID_INVITE_MESSAGES } from "@/lib/notifications/line/login/messages";
+import type { InviteTopics } from "@/lib/notifications/line/login/topics";
 
 // 招待のリンク(/line/invite#<招待の値>)を開いたスタッフの画面。
 // 招待の値は URL のフラグメントから読み取り、POST の本文で一度だけサーバーへ送り、すぐにアドレスバーから消す
@@ -13,7 +14,7 @@ import { continuePath, INVALID_INVITE_MESSAGES } from "@/lib/notifications/line/
 // アドレスバーは /line/invite?f=<進行の id> にするので、再読み込みしても同じ招待の結果ページへ移る。
 
 type OpenResult =
-  | { status: "valid"; flowId: string; salonName: string; displayName: string }
+  | { status: "valid"; flowId: string; salonName: string; displayName: string; topics?: InviteTopics }
   | { status: "expired" | "used" | "revoked" | "not_found" | "unavailable" | "error" };
 
 export default function InviteLanding() {
@@ -55,7 +56,7 @@ export default function InviteLanding() {
 
   return (
     <div className="flex flex-col gap-4">
-      <InviteSummary salonName={result.salonName} displayName={result.displayName} />
+      <InviteSummary salonName={result.salonName} displayName={result.displayName} topics={result.topics} />
       <StartLineLoginForm flowId={result.flowId} />
     </div>
   );

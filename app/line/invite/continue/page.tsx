@@ -5,7 +5,8 @@ import Alert from "@/components/ui/Alert";
 import { InviteSummary, StartLineLoginForm } from "@/components/line/InviteSummary";
 import { INVALID_INVITE_MESSAGES, type ContinueNotice } from "@/lib/notifications/line/login/messages";
 import { isLineInviteAvailable } from "@/lib/notifications/line/login/config";
-import { BINDING_COOKIE, bindingHashOf, flowView, type FlowView } from "@/lib/notifications/line/login/flow";
+import { BINDING_COOKIE, bindingHashOf, flowTopics, flowView, type FlowView } from "@/lib/notifications/line/login/flow";
+import { DEFAULT_INVITE_TOPICS, inviteTopicLabel, registeredTopicItem, type InviteTopics } from "@/lib/notifications/line/login/topics";
 
 // LINE 連携の結果と再試行のページ(ログイン不要)。URL の f(進行の id)で指定した招待の、サーバーに記録した結果だけを
 // 表示する(URL のパラメータで「登録できた」とは判断しない)。id は、このブラウザ(cookie)の進行のときだけ使う
@@ -13,7 +14,7 @@ import { BINDING_COOKIE, bindingHashOf, flowView, type FlowView } from "@/lib/no
 // 店舗名は登録した通知先の記録から表示する。
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
-  title: "予約通知のLINE登録",
+  title: "LINE通知の登録",
   robots: { index: false, follow: false },
   referrer: "no-referrer",
 };
@@ -34,7 +35,7 @@ function isNotice(value: string | undefined): value is ContinueNotice {
   return value === "browser" || value === "expired" || value === "start_failed";
 }
 
-function Body({ flow, notice }: { flow: FlowView | null; notice: ContinueNotice | undefined }) {
+function Body({ flow, notice, topics }: { flow: FlowView | null; notice: ContinueNotice | undefined; topics: InviteTopics }) {
   if (!flow) {
     return <Alert variant="warning">{notice === "browser" ? NOTICE_MESSAGES.browser : "お店の方から届いた招待のリンクを、もう一度開いてください。"}</Alert>;
   }
@@ -42,10 +43,10 @@ function Body({ flow, notice }: { flow: FlowView | null; notice: ContinueNotice 
     return (
       <div className="flex flex-col gap-3">
         <Alert variant="success">
-          {flow.registeredSalonName} の予約通知の通知先に追加されました。
+          {flow.registeredSalonName} の{inviteTopicLabel(topics)}の通知先に追加されました。
         </Alert>
         <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-ink-muted">
-          <li>お店の予約通知が稼働している間、予約の情報がこのLINEに届きます。</li>
+          <li>{registeredTopicItem(topics)}</li>
           <li>このLINEアカウントへメッセージを送る必要はありません。</li>
           <li>この画面は閉じてかまいません。</li>
         </ul>
@@ -55,7 +56,7 @@ function Body({ flow, notice }: { flow: FlowView | null; notice: ContinueNotice 
   if (flow.lastOutcome === "already_registered" && flow.registeredSalonName) {
     return (
       <Alert variant="success">
-        このLINEは、すでに {flow.registeredSalonName} の予約通知の通知先に登録されています。あらためて登録する必要はありません。
+        このLINEは、すでに {flow.registeredSalonName} の{inviteTopicLabel(topics)}の通知先に登録されています。あらためて登録する必要はありません。
       </Alert>
     );
   }
@@ -66,7 +67,7 @@ function Body({ flow, notice }: { flow: FlowView | null; notice: ContinueNotice 
   return (
     <div className="flex flex-col gap-4">
       {message && <Alert variant="warning">{message}</Alert>}
-      <InviteSummary salonName={flow.salonName} displayName={flow.displayName} />
+      <InviteSummary salonName={flow.salonName} displayName={flow.displayName} topics={topics} />
       <StartLineLoginForm flowId={flow.flowId} label={flow.lastOutcome ? "もう一度LINEで連携する" : "LINEで連携する"} />
     </div>
   );
@@ -76,17 +77,18 @@ export default async function LineInviteContinuePage({ searchParams }: { searchP
   const params = await searchParams;
   if (!isLineInviteAvailable()) {
     return (
-      <AuthShell title="予約通知のLINE登録">
+      <AuthShell title="LINE通知の登録">
         <Alert variant="warning">{INVALID_INVITE_MESSAGES.unavailable}</Alert>
       </AuthShell>
     );
   }
   const bindingHash = bindingHashOf((await cookies()).get(BINDING_COOKIE)?.value);
   const flow = await flowView(params.f, bindingHash);
+  const topics = flow ? await flowTopics(flow.flowId, bindingHash) : DEFAULT_INVITE_TOPICS;
   const notice = isNotice(params.notice) ? params.notice : params.f && !flow ? "browser" : undefined;
   return (
-    <AuthShell title="予約通知のLINE登録">
-      <Body flow={flow} notice={notice} />
+    <AuthShell title="LINE通知の登録">
+      <Body flow={flow} notice={notice} topics={topics} />
     </AuthShell>
   );
 }

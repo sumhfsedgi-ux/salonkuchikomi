@@ -999,6 +999,27 @@ end;
 $$;
 
 -- ------------------------------------------------------------------
+-- 8b. 招待ページの文言の出し分け(予約・口コミのどちらのお知らせが届き得るか)
+-- ------------------------------------------------------------------
+-- 0023 の line_flow_get と同じ条件(このブラウザの進行・24時間以内)で、招待の店舗が予約通知・Google口コミを
+-- 使えるかだけを返す(店舗の id・通知先の情報は返さない)。line_flow_get は変えない。
+create or replace function public.line_flow_topics(p_flow_id uuid, p_binding_hash text)
+returns table (reservations boolean, reviews boolean)
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select public.salon_feature_entitled(i.salon_id, 'reservation_notifications'),
+         public.salon_feature_entitled(i.salon_id, 'google_reviews')
+    from public.line_invite_flows f
+    join public.line_recipient_invites i on i.id = f.invite_id
+   where f.id = p_flow_id
+     and f.browser_binding_hash = p_binding_hash
+     and f.created_at > now() - interval '24 hours';
+$$;
+
+-- ------------------------------------------------------------------
 -- 9. 権限(service role だけ)
 -- ------------------------------------------------------------------
 revoke all on function public.review_alert_on_review_index() from public, anon, authenticated;
@@ -1024,6 +1045,7 @@ revoke all on function public.review_alert_finish(uuid, uuid, text, text, text, 
 revoke all on function public.review_alert_release_claim(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.review_alert_cancel_send_start(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.review_alert_purge(interval, interval, interval) from public, anon, authenticated;
+revoke all on function public.line_flow_topics(uuid, text) from public, anon, authenticated;
 grant execute on function public.gbp_auto_due_locations(text, integer) to service_role;
 grant execute on function public.gbp_auto_begin(uuid, uuid) to service_role;
 grant execute on function public.gbp_auto_finish(uuid, text, timestamptz, boolean, integer, text) to service_role;
@@ -1044,3 +1066,4 @@ grant execute on function public.review_alert_finish(uuid, uuid, text, text, tex
 grant execute on function public.review_alert_release_claim(uuid, uuid) to service_role;
 grant execute on function public.review_alert_cancel_send_start(uuid, uuid) to service_role;
 grant execute on function public.review_alert_purge(interval, interval, interval) to service_role;
+grant execute on function public.line_flow_topics(uuid, text) to service_role;

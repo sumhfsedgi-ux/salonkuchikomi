@@ -12,7 +12,7 @@ import { parseFlowId } from "@/lib/notifications/line/login/flow";
 // (id は結果ページで cookie と照合する)。
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
-  title: "予約通知のLINE登録",
+  title: "LINE通知の登録",
   robots: { index: false, follow: false },
   referrer: "no-referrer",
 };
@@ -21,7 +21,7 @@ export default async function LineInvitePage({ searchParams }: { searchParams: P
   const flowId = parseFlowId((await searchParams).f);
   if (flowId) redirect(continuePath(flowId));
   return (
-    <AuthShell title="予約通知のLINE登録">
+    <AuthShell title="LINE通知の登録">
       {isLineInviteAvailable() ? <InviteLanding /> : <Alert variant="warning">{INVALID_INVITE_MESSAGES.unavailable}</Alert>}
     </AuthShell>
   );

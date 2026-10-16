@@ -5,6 +5,7 @@ import { openSecret, sealSecret } from "@/lib/google/tokenBox";
 import { hashInviteToken, isWellFormedInviteToken } from "@/lib/notifications/recipients/invites";
 import { LINE_ID_TOKEN_ISSUER, type LineLoginConfig } from "@/lib/notifications/line/login/config";
 import type { LineLoginTransport } from "@/lib/notifications/line/login/transport";
+import { DEFAULT_INVITE_TOPICS, type InviteTopics } from "@/lib/notifications/line/login/topics";
 
 // スタッフ本人の LINE 連携(招待 → LINE ログイン → 通知先の登録)の流れ。
 //   - ブラウザとの結び付け: httpOnly の cookie に乱数を置き、DB には sha256 だけを保存する(line_invite_flows)。
@@ -51,7 +52,7 @@ export function parseFlowId(value: unknown): string | null {
 }
 
 export type OpenInviteResult =
-  | { status: "valid"; flowId: string; salonName: string; displayName: string }
+  | { status: "valid"; flowId: string; salonName: string; displayName: string; topics: InviteTopics }
   | { status: Exclude<InviteStatus, "valid"> };
 
 /** 招待を開く: 有効なら、このブラウザの進行を作り(同じ招待なら使い直す)、その id と店舗名・表示名を返す。 */
@@ -65,7 +66,8 @@ export async function openInvite(token: unknown, bindingHash: string): Promise<O
   const view = await flowView(started.flow_id, bindingHash);
   if (!view) return { status: "not_found" };
   if (view.inviteStatus !== "valid") return { status: view.inviteStatus };
-  return { status: "valid", flowId: view.flowId, salonName: view.salonName, displayName: view.displayName };
+  const topics = await flowTopics(view.flowId, bindingHash);
+  return { status: "valid", flowId: view.flowId, salonName: view.salonName, displayName: view.displayName, topics };
 }
 
 export interface FlowView {
@@ -98,6 +100,20 @@ export async function flowView(flowId: unknown, bindingHash: string | null): Pro
     registeredLabel: (row.registered_label as string | null) ?? null,
     registeredSalonName: (row.registered_salon_name as string | null) ?? null,
   };
+}
+
+/**
+ * 招待の店舗が、予約通知・Google口コミを使えるか(招待ページの文言の出し分けだけに使う。DB の line_flow_topics)。
+ * 条件は flowView と同じ(このブラウザの進行・24時間以内)。取得できなければ、これまでどおり予約通知として表示する。
+ */
+export async function flowTopics(flowId: unknown, bindingHash: string | null): Promise<InviteTopics> {
+  const id = parseFlowId(flowId);
+  if (!id || !bindingHash) return DEFAULT_INVITE_TOPICS;
+  const { data, error } = await db().rpc("line_flow_topics", { p_flow_id: id, p_binding_hash: bindingHash });
+  const row = (data as Array<Record<string, unknown>> | null)?.[0];
+  if (error || !row) return DEFAULT_INVITE_TOPICS;
+  const topics = { reservations: row.reservations === true, reviews: row.reviews === true };
+  return topics.reservations || topics.reviews ? topics : DEFAULT_INVITE_TOPICS;
 }
 
 export async function recordFlowOutcome(flowId: string, outcome: FlowOutcome): Promise<void> {
