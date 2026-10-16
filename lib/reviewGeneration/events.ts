@@ -10,6 +10,8 @@ export type GenerationEventKind = "generated" | "regenerated" | "failed" | "shad
 
 export interface GenerationEvent {
   generationId: string;
+  /** 省略すると口コミ生成(review_generation)。AI返信は reply_generation を指定する。 */
+  feature?: "review_generation" | "reply_generation";
   salonId: string;
   kind: GenerationEventKind;
   pipeline?: "v1" | "v2";
@@ -39,7 +41,7 @@ function toRow(event: GenerationEvent) {
   return {
     generation_id: event.generationId,
     salon_id: event.salonId,
-    feature: "review_generation",
+    feature: event.feature ?? "review_generation",
     kind: event.kind,
     pipeline: event.pipeline ?? null,
     prompt_version: truncate(event.promptVersion, 40),

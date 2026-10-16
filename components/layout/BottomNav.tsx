@@ -23,9 +23,17 @@ const GRID_COLS_CLASS: Record<number, string> = {
 // 主要機能が口コミ1つだけなので、常時アクセスできるよう「設定」をここに直接
 // 表示する(ProfileMenu側の「サロン設定」は口コミプランでは非表示にして
 // 導線の重複を避けている -- components/layout/ProfileMenu.tsx参照)。
-export default function BottomNav({ experience, usableFeatures }: { experience: PlanExperience; usableFeatures: FeatureKey[] }) {
+export default function BottomNav({
+  experience,
+  usableFeatures,
+  reviewsTab,
+}: {
+  experience: PlanExperience;
+  usableFeatures: FeatureKey[];
+  reviewsTab: boolean;
+}) {
   const pathname = usePathname();
-  const navItems = getNavItems(experience, usableFeatures);
+  const navItems = getNavItems(experience, usableFeatures, { reviewsTab });
   if (experience === "reviews_direct") {
     navItems.push({ href: "/dashboard/settings", label: "設定", icon: SettingsIcon });
   }
@@ -40,7 +48,7 @@ export default function BottomNav({ experience, usableFeatures }: { experience: 
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         {navItems.map((item) => {
-          const active = isNavItemActive(pathname, item.href);
+          const active = isNavItemActive(pathname, item.activeHref ?? item.href);
           const Icon = item.icon;
           return (
             <Link

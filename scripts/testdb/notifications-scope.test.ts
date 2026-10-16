@@ -157,6 +157,9 @@ describe("Gmail だけの権限不足は、アカウント全体の認証失敗�
     const { reservation, reviews } = await featureStatuses();
     expect(reservation.status).toBe("reconnect_required");
     expect(reservation.message).toContain("連携が切れています");
-    expect(reviews.status).toBe("reconnect_required");
+    // 届いた口コミは DB の機能カタログ(0030)で判定する。この店舗は個別の許可が無く「準備中」なので、カードは準備中のまま
+    // (口コミの結び付けの再接続が必要なことは、上の接続の記録で確かめた。許可のある店舗の再接続の表示は
+    // scripts/testdb/reviews-browser-check.ts で確かめる)。
+    expect(reviews.status).toBe("coming_soon");
   });
 });

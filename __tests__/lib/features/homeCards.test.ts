@@ -131,4 +131,32 @@ describe("口コミプランの /dashboard の行き先", () => {
     expect(reviewsDirectDestination({ hasActiveSurvey: true, onboardingCompleted: true, onboarded: false })).toBe("/dashboard/reviews");
     expect(reviewsDirectDestination({ hasActiveSurvey: true, onboardingCompleted: true, onboarded: true })).toBe("/dashboard/reviews?onboarded=1");
   });
+
+  it("届いた口コミを使える店舗は届いた口コミへ(アンケートが無くても初期設定へ移さない)", () => {
+    const allowed = { googleReviewsAllowed: true };
+    expect(reviewsDirectDestination({ hasActiveSurvey: false, onboardingCompleted: false, onboarded: false, ...allowed })).toBe("/dashboard/reviews/google");
+    expect(reviewsDirectDestination({ hasActiveSurvey: true, onboardingCompleted: true, onboarded: false, ...allowed })).toBe("/dashboard/reviews/google");
+    // 初期設定を終えた直後だけは、お客様用URLを案内する
+    expect(reviewsDirectDestination({ hasActiveSurvey: true, onboardingCompleted: true, onboarded: true, ...allowed })).toBe("/dashboard/reviews?onboarded=1");
+    // 使えない店舗は今まで通り
+    expect(reviewsDirectDestination({ hasActiveSurvey: false, onboardingCompleted: false, onboarded: false, googleReviewsAllowed: false })).toBe("/dashboard/setup/reviews");
+  });
+});
+
+describe("Google口コミを使える店舗の「口コミ」のカード(SalonPack のホーム)", () => {
+  it("アンケートが無くても「口コミ」タブを開く(設定が必要・アンケートの初期設定へは進めない)", () => {
+    const noSurvey = stateOf(ctx({ hasActiveSurvey: false }), "reviews");
+    expect(toHomeCard(noSurvey, { reviewsTab: true })).toMatchObject({ kind: "available", href: "/dashboard/reviews/google", ctaLabel: "口コミを使う", badge: null, reason: null });
+    expect(toHomeCard(stateOf(ctx(), "reviews"), { reviewsTab: true })).toMatchObject({ kind: "available", href: "/dashboard/reviews/google" });
+  });
+
+  it("使えない店舗は今まで通り(アンケートが無ければ初期設定、あればアンケート)", () => {
+    expect(toHomeCard(stateOf(ctx({ hasActiveSurvey: false }), "reviews"), { reviewsTab: false })).toMatchObject({ kind: "setup_required", href: "/dashboard/setup/reviews" });
+    expect(toHomeCard(stateOf(ctx(), "reviews"))).toMatchObject({ kind: "available", href: "/dashboard/reviews" });
+  });
+
+  it("口コミが契約外の店舗は、reviewsTab でも出し方を変えない", () => {
+    const denied = stateOf(ctx({ entitlements: entitlementsFor("salonpack", { overrides: { reviews: "deny" } }) }), "reviews");
+    expect(toHomeCard(denied, { reviewsTab: true })).toMatchObject({ kind: "not_allowed", href: null });
+  });
 });

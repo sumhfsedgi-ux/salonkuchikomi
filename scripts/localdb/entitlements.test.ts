@@ -56,8 +56,8 @@ describe("導入時(既存店舗の利用可否を変えない)", () => {
   it("新しい店舗にも基準行ができ、利用可否は今の契約と同じ", async () => {
     const r = await createSalon(sql, { plan: "reviews" });
     const p = await createSalon(sql, { plan: "salonpack" });
-    expect((await stateOf(sql, r.salonId)).committed).toEqual({ reviews: true, blog: false, reservation_notifications: false });
-    expect((await stateOf(sql, p.salonId)).committed).toEqual({ reviews: true, blog: true, reservation_notifications: true });
+    expect((await stateOf(sql, r.salonId)).committed).toEqual({ reviews: true, blog: false, reservation_notifications: false, google_reviews: false });
+    expect((await stateOf(sql, p.salonId)).committed).toEqual({ reviews: true, blog: true, reservation_notifications: true, google_reviews: false });
     expect((await stateOf(sql, p.salonId)).version).toBe(0);
     expect(await openHolds(sql, p.salonId)).toEqual([]);
   });
@@ -157,7 +157,8 @@ describe("管理画面の保存", () => {
     const p = await createSalon(sql, { plan: "salonpack" });
     const notCompared = await adminSave(sql, { actor: operator, salonId: p.salonId, expectedVersion: 0, expected: { plan: "salonpack", overrides: {} }, changes: { overrides: { blog: "deny" } } });
     expect(notCompared.result).toBe("invalid");
-    const unknown = await adminSave(sql, { actor: operator, salonId: p.salonId, expectedVersion: 0, expected: { plan: "salonpack", overrides: { google_reviews: "inherit" } }, changes: { overrides: { google_reviews: "allow" } } });
+    // カタログに無い機能(届いた口コミは 0030 でカタログに入ったので、まだ入っていない口コミの通知の名前で確かめる)
+    const unknown = await adminSave(sql, { actor: operator, salonId: p.salonId, expectedVersion: 0, expected: { plan: "salonpack", overrides: { review_notifications: "inherit" } }, changes: { overrides: { review_notifications: "allow" } } });
     expect(unknown.result).toBe("invalid");
     const longNote = await adminSave(sql, { actor: operator, salonId: p.salonId, expectedVersion: 0, expected: { plan: "salonpack", overrides: { blog: "inherit" } }, changes: { overrides: { blog: "deny" } }, note: "あ".repeat(501) });
     expect(longNote.result).toBe("invalid");
@@ -290,7 +291,7 @@ describe("コミット直前の評価(途中の状態で開閉しない・再帰
     expect(await openStops(sql, p.salonId)).toEqual([]);
     const st = await stateOf(sql, p.salonId);
     expect(st.version).toBe(3);
-    expect(st.committed).toEqual({ reviews: true, blog: false, reservation_notifications: true });
+    expect(st.committed).toEqual({ reviews: true, blog: false, reservation_notifications: true, google_reviews: false });
   });
 
   it("同じトランザクションで何度変えても、停止は1件・停止期間は1件・履歴の停止は1件", async () => {

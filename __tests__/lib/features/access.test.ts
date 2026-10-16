@@ -44,9 +44,18 @@ describe("機能ごとの利用権限: 契約・APP_MODE → 提供状況の順�
     expect(statuses("reviews")).toEqual({ reviews: "allowed", blog: "not_allowed", reservation_notifications: "not_allowed", google_reviews: "coming_soon" });
   });
 
-  it("SalonPack: 届いた口コミ以外は利用でき、届いた口コミは提供を始めたら利用できる", () => {
+  it("SalonPack: 届いた口コミ以外は利用でき、届いた口コミは DB で提供中・許可され、フラグも有効なときだけ利用できる", () => {
     expect(statuses("salonpack")).toEqual({ reviews: "allowed", blog: "allowed", reservation_notifications: "allowed", google_reviews: "coming_soon" });
-    expect(statuses("salonpack", true).google_reviews).toBe("allowed");
+    // DB の初期値(準備中)のままなら、フラグが有効でも準備中
+    expect(statuses("salonpack", true).google_reviews).toBe("coming_soon");
+    const googleReviews = FEATURE_REGISTRY.find((d) => d.key === "google_reviews")!;
+    const allowed = entitlementsFor("salonpack", { lifecycle: { google_reviews: "available" }, overrides: { google_reviews: "allow" } });
+    expect(resolveFeatureAccess(googleReviews, input("salonpack", true, allowed)).status).toBe("allowed");
+    // DB で許可されていても、フラグが無効なら準備中(二重の停止)
+    expect(resolveFeatureAccess(googleReviews, input("salonpack", false, allowed)).status).toBe("coming_soon");
+    // 提供中でも、標準では使えない(店舗ごとの許可が無い)店舗は契約外と同じ扱い
+    const notAllowed = entitlementsFor("salonpack", { lifecycle: { google_reviews: "available" } });
+    expect(resolveFeatureAccess(googleReviews, input("salonpack", true, notAllowed)).status).toBe("not_allowed");
   });
 
   it("契約外の機能は、提供前でも準備中ではなく契約外", () => {

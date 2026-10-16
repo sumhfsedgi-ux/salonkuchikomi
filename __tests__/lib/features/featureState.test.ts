@@ -29,6 +29,8 @@ function ctx(overrides: Partial<SetupContext> = {}): SetupContext {
   };
 }
 
+// 届いた口コミを提供中にして、店舗ごとに許可した DB の判定(0030 から届いた口コミは DB で判定する)。
+const grAllowed = entitlementsFor("salonpack", { lifecycle: { google_reviews: "available" }, overrides: { google_reviews: "allow" } });
 const gmailOk = { bound: true, authState: "active" as const, scopeGranted: true, email: "owner@example.test" };
 const of = (c: SetupContext, key: string) => resolveFeatureStates(c).states.find((s) => s.key === key)!;
 const switchOn = { selected: true, updatedAt: "2026-10-01T00:00:00.000000+00:00" };
@@ -193,6 +195,7 @@ describe("届いた口コミ: 承認確認まで準備中、認証後も店舗�
     const state = resolveFeatureStates(
       ctx({
         googleReviewsAvailable: true,
+        entitlements: grAllowed,
         gbp: { bound: true, authState: "active", scopeGranted: true, email: "a@example.test", selectionState: "selection_pending" },
       })
     ).states.find((s) => s.key === "google_reviews")!;
@@ -205,6 +208,7 @@ describe("Gmail だけの権限不足は、同じアカウントの届いた口�
     const { states } = resolveFeatureStates(
       ctx({
         googleReviewsAvailable: true,
+        entitlements: grAllowed,
         lineRecipientCount: 1,
         reservationOps: { state: "active", legacy: false },
         gmail: { bound: true, authState: "active", scopeGranted: false, scopeMissing: true, email: "shop@example.test" },
@@ -222,6 +226,7 @@ describe("Gmail だけの権限不足は、同じアカウントの届いた口�
     const { states } = resolveFeatureStates(
       ctx({
         googleReviewsAvailable: true,
+        entitlements: grAllowed,
         reservationOps: { state: "active", legacy: false },
         gmail: { bound: true, authState: "needs_reauth", scopeGranted: true, email: "shop@example.test" },
         gbp: { bound: true, authState: "needs_reauth", scopeGranted: true, email: "shop@example.test", selectionState: "selected" },

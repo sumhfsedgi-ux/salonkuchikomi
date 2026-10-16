@@ -5,8 +5,13 @@ import { canAccessFeature } from "@/lib/access/featureAccess";
 import { entitlementsFor } from "../../helpers/entitlements";
 
 // DB の利用権限(salon_feature_access_all)の読み込みを差し替える(店舗 id の末尾がプラン。個別設定なし)。
+// id が "gr-allowed-" で始まる店舗は、届いた口コミを提供中にして、店舗ごとに許可した状態(公開のときの形)。
 vi.mock("@/lib/features/loadEntitlements", () => ({
-  loadSalonEntitlements: async (salonId: string) => entitlementsFor(salonId.endsWith("salonpack") ? "salonpack" : "reviews"),
+  loadSalonEntitlements: async (salonId: string) =>
+    entitlementsFor(
+      salonId.endsWith("salonpack") ? "salonpack" : "reviews",
+      salonId.startsWith("gr-allowed-") ? { lifecycle: { google_reviews: "available" }, overrides: { google_reviews: "allow" } } : {},
+    ),
 }));
 
 const SALONPACK_ONLY: Feature[] = ["blog", "notifications"];
@@ -82,17 +87,21 @@ describe("canAccessFeature(APP_MODE × 契約プラン)", () => {
     }
   });
 
-  it("口コミ系の新機能はどのモード・プランの組み合わせでも使える(届いた口コミは提供を始めてから)", async () => {
+  it("届いた口コミは、DB で提供中・店舗ごとに許可され、かつ GOOGLE_REVIEWS_OAUTH_ENABLED が有効なときだけ使える(どのモード・プランでも)", async () => {
+    const allowedSalon = (plan: SalonPlan) => ({ id: `gr-allowed-${plan}`, plan, serviceStatus: "complimentary" as const });
     for (const mode of MODES) {
       vi.stubEnv("NEXT_PUBLIC_APP_MODE", mode);
       for (const plan of PLANS) {
         vi.stubEnv("GOOGLE_REVIEWS_OAUTH_ENABLED", "1");
-        for (const feature of REVIEW_SUITE) {
-          expect(await canAccessFeature(salon(plan), "user-1", feature)).toBe(true);
-        }
-        vi.stubEnv("GOOGLE_REVIEWS_OAUTH_ENABLED", "");
+        expect(await canAccessFeature(allowedSalon(plan), "user-1", "google_reviews")).toBe(true);
+        // DB の初期値(準備中・プランの標準は使えない)のままの店舗は、フラグが有効でも使えない
         expect(await canAccessFeature(salon(plan), "user-1", "google_reviews")).toBe(false);
+        vi.stubEnv("GOOGLE_REVIEWS_OAUTH_ENABLED", "");
+        // DB で許可されていても、フラグが無効なら使えない(二重の停止)
+        expect(await canAccessFeature(allowedSalon(plan), "user-1", "google_reviews")).toBe(false);
+        // 登録の無い口コミ系の機能名は、従来どおり契約と APP_MODE だけで判定する
         expect(await canAccessFeature(salon(plan), "user-1", "review_replies")).toBe(true);
+        expect(await canAccessFeature(salon(plan), "user-1", "review_notifications")).toBe(true);
       }
     }
   });

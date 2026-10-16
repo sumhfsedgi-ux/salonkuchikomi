@@ -2,7 +2,8 @@
   "regions": ["bom1"],
   "git": {
     "deploymentEnabled": {
-      "feature/salon-onboarding": false
+      "feature/salon-onboarding": false,
+      "feature/reviews-inbox": false
     }
   }
 }

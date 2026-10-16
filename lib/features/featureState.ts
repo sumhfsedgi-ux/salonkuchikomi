@@ -263,7 +263,7 @@ function googleReviewsStatus(ctx: SetupContext): { status: FeatureStatus; messag
   if (google === "not_connected") return { status: "google_connect_required", message: null };
   if (google === "reconnect") return { status: "reconnect_required", message: "Googleとの連携が切れています。再接続してください。" };
   if (ctx.gbp.selectionState !== "selected") {
-    return { status: "setup_required", message: "Googleとの連携が完了しました。口コミを受け取る店舗の選択が必要です(準備中)。" };
+    return { status: "setup_required", message: "Googleアカウントに接続しました。「口コミ」タブで、連携する店舗を選んでください。" };
   }
   return { status: "ready", message: null };
 }

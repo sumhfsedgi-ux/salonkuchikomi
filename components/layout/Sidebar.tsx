@@ -6,6 +6,7 @@ import { cn } from "@/lib/cn";
 import Logo from "@/components/ui/Logo";
 import { SettingsIcon, LogOutIcon } from "@/components/ui/icons";
 import { getNavItems, isNavItemActive, isSettingsActive } from "@/components/layout/navItems";
+import { reviewsEntryPath } from "@/lib/features/reviewsEntry";
 import type { PlanExperience } from "@/lib/features/access";
 import type { FeatureKey } from "@/lib/features/registry";
 import { logoutAction } from "@/app/dashboard/actions";
@@ -26,13 +27,21 @@ import { logoutAction } from "@/app/dashboard/actions";
 // /dashboard/** page. md:overflow-y-auto is a safety net for short/zoomed
 // viewports where even this one-viewport box can't fit logo+nav+footer --
 // it scrolls internally instead of clipping, independent of main's scroll.
-export default function Sidebar({ experience, usableFeatures }: { experience: PlanExperience; usableFeatures: FeatureKey[] }) {
+export default function Sidebar({
+  experience,
+  usableFeatures,
+  reviewsTab,
+}: {
+  experience: PlanExperience;
+  usableFeatures: FeatureKey[];
+  reviewsTab: boolean;
+}) {
   const pathname = usePathname();
-  const navItems = getNavItems(experience, usableFeatures);
+  const navItems = getNavItems(experience, usableFeatures, { reviewsTab });
   const settingsActive = isSettingsActive(pathname, navItems);
   // 口コミプランは/dashboardが結局/dashboard/reviewsへredirectするだけなので、
   // ロゴのリンク先は直接そこへ向ける(遠回りのredirectを挟まない)。
-  const homeHref = experience === "reviews_direct" ? "/dashboard/reviews" : "/dashboard";
+  const homeHref = experience === "reviews_direct" ? reviewsEntryPath(reviewsTab) : "/dashboard";
 
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-white md:flex md:h-dvh md:sticky md:top-0 md:self-start md:overflow-y-auto">
@@ -44,7 +53,7 @@ export default function Sidebar({ experience, usableFeatures }: { experience: Pl
 
       <nav className="flex flex-1 flex-col gap-1 px-3">
         {navItems.map((item) => {
-          const active = isNavItemActive(pathname, item.href);
+          const active = isNavItemActive(pathname, item.activeHref ?? item.href);
           const Icon = item.icon;
           return (
             <Link

@@ -1,7 +1,7 @@
 import type { HTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 
-export type BadgeVariant = "neutral" | "success" | "warning";
+export type BadgeVariant = "neutral" | "success" | "warning" | "danger";
 
 const VARIANT_CLASSES: Record<BadgeVariant, string> = {
   // "準備中" and other neutral labels.
@@ -11,6 +11,8 @@ const VARIANT_CLASSES: Record<BadgeVariant, string> = {
   success: "bg-sage-soft text-sage-dark",
   // "Gmailの再接続が必要です" and similar attention-needed states.
   warning: "bg-warning-soft text-warning",
+  // 「公開できませんでした」など、対応が必要なエラーの状態(Alert の error と同じ色)。
+  danger: "bg-danger-soft text-danger",
 };
 
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {

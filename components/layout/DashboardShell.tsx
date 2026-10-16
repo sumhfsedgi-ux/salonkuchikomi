@@ -16,16 +16,19 @@ export default function DashboardShell({
   salonName,
   experience,
   usableFeatures,
+  reviewsTab,
   children,
 }: {
   salonName: string;
   experience: PlanExperience;
   usableFeatures: FeatureKey[];
+  /** Google口コミ(「口コミ」タブ)を使えるか。メニューの「口コミ」の行き先を決める。 */
+  reviewsTab: boolean;
   children: ReactNode;
 }) {
   return (
     <div className="flex min-h-dvh bg-ivory">
-      <Sidebar experience={experience} usableFeatures={usableFeatures} />
+      <Sidebar experience={experience} usableFeatures={usableFeatures} reviewsTab={reviewsTab} />
       <div className="flex min-w-0 flex-1 flex-col">
         <MobileHeader salonName={salonName} experience={experience} />
         {/* pb-24 leaves clearance above the fixed BottomNav on mobile; md:pb
@@ -33,7 +36,7 @@ export default function DashboardShell({
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-24 pt-6 md:px-8 md:pb-8 md:pt-6">
           {children}
         </main>
-        <BottomNav experience={experience} usableFeatures={usableFeatures} />
+        <BottomNav experience={experience} usableFeatures={usableFeatures} reviewsTab={reviewsTab} />
       </div>
     </div>
   );

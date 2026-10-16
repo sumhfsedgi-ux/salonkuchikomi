@@ -15,6 +15,7 @@ const RETURN_PATHS: Record<OAuthReturnTo, string> = {
   settings_google: "/dashboard/settings/google",
   dashboard: "/dashboard",
   notifications: "/dashboard/notifications",
+  reviews: "/dashboard/reviews/google",
 };
 
 function redirectTo(request: NextRequest, path: string, params: Record<string, string>): NextResponse {

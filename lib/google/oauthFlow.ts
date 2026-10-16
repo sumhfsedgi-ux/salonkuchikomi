@@ -65,7 +65,7 @@ export async function startGoogleConnect(params: StartGoogleConnectParams, deps:
   const features = Array.from(new Set(params.features));
   if (features.length === 0) throw new GoogleConnectInputError("連携する機能を選んでください。");
   if (features.includes("gbp") && !deps.reviewsEnabled) {
-    throw new GoogleConnectInputError("届いた口コミのGoogle連携は準備中です。");
+    throw new GoogleConnectInputError("Google口コミの連携は準備中です。");
   }
   const needsExpected = params.purpose === "reauth" || params.purpose === "add_scope";
   if (needsExpected !== Boolean(params.expectedGoogleSub)) {
