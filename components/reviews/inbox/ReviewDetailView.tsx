@@ -9,19 +9,19 @@ import Alert from "@/components/ui/Alert";
 import Avatar from "@/components/ui/Avatar";
 import StarRating from "@/components/ui/StarRating";
 import EmptyState from "@/components/ui/EmptyState";
-import { ChevronLeftIcon } from "@/components/ui/icons";
+import { ChevronLeftIcon, ExternalLinkIcon } from "@/components/ui/icons";
 import { useInbox } from "@/components/reviews/inbox/InboxContext";
 import { reviewerName } from "@/components/reviews/inbox/ReviewListItem";
 import MediaGallery from "@/components/reviews/inbox/MediaGallery";
-import GoogleReplyBlock from "@/components/reviews/inbox/GoogleReplyBlock";
+import ConnectionChangedNotice from "@/components/reviews/inbox/ConnectionChangedNotice";
 import ReviewComposer, { type ComposerActions, type ComposerTarget } from "@/components/reviews/inbox/ReviewComposer";
 import { formatReviewDate, isEdited } from "@/lib/googleReviews/format";
-import { copyToClipboard } from "@/lib/copyToClipboard";
 import { withQuery } from "@/lib/googleReviews/query";
+import { CONNECTION_CHANGED_MESSAGE, isConnectionChangedMessage } from "@/lib/googleReviews/messages";
 import type { ActionResult, ReviewDetail, ReviewDetailResult } from "@/lib/googleReviews/types";
 
 // 口コミの詳細(計画 第2版 §2)。
-//   ・開いたときだけ既読にする(一覧を見ただけ・自動では既読にしない)。開いた新着は新着から外れる。「未読に戻す」も置く。
+//   ・開いたときだけ既読にする(一覧を見ただけ・自動では既読にしない)。開いた新着は新着から外れる。「未読に戻す」は補助の操作として小さく置く。
 //   ・1列のときは「‹ 一覧へ」を出し、見出しにフォーカスする。一覧から来たときは履歴を戻る。
 //   ・Google 上で削除された・期限切れ・見つからない・連携や店舗が変わった、も画面が崩れないように表示する。
 //   ・一覧の世代(InboxContext の locationId)と違う口コミは表示しない(計画 第2版 §3-A)。
@@ -60,7 +60,7 @@ function BackLink() {
   );
 }
 
-function MissingState({ title, description, children }: { title: string; description: string; children?: ReactNode }) {
+function MissingState({ title, description, children }: { title: string; description: ReactNode; children?: ReactNode }) {
   const { basePath, query } = useInbox();
   return (
     <div className="flex flex-col gap-4">
@@ -144,13 +144,16 @@ export default function ReviewDetailView({ id, result, actions, target }: Props)
     if (!twoColumn) headingRef.current?.focus({ preventScroll: true });
   }, [twoColumn, id]);
 
-  if (result.kind === "not_found" || otherGeneration) {
+  if (otherGeneration) {
     return (
-      <MissingState
-        title="この口コミは表示できません"
-        description="見つからないか、Google連携または店舗が変わった可能性があります。一覧から選び直してください。"
-      />
+      <div className="flex flex-col gap-4">
+        <BackLink />
+        <ConnectionChangedNotice message={CONNECTION_CHANGED_MESSAGE} reloadHref={withQuery(basePath, query)} />
+      </div>
     );
+  }
+  if (result.kind === "not_found") {
+    return <MissingState title="この口コミは表示できません" description="見つからないか、Google連携または店舗が変わった可能性があります。一覧から選び直してください。" />;
   }
   if (result.kind === "unavailable_content") {
     return (
@@ -166,14 +169,13 @@ export default function ReviewDetailView({ id, result, actions, target }: Props)
     return (
       <div className="flex flex-col gap-4">
         <BackLink />
-        <Alert variant="warning">この口コミはGoogle上で削除されました。書いていた下書きは、コピーできます。</Alert>
+        <Alert variant="warning">
+          この口コミはGoogle上で削除されました。{result.draft ? "書いていた下書きは下に表示しています(期限まで残ります)。" : ""}
+        </Alert>
         {result.draft && (
           <Card className="flex flex-col gap-2">
             <p className="text-sm font-semibold text-ink">書いていた下書き</p>
             <p className="whitespace-pre-wrap break-words text-sm text-ink">{result.draft}</p>
-            <Button type="button" variant="secondary" size="sm" className="self-start" onClick={() => void copyToClipboard(result.draft)}>
-              下書きをコピー
-            </Button>
           </Card>
         )}
       </div>
@@ -240,27 +242,38 @@ export default function ReviewDetailView({ id, result, actions, target }: Props)
               <span>Googleの口コミ</span>
             </div>
           </div>
-          {!unread && (
-            <Button type="button" variant="ghost" size="sm" onClick={markUnread} className="shrink-0">
-              未読に戻す
-            </Button>
-          )}
         </div>
-        {seenStatus && (
-          <p className="text-xs text-ink-muted" role="status">
-            {seenStatus}
-          </p>
-        )}
         {hasText ? (
           <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ink">{review.comment}</p>
         ) : (
           <p className="text-sm text-ink-muted">★のみの口コミです(本文はありません)。</p>
         )}
         <MediaGallery items={review.media} googleUrl={review.replyUrl} />
+        {/* 補助の操作(主な操作の「返信」より目立たせない) */}
+        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-xs text-ink-muted">
+          <span role="status" aria-live="polite">
+            {seenStatus ?? ""}
+          </span>
+          {review.replyUrl && (
+            <a href={review.replyUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline underline-offset-2 hover:text-ink">
+              Googleで口コミを開く
+              <ExternalLinkIcon className="h-3.5 w-3.5" aria-hidden="true" />
+            </a>
+          )}
+          {!unread && (
+            <button type="button" onClick={markUnread} className="underline underline-offset-2 hover:text-ink">
+              未読に戻す
+            </button>
+          )}
+        </div>
       </Card>
 
-      <GoogleReplyBlock reply={review.reply} operation={review.operation} />
-      {checkError && <Alert variant="error">{checkError}</Alert>}
+      {checkError &&
+        (isConnectionChangedMessage(checkError) ? (
+          <ConnectionChangedNotice message={checkError} reloadHref={withQuery(basePath, query)} />
+        ) : (
+          <Alert variant="error">{checkError}</Alert>
+        ))}
 
       <ReviewComposer
         key={review.id}

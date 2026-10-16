@@ -42,6 +42,8 @@ export default async function DashboardReviewsGoogleLayout({ children }: LayoutP
       ) : connection.kind !== "connected" ? (
         <InboxConnectionNotice
           state={connection}
+          salonName={access.salon.name}
+          gmailConnected={context.gmailConnected}
           gmailAccountEmail={context.gmailAccountEmail}
           connect={startReviewsConnectAction}
           agree={agreeReviewsConsentAction}

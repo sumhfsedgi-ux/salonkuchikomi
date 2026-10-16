@@ -11,7 +11,7 @@ import { useImageFailure } from "@/lib/useImageFailure";
 //   ・Google の URL を <img>/<video> で直接表示する(複製しない。next/image の最適化も通さない)。
 //   ・1枚なら幅いっぱい、複数なら 96px のサムネイルを横スクロール。動画は再生アイコンと「動画」の文字。
 //   ・タップ／Enter で拡大表示(左右送り・←/→・Esc・閉じたら開いたボタンへフォーカスを戻す)。
-//   ・読み込みに失敗したら、枠の大きさを保ったまま「画像を表示できません」と「Googleで見る」を出す。
+//   ・読み込みに失敗した写真は、大きな枠を残さず、小さな「写真を読み込めませんでした」と［再読み込み］・「Googleで見る」に置き換える。
 
 interface Props {
   items: ReviewMediaItem[];
@@ -22,31 +22,18 @@ function Thumb({
   item,
   index,
   large,
-  failed,
   onFail,
   onOpen,
 }: {
   item: ReviewMediaItem;
   index: number;
   large: boolean;
-  failed: boolean;
   onFail: () => void;
   onOpen: (index: number, trigger: HTMLButtonElement) => void;
 }) {
   const label = item.label?.trim() || (item.videoUrl ? "口コミの動画" : "口コミの写真");
   const box = large ? "h-56 w-full sm:h-72" : "h-24 w-24 shrink-0";
-  const imgRef = useImageFailure<HTMLImageElement>(onFail, !failed);
-  if (failed) {
-    return (
-      <div
-        className={cn("flex flex-col items-center justify-center gap-1 rounded-xl border border-greige bg-ivory p-2 text-center", box)}
-        role="img"
-        aria-label={`${label}(表示できません)`}
-      >
-        <span className="text-xs text-ink-muted">画像を表示できません</span>
-      </div>
-    );
-  }
+  const imgRef = useImageFailure<HTMLImageElement>(onFail);
   return (
     <button
       type="button"
@@ -81,6 +68,8 @@ function Thumb({
 
 export default function MediaGallery({ items, googleUrl }: Props) {
   const [failed, setFailed] = useState<Set<number>>(() => new Set());
+  // 再読み込みのたびに増やし、画像の要素を作り直して読み込み直す。
+  const [attempt, setAttempt] = useState(0);
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [videoFailed, setVideoFailed] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -116,27 +105,47 @@ export default function MediaGallery({ items, googleUrl }: Props) {
       href={googleUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 text-sm font-medium text-sage-dark underline underline-offset-2"
+      className="inline-flex items-center gap-1 font-medium text-sage-dark underline underline-offset-2"
     >
       Googleで見る
       <ExternalLinkIcon className="h-3.5 w-3.5" aria-hidden="true" />
     </a>
   ) : null;
 
+  const shown = items.map((item, index) => ({ item, index })).filter(({ index }) => !failed.has(index));
+  const failedKind = items.some((item, index) => failed.has(index) && item.videoUrl) ? "写真・動画" : "写真";
+
   return (
     <div className="flex flex-col gap-2">
       {items.length === 1 ? (
-        <Thumb item={items[0]} index={0} large failed={failed.has(0)} onFail={() => fail(0)} onOpen={open} />
+        shown.length === 1 && <Thumb key={attempt} item={items[0]} index={0} large onFail={() => fail(0)} onOpen={open} />
       ) : (
-        <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1">
-          {items.map((item, index) => (
-            <div key={`${item.thumbnailUrl}-${index}`} className="snap-start">
-              <Thumb item={item} index={index} large={false} failed={failed.has(index)} onFail={() => fail(index)} onOpen={open} />
-            </div>
-          ))}
+        shown.length > 0 && (
+          <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-1">
+            {shown.map(({ item, index }) => (
+              <div key={`${item.thumbnailUrl}-${index}-${attempt}`} className="snap-start">
+                <Thumb item={item} index={index} large={false} onFail={() => fail(index)} onOpen={open} />
+              </div>
+            ))}
+          </div>
+        )
+      )}
+      {failed.size > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-ivory px-3 py-2 text-xs text-ink-muted" role="status">
+          <span>{items.length > 1 && shown.length > 0 ? `${failedKind}を${failed.size}件読み込めませんでした` : `${failedKind}を読み込めませんでした`}</span>
+          <button
+            type="button"
+            className="underline underline-offset-2 hover:text-ink"
+            onClick={() => {
+              setFailed(new Set());
+              setAttempt((n) => n + 1);
+            }}
+          >
+            再読み込み
+          </button>
+          {googleLink}
         </div>
       )}
-      {failed.size > 0 && googleLink}
 
       <dialog
         ref={dialogRef}
@@ -182,7 +191,7 @@ export default function MediaGallery({ items, googleUrl }: Props) {
                   />
                 )
               ) : failed.has(openIndex ?? -1) ? (
-                <p className="p-6 text-sm text-ink-muted">画像を表示できません</p>
+                <p className="p-6 text-sm text-ink-muted">写真を読み込めませんでした</p>
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element -- Google の画像は複製・最適化しない(GBP の保存の制限)
                 <img

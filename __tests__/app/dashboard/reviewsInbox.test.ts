@@ -352,6 +352,6 @@ describe("投稿の予期しない失敗", () => {
     const { submitReplyAction } = await loadActions();
     const res = await submitReplyAction({ reviewId: REVIEW, opId: OP, action: "upsert", text: "ありがとうございます", expectedReply: null });
     expect(res.kind).toBe("unknown");
-    expect((res as { message: string }).message).toContain("Googleで確認する");
+    expect((res as { message: string }).message).toContain("反映状況を再確認");
   });
 });

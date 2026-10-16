@@ -72,7 +72,7 @@ export default async function DashboardReviewsSettingsPage({ searchParams }: Pag
               <dd className="min-w-0 wrap-anywhere text-ink">{email ?? "—"}</dd>
             </div>
             <div className="flex min-w-0 flex-col gap-0.5 sm:contents">
-              <dt className="whitespace-nowrap text-ink-muted">口コミを受け取るビジネス</dt>
+              <dt className="whitespace-nowrap text-ink-muted">連携している店舗</dt>
               <dd className="min-w-0 break-words text-ink">
                 {connection.kind === "connected" ? (connection.location.title ?? "(名前を取得できていません)") : "—"}
               </dd>
@@ -96,17 +96,17 @@ export default async function DashboardReviewsSettingsPage({ searchParams }: Pag
           </div>
           {connection.kind === "connected" && (
             <details className="text-sm">
-              <summary className="cursor-pointer text-ink-muted">口コミを受け取るビジネスを変更する</summary>
+              <summary className="cursor-pointer text-ink-muted">連携する店舗を変更する</summary>
               <form action={changeLocationAction} className="mt-2 flex flex-col gap-2">
                 <p className="text-xs text-ink-muted">
-                  変更すると、今のビジネスについて一時保存している口コミと下書きを削除し、「口コミ」タブでビジネスを選び直します。Googleに投稿済みの返信は変わりません。
+                  変更すると、今の店舗について一時保存している口コミと下書きを削除し、「口コミ」タブで店舗を選び直します。Googleに投稿済みの返信は変わりません。
                 </p>
                 <label className="flex items-start gap-2 text-sm text-ink">
                   <input type="checkbox" name="confirm" value="yes" required className="mt-0.5 h-5 w-5 shrink-0 accent-sage-dark" />
                   一時保存した口コミと下書きが削除されることを確認しました
                 </label>
                 <button type="submit" className={buttonClassName({ variant: "secondary", size: "sm", className: "w-fit" })}>
-                  ビジネスを選び直す
+                  店舗を選び直す
                 </button>
               </form>
             </details>

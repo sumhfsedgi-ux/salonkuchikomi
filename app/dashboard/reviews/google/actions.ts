@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isSimulatedGoogleEnabled } from "@/lib/google/config";
 import { checkGoogleReviewsAccess, resolveGoogleReviewsAccess } from "@/lib/googleReviews/access";
+import { CONNECTION_CHANGED_MESSAGE } from "@/lib/googleReviews/messages";
 import { isStarRating } from "@/lib/replyGeneration/classify";
 import { generateReplyForSalon, type ReplyServiceResult } from "@/lib/replyGeneration/service";
 
@@ -28,8 +29,8 @@ const requestSchema = z.object({
   regenerate: z.boolean().optional(),
 });
 
-const STALE = "Google連携または店舗が変わったため、返信案を表示しませんでした。一覧を読み込み直してください。";
-const NO_RATING = "この口コミには★の評価が無いため、返信案を作れません。返信を直接入力してください。";
+const STALE = CONNECTION_CHANGED_MESSAGE;
+const NO_RATING = "この口コミには★の評価が無いため、返信案を作成できません。返信を直接入力してください。";
 
 function adminClientOrNull(): SupabaseClient | null {
   try {

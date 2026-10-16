@@ -37,6 +37,7 @@ import type {
   ReviewListResult,
   StarRatingValue,
 } from "@/lib/googleReviews/types";
+import { CONNECTION_CHANGED_MESSAGE, CONNECTION_CHANGED_NOT_SENT_MESSAGE } from "@/lib/googleReviews/messages";
 
 // 届いた口コミのサーバー処理(計画 第2版 §2・§3)。Google の API・DB・共通の Google 連携は差し替えられる(deps)。
 //   連携    : 共通の Google 連携の口コミの結び付けを使う(口コミ専用の OAuth・トークンは持たない)。
@@ -93,7 +94,7 @@ export interface GbpInbox {
   getReview(ctx: SourceContext, id: string): Promise<ReviewDetailResult>;
   /** 「更新」。最短の間隔(5分)より短ければ Google に問い合わせない。途中で区切った取り込みの続きは、間隔に関係なく読む。 */
   refresh(ctx: SourceContext): Promise<ActionResult<{ lastCheckedAt: string; syncIncomplete: boolean }>>;
-  /** 1件の口コミの最新の状態を取り直す(「Googleで確認する」)。 */
+  /** 1件の口コミの最新の状態を取り直す(「反映状況を再確認」)。 */
   checkReview(ctx: SourceContext, id: string): Promise<ActionResult<ReviewDetail>>;
   setSeen(ctx: SourceContext, id: string, seen: boolean): Promise<ActionResult>;
   saveDraft(ctx: SourceContext, id: string, text: string): Promise<ActionResult<{ savedAt: string }>>;
@@ -104,7 +105,7 @@ export interface GbpInbox {
   submitReply(ctx: SourceContext, request: ReplySubmitRequest): Promise<ReplySubmitResult>;
   /**
    * 送れなかったと分かっている返信の操作(failed)を、表示しないようにする(「送るのをやめる」)。Google には何も送らない。
-   * 結果不明・送信中・反映を確かめていない操作は変えない(「Googleで確認する」で確かめるまで、そのまま)。
+   * 結果不明・送信中・反映を確かめていない操作は変えない(「反映状況を再確認」で確かめるまで、そのまま)。
    */
   dismissReplyOperation(ctx: SourceContext, id: string): Promise<ActionResult>;
 }
@@ -121,30 +122,31 @@ const REPLY_LEASE_SECONDS = 60;
 const REPLY_WRITE_WINDOW_SECONDS = Math.ceil(GBP_API_TIMEOUT_MS / 1000) + 20;
 /** Google の返信の編集の上限(1つのビジネスにつき1分に10回)。 */
 const REPLY_EDITS_PER_MINUTE = 10;
-export const GBP_CONSENT_VERSION = "gbp-connect-2026-10-15";
+/** 連携の前の同意の版。同意の文言(components/reviews/inbox/connectCopy.ts)を変えたら上げる。v2:説明を4つの項目に整理(2026-10-15)。 */
+export const GBP_CONSENT_VERSION = "gbp-connect-2026-10-15-v2";
 
 const NOT_CONNECTED = "Google口コミを連携していません。";
 const FETCH_FAILED = "最新の口コミを取得できませんでした。少し時間をおいて、もう一度お試しください。";
 const SYNC_BUSY = "Googleから口コミを取得している途中です。少し時間をおいて、もう一度お試しください。";
 const REFETCHING = "Googleから口コミを取り直しています。少し時間をおいて、もう一度お試しください。";
 const REFETCH_FAILED = "Googleから口コミを取り直せませんでした。少し時間をおいて、もう一度お試しください。";
-const STALE = "Google連携または店舗が変わったため、この口コミは表示できません。一覧を読み込み直してください。";
+const STALE = CONNECTION_CHANGED_MESSAGE;
 const DELETED = "この口コミはGoogle上で削除されました。";
 const RECONNECT = "Googleとの連携の確認が必要です。Google連携の画面から再連携してください。";
 const SCOPE_MISSING = "口コミの権限が足りません。Google連携の画面で、口コミの権限を追加してください。";
 const PERMISSION = "この店舗を管理する権限を確認できません。Googleビジネスプロフィールの管理者に確認してください。";
 const SERVICE = "現在、Googleの口コミの機能を利用できません。時間をおいてもう一度お試しください。";
-const PRECONDITION = "このビジネスはGoogleでオーナー確認が済んでいないため、口コミを扱えません。";
+const PRECONDITION = "この店舗はGoogleでオーナー確認が済んでいないため、口コミを扱えません。";
 const REPLY_STOPPED = "確認に時間がかかったため、この操作を止めました。返信は送っていません。最新の状態を確認してから、もう一度お試しください。";
 const REPLY_SUPERSEDED =
-  "Googleには送りましたが、結果を記録する前に処理の時間が切れました。反映されたか分からないため、「Googleで確認する」で確かめてください。確認できるまで、もう一度送らないでください。";
+  "Googleには送りましたが、結果を記録する前に処理の時間が切れました。反映されたか分からないため、「反映状況を再確認」で確かめてください。確認できるまで、もう一度送らないでください。";
 const REPLY_UNKNOWN =
-  "Googleからの応答を確認できませんでした。返信が反映されているかもしれません。「Googleで確認する」で確かめてください。確認できるまで、もう一度送らないでください。";
-const LOCATION_CHANGED = "Google連携または店舗が変わったため、返信は送っていません。一覧を読み込み直してください。";
+  "Googleからの応答を確認できませんでした。返信が反映されているかもしれません。「反映状況を再確認」で確かめてください。確認できるまで、もう一度送らないでください。";
+const LOCATION_CHANGED = CONNECTION_CHANGED_NOT_SENT_MESSAGE;
 const NOT_ENTITLED = "Google口コミを利用できなくなったため、返信は送っていません。";
 const CONSENT_REQUIRED = "口コミの取り扱いについての確認がまだ済んでいません。「口コミ」タブで内容を確認してください。";
 const REPLY_UNRESOLVED =
-  "前に送った返信の反映を、まだ確認できていません。後からGoogleに反映されることがあるため、確認できるまでは新しく送れません。今回の返信は送っていません。「Googleで確認する」で確かめてください。";
+  "前に送った返信の反映を、まだ確認できていません。後からGoogleに反映されることがあるため、確認できるまでは新しく送れません。今回の返信は送っていません。「反映状況を再確認」で確かめてください。";
 
 type SyncOutcome = { kind: "complete" | "partial"; at: string | null } | { kind: "throttled"; at: string | null } | { kind: "busy" } | { kind: "inactive" };
 
@@ -191,7 +193,7 @@ function writeFailure(err: unknown): { status: "unknown" | "failed"; code: strin
     if (err.kind === "service") return failed("service_disabled", `${SERVICE}返信は送っていません。`, true);
     if (err.kind === "not_found") return { status: "failed", code: "deleted_on_google", deleted: true, result: { kind: "deleted_on_google", message: DELETED } };
     if (err.kind === "invalid_argument" || err.apiKind === "bad_response") return failed("rejected", "Googleが返信を受け付けませんでした。文章を見直してください。", false);
-    if (err.kind === "precondition") return failed("failed_precondition", "このビジネスはGoogleでオーナー確認が済んでいないため、返信できません。", false);
+    if (err.kind === "precondition") return failed("failed_precondition", "この店舗はGoogleでオーナー確認が済んでいないため、返信できません。", false);
     if (err.kind === "rate_limited") return failed("rate_limited", "Googleで短い時間に続けて返信を送れません。返信は送っていません。少し時間をおいて、もう一度お試しください。", true);
     if (err.apiKind === "token") return failed("token", "Googleに接続できませんでした。返信は送っていません。少し時間をおいて、もう一度お試しください。", true);
   }
@@ -354,7 +356,7 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
       }
       return { accounts: options, locations };
     } catch (err) {
-      return { accounts: [], locations, loadError: callMessage(err, "Googleからビジネスの一覧を取得できませんでした。少し時間をおいて、もう一度お試しください。") };
+      return { accounts: [], locations, loadError: callMessage(err, "Googleから店舗の一覧を取得できませんでした。少し時間をおいて、もう一度お試しください。") };
     }
   }
 
@@ -537,8 +539,8 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
       const { locations, loadError } = await loadBusinesses(ctx.salonId, binding);
       if (loadError) return { ok: false, error: loadError };
       const found = locations.get(locationName);
-      if (!found) return { ok: false, error: "選んだビジネスが見つかりません。" };
-      if (!found.location.hasVoiceOfMerchant) return { ok: false, error: "このビジネスはGoogleでオーナー確認が済んでいないため選べません。" };
+      if (!found) return { ok: false, error: "選んだ店舗が見つかりません。店舗一覧を再読み込みしてください。" };
+      if (!found.location.hasVoiceOfMerchant) return { ok: false, error: "この店舗はGoogleでオーナー確認が済んでいないため選べません。" };
       const result = await store.selectLocation({
         salonId: ctx.salonId,
         googleAccountId: binding.googleAccountId,
@@ -551,7 +553,7 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
       if (!result.ok) {
         return {
           ok: false,
-          error: result.reason === "linked_elsewhere" ? "このビジネスはほかの店舗と連携済みのため選べません。" : "Google連携が変わりました。画面を読み込み直して、もう一度お試しください。",
+          error: result.reason === "linked_elsewhere" ? "この店舗はSalonPackの別の店舗と連携済みのため選べません。" : "Google連携が変わりました。画面を読み込み直して、もう一度お試しください。",
         };
       }
       // 初回の取り込み。失敗しても選択は終わっている(一覧で「取得中」と「続きを取得する」)。
@@ -691,7 +693,7 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
       // 同意の前は、口コミの本文を AI の入力として渡さない。
       if (!(await consented(ctx.salonId))) return { ok: false, error: CONSENT_REQUIRED };
       const stored = await store.getReview(ctx.salonId, id);
-      if (stored.kind === "expired") return { ok: false, error: "一時保存の期限が過ぎています。「Googleで確認する」で取り直してからお試しください。" };
+      if (stored.kind === "expired") return { ok: false, error: "一時保存の期限が過ぎています。「反映状況を再確認」で取り直してからお試しください。" };
       if (stored.kind === "stale") return { ok: false, error: STALE };
       if (stored.kind !== "ok") return failed;
       const stars = stored.review.starRating;
@@ -733,13 +735,13 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
         return { kind: "unavailable", message: NOT_CONNECTED };
       }
       const { binding } = connected;
-      // 連携のときの同意(返信は「Googleに返信する」を押したときだけ、その内容で投稿する)を記録していること。
+      // 連携のときの同意(返信は「Googleに投稿する」を押したときだけ、その内容で投稿する)を記録していること。
       if (!(await consented(ctx.salonId))) return { kind: "unavailable", message: `${CONSENT_REQUIRED}返信は送っていません。` };
       const stored = await store.getReview(ctx.salonId, request.reviewId);
       if (stored.kind === "deleted") return { kind: "deleted_on_google", message: DELETED };
       if (stored.kind === "stale" || stored.kind === "not_found") return { kind: "unavailable", message: LOCATION_CHANGED };
       if (stored.kind === "expired") {
-        return { kind: "failed", message: "この口コミの一時保存の期限が過ぎています。「Googleで確認する」で取り直してから返信してください。", retryable: false };
+        return { kind: "failed", message: "この口コミの一時保存の期限が過ぎています。「反映状況を再確認」で取り直してから返信してください。", retryable: false };
       }
 
       const textSha256 = text ? sha256Hex(text) : null;
@@ -883,7 +885,7 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
         return { ok: false, error: "取り下げられませんでした。もう一度お試しください。" };
       }
       // 結果不明・送信中・反映を確かめていない操作は、ここでは閉じない(Google で確かめるまで、そのまま)。
-      return { ok: false, error: "取り下げられる送信がありません。送信の結果を確認中のときは、「Googleで確認する」で確かめてください。" };
+      return { ok: false, error: "取り下げられる送信がありません。送信の結果を確認中のときは、「反映状況を再確認」で確かめてください。" };
     },
   };
 }

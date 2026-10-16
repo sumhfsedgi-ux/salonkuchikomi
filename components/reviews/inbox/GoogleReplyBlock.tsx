@@ -1,50 +1,45 @@
+import type { ReactNode } from "react";
 import Card from "@/components/ui/Card";
-import Alert from "@/components/ui/Alert";
 import ReplyStatusBadge from "@/components/reviews/inbox/ReplyStatusBadge";
-import { policyViolationMessage, replyDisplayState, REPLY_STATE_SUMMARY } from "@/lib/googleReviews/replyState";
+import { policyViolationMessage, replyDisplayState } from "@/lib/googleReviews/replyState";
 import { formatReviewDate } from "@/lib/googleReviews/format";
 import type { GoogleReply, ReplyOperationState } from "@/lib/googleReviews/types";
 
-// Google 上の返信とその状態(計画 第2版 §2「返信の状態」)。
-// 審査中・公開済み・公開できなかった を区別し、公開できなかった理由(policyViolation)を分かりやすく出す。
-// SalonPack から送った返信は、Google が受け付けたことと公開されたか(審査)を分けて表示する(取り直すまで公開済みにしない)。
-// 結果が分からない状態(送信結果を確認中)では、もう一度送るよう促さない。
-export default function GoogleReplyBlock({ reply, operation }: { reply: GoogleReply | null; operation: ReplyOperationState }) {
+// Google 上の返信(最後に取り直した内容)と、その状態(計画 第2版 §2「返信の状態」)。
+//   ・審査中・公開済み・公開できなかった は、取り直した Google のデータ(reviewReplyState)だけで表示する。
+//   ・公開できなかった理由は、Google が理由(policyViolation)を返したときだけ出す(推測で理由を書かない)。
+//   ・送信中・送信結果を確認中・反映を確認できていない あいだは、状態の説明と操作を返信の欄(ReviewComposer)に1回だけ出す。
+//     ここでは、最後に確認した返信の内容だけを出す(状態のバッジ・説明を繰り返さない)。
+//   ・返信が無いときは何も出さない(返信の欄が「返信を作成」を出す)。
+export default function GoogleReplyBlock({
+  reply,
+  operation,
+  children,
+}: {
+  reply: GoogleReply | null;
+  operation: ReplyOperationState;
+  /** 返信の下に置く操作(「返信を編集」・その他の操作)。 */
+  children?: ReactNode;
+}) {
+  if (!reply) return null;
   const state = replyDisplayState({ reply, operation });
-  // 詳しい説明と操作は返信の欄に出す(ここでは短く)。
-  const note = REPLY_STATE_SUMMARY[state];
-  if (!reply) {
-    if (state === "unreplied") return <p className="text-sm text-ink-muted">まだGoogleで返信していません。</p>;
-    return (
-      <Card className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-sm font-semibold text-ink">Googleの返信</h3>
-          <ReplyStatusBadge state={state} />
-        </div>
-        {note && <p className="text-sm text-ink-muted">{note}</p>}
-        {state === "sending" && <p className="text-sm text-ink-muted">SalonPackからGoogleに送っています。</p>}
-      </Card>
-    );
-  }
-  const violation = reply.state === "REJECTED" ? policyViolationMessage(reply.policyViolation) : null;
+  const inFlight = state === "sending" || state === "unconfirmed" || state === "checking";
+  const violation = reply.state === "REJECTED" && reply.policyViolation ? policyViolationMessage(reply.policyViolation) : null;
   return (
     <Card className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-semibold text-ink">Googleの返信</h3>
-        <ReplyStatusBadge state={state} />
+        {inFlight ? <span className="text-xs text-ink-muted">最後に確認した内容</span> : <ReplyStatusBadge state={state} />}
       </div>
-      {state === "pending" && <p className="text-sm text-ink-muted">Googleで確認されています。公開まで時間がかかることがあります。</p>}
-      {note && <p className="text-sm text-ink-muted">{note}</p>}
       {violation && (
-        <Alert variant="error" className="flex flex-col gap-1">
-          <span className="font-medium">この返信は公開できませんでした。</span>
-          <span>{violation.message}</span>
-          {violation.code && <span className="text-xs">詳細コード：{violation.code}</span>}
-          <span>文章を直して、置き換えてください。</span>
-        </Alert>
+        <p className="rounded-lg border border-red-200 bg-danger-soft p-3 text-sm text-danger">
+          理由:{violation.message}
+          {violation.code && <span className="mt-1 block text-xs">詳細コード:{violation.code}</span>}
+        </p>
       )}
       <p className="whitespace-pre-wrap break-words text-sm text-ink">{reply.comment}</p>
       <p className="text-xs text-ink-muted">{formatReviewDate(reply.updateTime)}</p>
+      {children}
     </Card>
   );
 }

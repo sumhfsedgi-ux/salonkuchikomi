@@ -5,6 +5,7 @@ import Alert from "@/components/ui/Alert";
 
 // Google との連携から届いた口コミの画面に戻ってきたときの結果(app/api/google/oauth/callback の ?google=...)。
 // 一覧の上に出す(1列の表示でも見えるように、layout に置く)。
+// 店舗を選ぶ前・同意の前は「連携が完了」と言わない(すべての設定が終わったと誤解されるため)。次の案内は画面の見出しに任せ、ここでは繰り返さない。
 const MESSAGES: Record<string, { variant: "success" | "error" | "warning"; text: string }> = {
   connected: { variant: "success", text: "Googleとの連携が完了しました。" },
   denied: { variant: "warning", text: "Googleで許可されませんでした。必要なときにもう一度お試しください。" },
@@ -17,25 +18,16 @@ const MESSAGES: Record<string, { variant: "success" | "error" | "warning"; text:
   feature_not_allowed: { variant: "error", text: "ご契約に含まれていない機能です。" },
   not_available: { variant: "warning", text: "Google口コミの確認・返信は、現在ご利用いただけません。" },
   not_connected: { variant: "warning", text: "Googleと連携していません。" },
-  consent_required: { variant: "warning", text: "口コミの取り扱いについて確認し、チェックを入れてください。" },
+  consent_required: { variant: "warning", text: "「上記の取り扱いに同意します」にチェックを入れてください。" },
   consent_failed: { variant: "error", text: "確認の内容を記録できませんでした。もう一度お試しください。" },
   start_failed: { variant: "error", text: "Googleとの連携を始められませんでした。少し時間をおいて、もう一度お試しください。" },
 };
 
-const FOLLOW_UP = {
-  selecting: " 口コミを受け取るビジネスを選んでください。",
-  consent_required: " 口コミの取り扱いについて確認してください。",
-} as const;
-
-export default function ConnectResultMessage({ next }: { next: keyof typeof FOLLOW_UP | null }) {
+export default function ConnectResultMessage({ next }: { next: "selecting" | "consent_required" | null }) {
   const params = useSearchParams();
   const key = params.get("google");
   const message = key ? MESSAGES[key] : undefined;
   if (!message) return null;
-  return (
-    <Alert variant={message.variant}>
-      {message.text}
-      {key === "connected" && next ? FOLLOW_UP[next] : ""}
-    </Alert>
-  );
+  if (key === "connected" && next) return <Alert variant="success">Googleアカウントに接続しました。</Alert>;
+  return <Alert variant={message.variant}>{message.text}</Alert>;
 }

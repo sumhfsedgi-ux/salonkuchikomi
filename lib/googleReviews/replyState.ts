@@ -75,7 +75,7 @@ export const REPLY_STATE_VIEW: Record<ReplyDisplayState, { label: string; tone: 
   unconfirmed: { label: "反映を確認できていません", tone: "warning", alert: true },
   checking: { label: "送信結果を確認中", tone: "warning", alert: true },
   send_failed: { label: "送信できませんでした", tone: "danger", alert: true },
-  replace_failed: { label: "置き換えできませんでした", tone: "danger", alert: true },
+  replace_failed: { label: "変更できませんでした", tone: "danger", alert: true },
   delete_failed: { label: "削除できませんでした", tone: "danger", alert: true },
   rejected: { label: "公開できませんでした", tone: "danger", alert: true },
   pending: { label: "審査中", tone: "neutral", alert: false },
@@ -84,27 +84,20 @@ export const REPLY_STATE_VIEW: Record<ReplyDisplayState, { label: string; tone: 
   unreplied: { label: "未返信", tone: "warning", alert: false },
 };
 
-/** 状態ごとの補足(詳細の返信の欄に出す)。結果が分からない状態では、もう一度送るよう促さない。 */
+/**
+ * 状態ごとの短い説明(詳細の返信の欄に1回だけ出す。一覧のバッジ・Google の返信の欄では繰り返さない)。
+ * 結果が分からない状態では、送れなかったとは言わず、もう一度送るよう促さない(時間がたっても失敗にはしない)。
+ */
 export const REPLY_STATE_NOTE: Partial<Record<ReplyDisplayState, string>> = {
-  unconfirmed:
-    "Googleへの送信の結果を確認できていません。時間をおいてGoogleに反映されることがあります。「Googleで確認する」で最新の状態を取り直してください(送信から2分ほどたってからの確認が目安です)。反映を確認できるまでは、もう一度送る・別の返信を送る・削除はできません。",
-  checking: "Googleが返信を受け付けました。Googleに表示されたかは、「Googleで確認する」で確かめられます。",
-  send_failed:
-    "前回の返信は、Googleに送る前に止まったか、Googleに受け付けられなかったため、反映されていません。文章を確認して、もう一度送れます。送らない場合は「送るのをやめる」でこの表示を消せます(Googleには何も送りません)。",
-  replace_failed: "置き換えできませんでした。以前の返信がGoogleに残っています。",
-  delete_failed: "削除できませんでした。返信がGoogleに残っています。",
+  unconfirmed: "Googleへの反映に時間がかかることがあります。反映を確認できるまで、再送・変更・削除はできません。",
+  checking: "Googleが返信を受け付けました。公開前にGoogleの審査が入ることがあります。",
+  send_failed: "前回の返信は送れませんでした(Googleに反映されていません)。文章を確認して、もう一度送れます。",
+  replace_failed: "変更できませんでした。以前の返信がGoogleに残っています。",
+  delete_failed: "削除できませんでした。返信はGoogleに残っています。",
 };
 
-/**
- * 「Googleの返信」の欄に出す短い説明。詳しい説明と操作は返信の欄(ReviewComposer)に出すので、同じ文を2回出さない。
- */
-export const REPLY_STATE_SUMMARY: Partial<Record<ReplyDisplayState, string>> = {
-  unconfirmed: "送った返信が反映されたかを、まだGoogleで確認できていません。確認の操作は、下の返信の欄にあります。",
-  checking: "Googleが返信を受け付けました。表示されたかは、下の返信の欄で確かめられます。",
-  send_failed: "前回の返信は反映されていません。",
-  replace_failed: "置き換えできませんでした。以前の返信がGoogleに残っています。",
-  delete_failed: "削除できませんでした。返信がGoogleに残っています。",
-};
+/** 「確認が必要」の絞り込みに入る口コミ(replyBucket の attention と同じ状態)。 */
+export const ATTENTION_FILTER_NOTE = "送信中・反映の確認待ち・変更や削除の失敗・公開されなかった返信がある口コミです。";
 
 // policyViolation の説明。知らない値は一般的な文にして、コードを小さく添える。
 const POLICY_GROUPS: { codes: string[]; message: string }[] = [

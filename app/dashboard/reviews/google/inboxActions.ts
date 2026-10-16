@@ -95,7 +95,7 @@ export async function submitReplyAction(request: ReplySubmitRequest): Promise<Re
     return {
       kind: "unknown",
       message:
-        "送信の結果を確認できませんでした。返信が反映されているかもしれません。「Googleで確認する」で確かめてください。確認できるまで、もう一度送らないでください。",
+        "送信の結果を確認できませんでした。返信が反映されているかもしれません。「反映状況を再確認」で確かめてください。確認できるまで、もう一度送らないでください。",
     };
   }
 }
@@ -116,7 +116,7 @@ export async function selectLocationAction(input: { locationName: string }): Pro
   const access = await resolveGoogleReviewsAccess();
   if (!access.ok) return { ok: false, error: access.error };
   const locationName = typeof input?.locationName === "string" ? input.locationName : "";
-  if (!/^locations\/[^/\s]{1,100}$/.test(locationName)) return { ok: false, error: "選んだビジネスが見つかりません。" };
+  if (!/^locations\/[^/\s]{1,100}$/.test(locationName)) return { ok: false, error: "選んだ店舗が見つかりません。" };
   const result = await access.inbox.selectLocation(access.ctx, locationName);
   if (result.ok) {
     revalidatePath(INBOX_PATH, "layout");

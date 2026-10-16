@@ -15,6 +15,8 @@ export interface InboxPageContext {
   connection: GbpConnectionState;
   /** 予約メールで連携している Google アカウント(同じアカウントで口コミを連携する案内に使う)。 */
   gmailAccountEmail: string | null;
+  /** 予約通知の Gmail を連携しているか(Gmail についての説明を、必要な店舗にだけ出す)。 */
+  gmailConnected: boolean;
 }
 
 export const getInboxPageContext = cache(async (): Promise<InboxPageContext> => {
@@ -29,5 +31,6 @@ export const getInboxPageContext = cache(async (): Promise<InboxPageContext> => 
     access,
     connection,
     gmailAccountEmail: !gbp && gmail ? (gmail.accountEmail ?? gmail.account.email ?? null) : null,
+    gmailConnected: Boolean(gmail),
   };
 });

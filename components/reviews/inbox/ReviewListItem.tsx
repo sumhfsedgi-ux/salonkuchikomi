@@ -85,7 +85,7 @@ export default function ReviewListItem({ review, query, selected, onSelect, base
             )}
             {isEdited(review.createTime, review.updateTime) && <span className="text-xs text-ink-muted">投稿者が編集</span>}
           </div>
-          {stale && <p className="mt-1 text-xs text-ink-muted">この絞り込みの対象外になりました</p>}
+          {stale && <p className="mt-1 text-xs text-ink-muted">状態が変わりました(次に読み込むと、この一覧から外れます)</p>}
         </div>
       </Link>
     </li>

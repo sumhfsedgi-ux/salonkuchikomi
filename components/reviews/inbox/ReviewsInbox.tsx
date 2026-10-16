@@ -15,7 +15,8 @@ import ReviewListItem from "@/components/reviews/inbox/ReviewListItem";
 import { InboxContext, type InboxContextValue } from "@/components/reviews/inbox/InboxContext";
 import { formatCheckedAt } from "@/lib/googleReviews/format";
 import { DEFAULT_LIST_QUERY, FILTER_LABELS, INBOX_PATH, listQueryString, parseListQuery, reviewDetailPath, withQuery } from "@/lib/googleReviews/query";
-import { matchesFilter } from "@/lib/googleReviews/replyState";
+import { ATTENTION_FILTER_NOTE, matchesFilter } from "@/lib/googleReviews/replyState";
+import { CONNECTION_CHANGED_MESSAGE } from "@/lib/googleReviews/messages";
 import type {
   ActionResult,
   InboxSummary,
@@ -30,8 +31,9 @@ import type {
 // 届いた口コミの一覧と詳細(計画 第2版 §2「届いた口コミの画面」)。上から
 //   ① 新着のお知らせ(1件以上のときだけ。初回の取り込みが終わるまでは出さない)
 //   ② 数字(Google の値:口コミ数・平均評価。取得できていなければ「—」。0 とは表示しない)
-//   ③ 最終更新と［更新］(新しい口コミは［更新］を押したときに取り込む。リアルタイムに見える言い方をしない)
-//   ④ 絞り込み(未返信(既定)／確認が必要／返信済み／すべて、★、並び順)
+//   ③ 最終更新と［更新］(新しい口コミは［更新］を押したときに取り込む。リアルタイムに見える言い方をしない)。
+//      数字が Google の値であることと取得の時刻は、ここにまとめて1回だけ出す
+//   ④ 絞り込み(未返信(既定)／確認が必要／返信済み／すべて、評価、並び順)。PC では1行、スマホでは折り返す
 //   ⑤ 一覧(領域の幅が 848px 以上なら右に詳細)
 // 未返信の件数は出さない(Google の規定との関係が未確認のため保留。計画 第2版 §7-1)。
 // この部品は layout に置くので、詳細へ移っても一覧(読み込み済みのページ・絞り込み・選択)はそのまま残る。
@@ -41,7 +43,7 @@ const TWO_COLUMN_MIN_PX = 848;
 const SLOW_SYNC_MS = 30_000;
 
 const RATING_OPTIONS: { value: ReviewRatingFilter; label: string }[] = [
-  { value: "all", label: "すべての★" },
+  { value: "all", label: "すべての評価" },
   { value: "5", label: "★5" },
   { value: "4", label: "★4" },
   { value: "3", label: "★3" },
@@ -89,12 +91,12 @@ interface Props {
 const selectClass =
   "min-h-11 rounded-lg border border-greige bg-white px-3 text-sm text-ink focus:border-sage focus:outline-none focus-visible:ring-2 focus-visible:ring-sage/40";
 
-function StatCard({ label, children, note }: { label: string; children: ReactNode; note: string }) {
+function StatCard({ label, children, note }: { label: string; children: ReactNode; note: string | null }) {
   return (
     <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-white p-3">
       <span className="text-xs text-ink-muted">{label}</span>
       <div className="flex min-h-6 flex-wrap items-center gap-2 text-ink">{children}</div>
-      <span className="text-xs text-ink-muted">{note}</span>
+      {note && <span className="text-xs text-ink-muted">{note}</span>}
     </div>
   );
 }
@@ -333,16 +335,10 @@ export default function ReviewsInbox({ initialResult, actions, children, basePat
 
       <div className="flex flex-col gap-3 @min-[53rem]:flex-row @min-[53rem]:items-stretch">
         <div className="grid flex-1 grid-cols-2 gap-3 @min-[53rem]:max-w-md">
-          <StatCard
-            label="口コミ数"
-            note={summary?.totalReviewCount != null ? `Google上の値${ratingAt ? `・${ratingAt}時点` : ""}` : "更新すると表示されます"}
-          >
+          <StatCard label="口コミ数" note={summary?.totalReviewCount != null ? null : "更新すると表示されます"}>
             <span className="text-lg font-semibold">{summary?.totalReviewCount != null ? `${summary.totalReviewCount}件` : "—"}</span>
           </StatCard>
-          <StatCard
-            label="平均評価"
-            note={summary?.averageRating != null ? `Google上の値${ratingAt ? `・${ratingAt}時点` : ""}` : "更新すると表示されます"}
-          >
+          <StatCard label="平均評価" note={summary?.averageRating != null ? null : "更新すると表示されます"}>
             {summary?.averageRating != null ? (
               <>
                 <span className="text-lg font-semibold">{summary.averageRating.toFixed(1)}</span>
@@ -363,7 +359,12 @@ export default function ReviewsInbox({ initialResult, actions, children, basePat
               更新
             </Button>
           </div>
-          <p className="text-xs text-ink-muted">新しい口コミは［更新］を押すと取り込みます</p>
+          <p className="text-xs text-ink-muted @min-[53rem]:text-right">
+            {summary?.totalReviewCount != null || summary?.averageRating != null
+              ? `口コミ数・平均評価はGoogle上の値です${ratingAt && ratingAt !== lastChecked ? `(${ratingAt}時点)` : ""}。`
+              : ""}
+            新しい口コミは［更新］で取り込みます。
+          </p>
         </div>
       </div>
 
@@ -445,7 +446,15 @@ export default function ReviewsInbox({ initialResult, actions, children, basePat
   } else if (list.status === "not_connected") {
     body = (
       <div className="p-3">
-        <EmptyState title="口コミを表示できません" description="Google連携または店舗が変わりました。画面を読み込み直してください。" />
+        <EmptyState
+          title="口コミを表示できません"
+          description={CONNECTION_CHANGED_MESSAGE}
+          actions={
+            <Button type="button" size="sm" variant="secondary" onClick={() => window.location.reload()}>
+              一覧を読み込み直す
+            </Button>
+          }
+        />
       </div>
     );
   } else if (list.items.length === 0) {
@@ -516,6 +525,43 @@ export default function ReviewsInbox({ initialResult, actions, children, basePat
     <InboxContext.Provider value={contextValue}>
       <div ref={rootRef} className="@container flex flex-col gap-4">
         {header}
+        <div className={cn("flex-col gap-2", showingDetail ? "hidden @min-[53rem]:flex" : "flex")}>
+          <div className="flex flex-col gap-2 @min-[53rem]:flex-row @min-[53rem]:items-center @min-[53rem]:justify-between">
+            <span id={filterLabelId} className="sr-only">
+              返信の状態で絞り込む
+            </span>
+            <div role="group" aria-labelledby={filterLabelId}>
+              <PillSelect options={filterOptions} value={query.filter} onChange={(v) => setQuery({ filter: v })} />
+            </div>
+            <div className="flex gap-2 @min-[53rem]:shrink-0">
+              <select
+                aria-label="評価で絞り込む"
+                className={cn(selectClass, "min-w-0 flex-1 @min-[53rem]:w-40 @min-[53rem]:flex-none")}
+                value={query.rating}
+                onChange={(e) => setQuery({ rating: e.target.value as ReviewRatingFilter })}
+              >
+                {RATING_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="並び順(新しい順は投稿日の新しい順)"
+                className={cn(selectClass, "min-w-0 flex-1 @min-[53rem]:w-36 @min-[53rem]:flex-none")}
+                value={query.sort}
+                onChange={(e) => setQuery({ sort: e.target.value as ReviewSort })}
+              >
+                {SORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {query.filter === "attention" && <p className="text-xs text-ink-muted">{ATTENTION_FILTER_NOTE}</p>}
+        </div>
         <div className="grid gap-6 @min-[53rem]:grid-cols-[340px_minmax(0,1fr)] @min-[53rem]:items-start">
           <section
             aria-label="口コミの一覧"
@@ -525,43 +571,7 @@ export default function ReviewsInbox({ initialResult, actions, children, basePat
               "@min-[53rem]:sticky @min-[53rem]:top-6",
             )}
           >
-            <div className="flex flex-col gap-2">
-              <span id={filterLabelId} className="sr-only">
-                返信の状態で絞り込む
-              </span>
-              <div role="group" aria-labelledby={filterLabelId}>
-                <PillSelect options={filterOptions} value={query.filter} onChange={(v) => setQuery({ filter: v })} />
-              </div>
-              <div className="flex gap-2">
-                <select
-                  aria-label="★の数で絞り込む"
-                  className={cn(selectClass, "min-w-0 flex-1")}
-                  value={query.rating}
-                  onChange={(e) => setQuery({ rating: e.target.value as ReviewRatingFilter })}
-                >
-                  {RATING_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  aria-label="並び順(新しい順は投稿日の新しい順)"
-                  className={cn(selectClass, "min-w-0 flex-1")}
-                  value={query.sort}
-                  onChange={(e) => setQuery({ sort: e.target.value as ReviewSort })}
-                >
-                  {SORT_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            {/* relative:一覧の中の読み上げ用の文字(sr-only は absolute)の位置の基準をこの枠にする。
-                外側の sticky の列が基準だと、枠の高さで切られずに下へはみ出し、PC でページの下に空白ができる。 */}
-            <Card className="relative overflow-hidden p-0 @min-[53rem]:max-h-[calc(100dvh-14rem)] @min-[53rem]:overflow-y-auto">{body}</Card>
+            <Card className="relative overflow-hidden p-0 @min-[53rem]:max-h-[calc(100dvh-6rem)] @min-[53rem]:overflow-y-auto">{body}</Card>
           </section>
           <div className={cn("min-w-0", showingDetail ? "block" : "hidden @min-[53rem]:block")}>{children}</div>
         </div>
