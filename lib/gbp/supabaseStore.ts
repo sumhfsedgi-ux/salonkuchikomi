@@ -156,13 +156,13 @@ export function createRpcGbpStore(client: RpcClient): GbpStore {
       return (await call("gbp_begin_location_change", { p_salon_id: salonId, p_google_account_id: googleAccountId })) === true;
     },
 
-    async ingestReviews(salonId, locationId, syncLeaseToken, reviews, ttlSeconds) {
+    async ingestReviews(salonId, locationId, syncLeaseToken, reviews, ttlSeconds, detectedVia = "manual") {
       if (reviews.length === 0) return [];
       const data = await call("gbp_ingest_reviews", {
         p_salon_id: salonId,
         p_location_id: locationId,
         p_sync_lease_token: syncLeaseToken,
-        p_detected_via: "manual",
+        p_detected_via: detectedVia,
         p_reviews: reviews.map(reviewJson),
         p_ttl_seconds: ttlSeconds,
       });

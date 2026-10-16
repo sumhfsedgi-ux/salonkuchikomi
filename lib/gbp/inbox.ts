@@ -18,6 +18,7 @@ import {
   GbpLocationInactiveError,
   GbpSyncLeaseLostError,
   type CompleteReplyStatus,
+  type DetectedVia,
   type GbpStore,
   type InboxSummaryRow,
   type StartSendOutcome,
@@ -108,7 +109,18 @@ export interface GbpInbox {
    * 結果不明・送信中・反映を確かめていない操作は変えない(「反映状況を再確認」で確かめるまで、そのまま)。
    */
   dismissReplyOperation(ctx: SourceContext, id: string): Promise<ActionResult>;
+  /**
+   * 自動取得(第2段階。画面を開いていないときの定期の確認・Google の通知)。セッションを使わない。
+   * 同意(今の版)・連携・店舗の選択を確かめ、手動の［更新］と同じ同期を1回分進める(同じ処理権・同じ最短の間隔の判定)。
+   * 店舗の利用可否(google_reviews)は呼び出し側が DB で確かめる。アカウントの認証状態は変えない(lib/gbp/access.ts)。
+   */
+  syncForSchedule(salonId: string, options: { minIntervalMs: number; detectedVia: Exclude<DetectedVia, "manual"> }): Promise<ScheduledSyncResult>;
 }
+
+/** 自動取得の1回の結果。failed の tokenInvalid は、refresh token の失効(invalid_grant)で失敗したこと。 */
+export type ScheduledSyncResult =
+  | { kind: "complete" | "partial" | "throttled" | "busy" | "inactive" | "not_ready" }
+  | { kind: "failed"; failure: CallFailure; tokenInvalid: boolean };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const WATERMARK_OVERLAP_SECONDS = 60 * 60;
@@ -151,7 +163,7 @@ const REPLY_UNRESOLVED =
 type SyncOutcome = { kind: "complete" | "partial"; at: string | null } | { kind: "throttled"; at: string | null } | { kind: "busy" } | { kind: "inactive" };
 
 /** Google の呼び出しの失敗(この処理の中の分類)。 */
-type CallFailure = "needs_reconnect" | "scope_missing" | "permission" | "service" | "not_found" | "invalid_argument" | "precondition" | "rate_limited" | "unavailable";
+export type CallFailure = "needs_reconnect" | "scope_missing" | "permission" | "service" | "not_found" | "invalid_argument" | "precondition" | "rate_limited" | "unavailable";
 
 class GoogleCallError extends Error {
   constructor(
@@ -378,7 +390,13 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
    *     読み終えた範囲より新しいだけのページは書き込まずに進む
    *   ・連携・店舗が変わったら(世代が使えない)、書き込まずにやめる(inactive)
    */
-  async function syncLocation(salonId: string, binding: GbpBinding, location: InboxSummaryRow, minIntervalMs: number): Promise<SyncOutcome> {
+  async function syncLocation(
+    salonId: string,
+    binding: GbpBinding,
+    location: InboxSummaryRow,
+    minIntervalMs: number,
+    detectedVia: DetectedVia = "manual",
+  ): Promise<SyncOutcome> {
     const begun = await store.beginSync(salonId, location.locationId, {
       leaseSeconds: SYNC_LEASE_SECONDS,
       fullRescanAfterSeconds: GBP_FULL_RESCAN_AFTER_SECONDS,
@@ -429,7 +447,7 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
         } else {
           const inputs = page.reviews.map((review) => toCachedReview(review, deps.reviewKeySecret));
           try {
-            await store.ingestReviews(salonId, location.locationId, leaseToken, inputs, GBP_CONTENT_TTL_SECONDS);
+            await store.ingestReviews(salonId, location.locationId, leaseToken, inputs, GBP_CONTENT_TTL_SECONDS, detectedVia);
           } catch (err) {
             if (err instanceof GbpLocationInactiveError) return { kind: "inactive" };
             if (err instanceof GbpSyncLeaseLostError) return { kind: "busy" };
@@ -874,6 +892,19 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
         return { kind: "unknown", message: REPLY_SUPERSEDED, review: await detail() };
       }
       return { kind: "accepted", review: await detail(), replayed: false };
+    },
+
+    async syncForSchedule(salonId, options): Promise<ScheduledSyncResult> {
+      if (!(await consented(salonId))) return { kind: "not_ready" };
+      const connected = await connectedContext(salonId);
+      if (!connected) return { kind: "not_ready" };
+      try {
+        const outcome = await syncLocation(salonId, connected.binding, connected.location, options.minIntervalMs, options.detectedVia);
+        return { kind: outcome.kind };
+      } catch (err) {
+        if (err instanceof GoogleCallError) return { kind: "failed", failure: err.kind, tokenInvalid: err.kind === "needs_reconnect" && err.apiKind === "token" };
+        return { kind: "failed", failure: "unavailable", tokenInvalid: false };
+      }
     },
 
     async dismissReplyOperation(ctx, id) {

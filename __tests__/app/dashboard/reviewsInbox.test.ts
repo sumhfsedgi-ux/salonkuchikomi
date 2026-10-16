@@ -63,6 +63,7 @@ const inbox = {
   isCurrent: vi.fn(async () => true),
   submitReply: vi.fn(async () => ({ kind: "accepted" as const, review: null, replayed: false })),
   dismissReplyOperation: vi.fn(async () => ({ ok: true as const, value: undefined })),
+  syncForSchedule: vi.fn(async () => ({ kind: "complete" as const })),
 } satisfies Record<keyof GbpInbox, unknown>;
 let inboxAvailable = true;
 vi.mock("@/lib/gbp/runtime", () => ({ getGbpInbox: () => (inboxAvailable ? inbox : null) }));

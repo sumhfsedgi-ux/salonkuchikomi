@@ -202,6 +202,9 @@ export interface FinishReplyInput {
   clearDraftUpdatedAt: string | null;
 }
 
+/** 口コミを初めて見つけた経路(0028 の gbp_review_index.detected_via)。 */
+export type DetectedVia = "manual" | "reconcile" | "pubsub";
+
 export interface GbpStore {
   recordConsent(salonId: string, userId: string, version: string): Promise<void>;
   hasConnectConsent(salonId: string, version: string): Promise<boolean>;
@@ -220,7 +223,15 @@ export interface GbpStore {
   /** 店舗の選び直しを始める(口コミの結び付けを選択待ちに戻す。今の世代は DB のトリガーが無効にして消す)。 */
   beginLocationChange(salonId: string, googleAccountId: string): Promise<boolean>;
   /** 世代が使えなければ GbpLocationInactiveError、同期の処理権を失っていれば GbpSyncLeaseLostError。 */
-  ingestReviews(salonId: string, locationId: string, syncLeaseToken: string | null, reviews: CachedReviewInput[], ttlSeconds: number): Promise<UpsertedReview[]>;
+  /** detectedVia: 初めて見つけた経路(索引の detected_via。手動の更新は manual、自動取得は reconcile、Google の通知は pubsub)。 */
+  ingestReviews(
+    salonId: string,
+    locationId: string,
+    syncLeaseToken: string | null,
+    reviews: CachedReviewInput[],
+    ttlSeconds: number,
+    detectedVia?: DetectedVia,
+  ): Promise<UpsertedReview[]>;
   beginSync(salonId: string, locationId: string, input: SyncBeginInput): Promise<SyncBegin>;
   checkpointSync(salonId: string, locationId: string, leaseToken: string, input: SyncCheckpointInput, leaseSeconds: number): Promise<boolean>;
   finishSync(salonId: string, locationId: string, leaseToken: string, input: SyncFinishInput): Promise<string | null>;

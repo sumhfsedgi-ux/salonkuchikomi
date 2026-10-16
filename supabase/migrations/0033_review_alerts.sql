@@ -296,7 +296,7 @@ $$;
 --             済みにできない通知が残っていれば、次の回にすぐ取る。
 --   partial : 続きを次の回に取る。
 --   throttled / busy / inactive: p_next_seconds 後(失敗に数えない)。
---   failed  : 失敗を数え、p_next_seconds 後(呼び出し側で間隔を延ばす)。
+--   failed  : 失敗を数え、p_next_seconds × 2^(それまでの連続の失敗の数) 後(最長6時間)。
 create or replace function public.gbp_auto_finish(
   p_location_id uuid, p_outcome text, p_attempt_started_at timestamptz, p_fresh_run boolean,
   p_next_seconds integer, p_error_kind text
@@ -322,6 +322,9 @@ begin
                                 when p_outcome in ('complete', 'partial') then null
                                 else s.last_error_kind end,
          next_due_at = case when p_outcome = 'partial' then now()
+                            -- 失敗が続くほど間隔を延ばす(最長6時間)
+                            when p_outcome = 'failed' then now() + make_interval(secs => least(
+                              p_next_seconds * power(2, least(s.consecutive_failures, 8))::integer, 21600))
                             else now() + make_interval(secs => p_next_seconds) end,
          updated_at = now()
    where s.location_id = p_location_id;
@@ -356,6 +359,18 @@ begin
   returning h.failures into v_failures;
   return v_failures;
 end;
+$$;
+
+-- 定期処理の実行の記録(件数だけ)。
+create or replace function public.gbp_auto_run_record(p_started_at timestamptz, p_stats jsonb)
+returns uuid
+language sql
+security invoker
+set search_path = ''
+as $$
+  insert into public.gbp_auto_runs (started_at, finished_at, stats)
+  values (coalesce(p_started_at, now()), now(), case when jsonb_typeof(p_stats) = 'object' then p_stats else '{}'::jsonb end)
+  returning id
 $$;
 
 -- ------------------------------------------------------------------
@@ -692,6 +707,20 @@ begin
 end;
 $$;
 
+-- 評価を待っているイベント(古い順)。
+create or replace function public.review_alert_pending_events(p_limit integer)
+returns table (id uuid, salon_id uuid)
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select e.id, e.salon_id from public.review_alert_events e
+   where e.decision = 'pending'
+   order by e.detected_at, e.id
+   limit greatest(p_limit, 0)
+$$;
+
 -- ------------------------------------------------------------------
 -- 7. 配信(予約通知の notifications_* と同じ形。表は口コミ専用)
 -- ------------------------------------------------------------------
@@ -979,6 +1008,8 @@ revoke all on function public.gbp_auto_due_locations(text, integer) from public,
 revoke all on function public.gbp_auto_begin(uuid, uuid) from public, anon, authenticated;
 revoke all on function public.gbp_auto_finish(uuid, text, timestamptz, boolean, integer, text) from public, anon, authenticated;
 revoke all on function public.gbp_auto_auth_record(uuid, integer, boolean) from public, anon, authenticated;
+revoke all on function public.gbp_auto_run_record(timestamptz, jsonb) from public, anon, authenticated;
+revoke all on function public.review_alert_pending_events(integer) from public, anon, authenticated;
 revoke all on function public.review_alert_current_location(uuid) from public, anon, authenticated;
 revoke all on function public.review_alert_active_recipient_count(uuid) from public, anon, authenticated;
 revoke all on function public.review_alert_start(uuid, uuid, integer, text) from public, anon, authenticated;
@@ -997,6 +1028,8 @@ grant execute on function public.gbp_auto_due_locations(text, integer) to servic
 grant execute on function public.gbp_auto_begin(uuid, uuid) to service_role;
 grant execute on function public.gbp_auto_finish(uuid, text, timestamptz, boolean, integer, text) to service_role;
 grant execute on function public.gbp_auto_auth_record(uuid, integer, boolean) to service_role;
+grant execute on function public.gbp_auto_run_record(timestamptz, jsonb) to service_role;
+grant execute on function public.review_alert_pending_events(integer) to service_role;
 grant execute on function public.review_alert_current_location(uuid) to service_role;
 grant execute on function public.review_alert_active_recipient_count(uuid) to service_role;
 grant execute on function public.review_alert_start(uuid, uuid, integer, text) to service_role;
