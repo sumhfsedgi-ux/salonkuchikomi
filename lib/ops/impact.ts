@@ -93,7 +93,7 @@ export function describeChanges(params: { planBefore: SalonPlan; planAfter: Salo
       // 対象プランになっても、個別設定・提供状態によっては許可されない(プランを変えれば必ず使える、とは書かない)。
       if (before === "not_in_plan" && after !== "not_in_plan" && after !== "allowed") {
         if (after === "service_pending") {
-          details.push(`${f.label}は対象プランになります。利用開始待ちのため、使えるのは利用開始のあとです。`);
+          details.push(`${f.label}は対象プランになります。利用できない区分のため、使えるのは利用開始・再開のあとです。`);
           continue;
         }
         const why =

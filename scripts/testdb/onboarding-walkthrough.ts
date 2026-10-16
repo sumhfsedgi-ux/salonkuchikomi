@@ -514,7 +514,7 @@ async function main() {
       check(
         "本登録のあと(詳細): 「案内予定のプラン SalonPack(契約ではありません)」。契約と利用許可は読み取りだけ(現在の契約とは出さない)",
         detail.includes("案内予定のプラン SalonPack(契約ではありません)") &&
-          detail.includes("利用開始待ちのため、契約プランはまだありません") &&
+          detail.includes("お申し込み手続き中のため、契約プランはまだありません") &&
           !detail.includes("(現在の契約)") &&
           !detail.includes("通常登録"),
       );
@@ -603,10 +603,10 @@ async function main() {
     const { data: rops } = await admin.from("reservation_notification_operations").select("state").eq("salon_id", salonId).maybeSingle();
     check("テスト用にしても、予約通知は始まらない", !rops || (rops as { state: string }).state !== "active");
     // テスト用を止めると、利用開始待ちに戻る(新しい店舗なので無料提供には戻せない)
-    await changeRadio("利用開始待ちに変更").check();
+    await changeRadio("利用停止中に変更").check();
     await opPage.getByRole("button", { name: "変更内容を確認" }).first().click();
     const backDialog = await opPage.getByRole("dialog").innerText();
-    check("止める確認: 機能が止まることをぼかさない", backDialog.includes("【利用開始待ちにすると】この店舗では、サービスの機能が使えなくなります"));
+    check("止める確認: 機能が止まることをぼかさない", backDialog.includes("【利用停止中にすると】この店舗では、サービスの機能が使えなくなります"));
     await opPage.getByRole("button", { name: "この内容で保存" }).click();
     await waitStatus(salonId, "pending");
     await invPage.goto(`${BASE}/dashboard`);
@@ -615,7 +615,7 @@ async function main() {
     check(
       "止めた新しい店舗: 選べるのはテスト用だけ(無料提供は出さない)。契約と利用許可は読み取りだけ",
       (await opPage.locator("#service").locator("label", { hasText: "無料提供" }).count()) === 0 &&
-        (await body(opPage)).includes("利用開始待ちのため、契約プランはまだありません"),
+        (await body(opPage)).includes("お申し込み手続き中のため、契約プランはまだありません"),
     );
     await invCtx.close();
 
@@ -670,7 +670,7 @@ async function main() {
     await opPage.goto(`${BASE}/ops/salons/${existing.salonId}`);
     await waitText(opPage, "既存の店舗(移行)");
     check("既存の店舗: 無料提供のまま。プランは「契約プラン」", (await body(opPage)).includes("契約プラン SalonPack"));
-    await changeRadio("利用開始待ちに変更").check();
+    await changeRadio("利用停止中に変更").check();
     await opPage.getByRole("button", { name: "変更内容を確認" }).first().click();
     await opPage.getByRole("button", { name: "この内容で保存" }).click();
     await waitStatus(existing.salonId, "pending");
@@ -688,7 +688,7 @@ async function main() {
     const stoppedText = await body(opPage);
     check(
       "止めている既存の店舗の停止の案内: 利用許可の保存ではなく、利用区分の変更を案内する",
-      stoppedText.includes("利用区分が「利用開始待ち」のため、解除できません") &&
+      stoppedText.includes("利用区分が「手続き中・停止中」のため、解除できません") &&
         stoppedText.includes("再開する場合は、「利用区分」を変更してください") &&
         !stoppedText.includes("先に「契約プラン・使える機能」で利用を許可して保存してください"),
     );

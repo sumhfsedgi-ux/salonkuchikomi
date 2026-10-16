@@ -68,8 +68,8 @@ describe("利用区分の変更・本登録の確認", () => {
     expect(notes.join("\n")).toMatch(/自動では開始・再開しません/);
     expect(notes.join("\n")).toMatch(/権限による停止/);
     // 利用開始待ちに戻すときは、機能が止まることをぼかさない
-    expect(notes[0]).toBe("利用区分: 無料提供 → 利用開始待ち");
-    expect(notes[1]).toMatch(/^【利用開始待ちにすると】この店舗では、サービスの機能が使えなくなります/);
+    expect(notes[0]).toBe("利用区分: 無料提供 → 利用停止中");
+    expect(notes[1]).toMatch(/^【利用停止中にすると】この店舗では、サービスの機能が使えなくなります/);
     const toTest = serviceStatusChangeNotes({ from: "pending", to: "test", before: [], after: ["口コミ"], reservationActive: false }).join("\n");
     expect(toTest).toMatch(/テスト用でも、操作によっては実際のメール・LINE の送信が発生することがあります/);
     expect(toTest).not.toMatch(/使えなくなります/);
@@ -79,14 +79,14 @@ describe("利用区分の変更・本登録の確認", () => {
 describe("登録種別と利用区分の言葉(場面で分ける。値は同じ)", () => {
   it("新しい店舗の登録は「通常登録/テスト用」だけ(無料提供は選べない)。今の状態は「利用開始待ち/無料提供/テスト用」", () => {
     expect(REGISTRATION_KIND_LABELS).toEqual({ pending: "通常登録", test: "テスト用" });
-    expect(SERVICE_STATUS_LABELS).toEqual({ pending: "利用開始待ち", complimentary: "無料提供", test: "テスト用" });
+    expect(SERVICE_STATUS_LABELS).toEqual({ pending: "お申し込み手続き中", complimentary: "無料提供", test: "テスト用" });
     expect(REGISTRATION_KIND_DESCRIPTIONS).toEqual({
       pending: "これから通常の契約で利用するお客様の登録です。登録しただけでは、サービスの機能は使えません(プラン選択・お支払いの手続きは準備中です)。",
       test: "運営の動作確認に使用する店舗です。料金は発生しません。",
     });
   });
   it("既存の店舗の区分の変更では、利用開始待ちへの変更を「通常登録」と書かず、機能が止まることを伝える", () => {
-    expect(SERVICE_STATUS_CHANGE_OPTIONS.pending.label).toBe("利用開始待ちに変更");
+    expect(SERVICE_STATUS_CHANGE_OPTIONS.pending.label).toBe("利用停止中に変更");
     expect(SERVICE_STATUS_CHANGE_OPTIONS.pending.description).toMatch(/使えなくなります/);
     expect(Object.values(SERVICE_STATUS_CHANGE_OPTIONS).map((o) => o.label).join()).not.toMatch(/通常登録/);
   });
@@ -141,7 +141,7 @@ describe("登録種別と利用区分の言葉(場面で分ける。値は同じ
 
   it("利用開始待ちから利用中にするときは、そのときから契約プランとして使うプランを出す", () => {
     const notes = serviceStatusChangeNotes({ from: "pending", to: "test", before: [], after: ["口コミ"], reservationActive: false, startPlan: "salonpack" });
-    expect(notes[1]).toBe("【契約プラン】SalonPackを、このときから契約プランとして使います(利用開始待ちの間は、契約ではありませんでした)。");
+    expect(notes[1]).toBe("【契約プラン】SalonPackを、このときから契約プランとして使います(お申し込み手続き中の間は、契約ではありませんでした)。");
     const stop = serviceStatusChangeNotes({ from: "test", to: "pending", before: ["口コミ"], after: [], reservationActive: false, startPlan: "salonpack" });
     expect(stop.join("\n")).not.toMatch(/【契約プラン】/);
   });
@@ -182,21 +182,21 @@ describe("変更履歴の新しい種類", () => {
   const base: AuditEntry = { id: "1", occurredAt: "2026-10-14T00:00:00Z", actorKind: "operator", actorEmail: "ops@example.test", actorLabel: null, target: "", before: null, after: null, note: null };
   const ctx = { rules: RULES, plan: "reviews" as const };
   it("利用区分・登録・案内の送信を、言葉で出す(機械向けの値は出さない)", () => {
-    expect(describeAuditEntry({ ...base, target: "service_status", before: "pending", after: "complimentary" }, ctx).change).toBe("利用区分: 利用開始待ち → 無料提供");
+    expect(describeAuditEntry({ ...base, target: "service_status", before: "pending", after: "complimentary" }, ctx).change).toBe("利用区分: お申し込み手続き中 → 無料提供");
     expect(describeAuditEntry({ ...base, target: "registration", after: { source: "operator", plan: "salonpack", service_status: "test" } }, ctx).change).toBe(
       "運営が店舗を本登録(契約プラン: SalonPack・テスト用)",
     );
     // 通常登録のプランは案内予定のプラン(契約ではない)。未定もある
     expect(describeAuditEntry({ ...base, target: "registration", after: { source: "operator", plan: "salonpack", service_status: "pending" } }, ctx).change).toBe(
-      "運営が店舗を本登録(案内予定のプラン: SalonPack・利用開始待ち)",
+      "運営が店舗を本登録(案内予定のプラン: SalonPack・お申し込み手続き中)",
     );
     expect(describeAuditEntry({ ...base, target: "registration", after: { source: "operator", plan: null, service_status: "pending" } }, ctx).change).toBe(
-      "運営が店舗を本登録(プラン未定・利用開始待ち)",
+      "運営が店舗を本登録(プラン未定・お申し込み手続き中)",
     );
     // お客様の登録はプランを決めていない(0025 の記録の口コミプランは仮の値)
     for (const plan of [null, "reviews"]) {
       const own = describeAuditEntry({ ...base, actorKind: "owner", actorEmail: null, target: "registration", after: { source: "self_signup", plan, service_status: "pending" } }, ctx);
-      expect(own).toMatchObject({ actor: "変更者: お客様(店舗のオーナー)", change: "お客様が店舗を登録(プラン未定・利用開始待ち)" });
+      expect(own).toMatchObject({ actor: "変更者: お客様(店舗のオーナー)", change: "お客様が店舗を登録(プラン未定・お申し込み手続き中)" });
     }
     expect(describeAuditEntry({ ...base, target: "contract_plan", after: { plan: "salonpack", service_status: "test" } }, ctx).change).toBe(
       "利用開始: 契約プランはSalonPack(テスト用)",

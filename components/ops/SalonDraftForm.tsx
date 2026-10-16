@@ -508,7 +508,7 @@ export default function SalonDraftForm({
           <div className={cn("rounded-xl border p-3 text-sm", values.serviceStatus === "pending" ? "border-warning/40 bg-warning-soft/40" : "border-border")}>
             {values.serviceStatus === "pending" ? (
               <p>
-                <span className="font-semibold">通常登録のため、登録のあとは「利用開始待ち」です。</span>
+                <span className="font-semibold">通常登録のため、登録のあとは「お申し込み手続き中」です。</span>
                 登録しただけでは、サービスの機能は使えません。通常のお客様の利用開始は、プラン選択・お支払いの手続き(準備中)で行います。
               </p>
             ) : (

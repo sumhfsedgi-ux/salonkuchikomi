@@ -56,7 +56,7 @@ export async function saveEntitlementsAction(input: SaveEntitlementsInput): Prom
   if (readError) return { ok: false, error: "保存に失敗しました。時間をおいてもう一度お試しください。" };
   if (!current) return { ok: false, error: "サロンが見つかりません。" };
   if (current.service_status === "pending" && current.registration_source !== "existing") {
-    return { ok: false, error: "利用開始待ちの店舗では、契約プランと機能の利用許可は変更できません(契約プランは、利用を始めるときに決まります)。" };
+    return { ok: false, error: "お申し込み手続き中の店舗では、契約プランと機能の利用許可は変更できません(契約プランは、利用を始めるときに決まります)。" };
   }
 
   const { data, error } = await getSupabaseAdmin().rpc("admin_update_salon_entitlements", {

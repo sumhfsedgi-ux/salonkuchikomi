@@ -114,7 +114,7 @@ describe("口コミ・プランの変更", () => {
       features: [feature({ key: "blog", label: "ブログ", hasRuntime: false, beforeOverride: "inherit", afterOverride: "inherit", before: { allowed: false, reason: "not_in_plan" }, after: pending })],
     });
     const text = plan.details.join("\n");
-    expect(text).toContain("ブログは対象プランになります。利用開始待ちのため、使えるのは利用開始のあとです。");
+    expect(text).toContain("ブログは対象プランになります。利用できない区分のため、使えるのは利用開始・再開のあとです。");
     expect(text).not.toContain("許可されません");
   });
 });

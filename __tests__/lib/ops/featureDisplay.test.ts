@@ -36,7 +36,7 @@ describe("状態の言葉(理由ごとに分ける)", () => {
       not_in_plan: "プラン対象外",
       coming_soon: "準備中",
       ended: "提供終了",
-      service_pending: "利用開始待ち",
+      service_pending: "利用できない区分",
     });
     expect(accessState({ allowed: false, reason: "service_pending" })).toBe("service_pending");
   });

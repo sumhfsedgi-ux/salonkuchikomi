@@ -6,7 +6,7 @@ import { PLAN_LABELS } from "@/lib/ops/labels";
 import type { PlanRules } from "@/lib/ops/preview";
 import type { AuditEntry } from "@/lib/ops/queries";
 import { isSwitchOn } from "@/lib/ops/toggle";
-import { isServiceStatus, SERVICE_STATUS_LABELS } from "@/lib/onboarding/serviceStatus";
+import { isServiceStatus, serviceStatusLabel, SERVICE_STOPPED_LABEL, type RegistrationSource } from "@/lib/onboarding/serviceStatus";
 import { authEmailErrorLabel } from "@/lib/onboarding/authEmailErrors";
 
 // 運営管理の「変更履歴」の表示(DBに触れない)。DB の記録(operator_audit_log)は書き換えず、表示だけを整える。
@@ -49,8 +49,8 @@ function overrideText(value: unknown, key: string | undefined, rules: PlanRules,
   return isSwitchOn(value as OverrideMode, defaultOn) ? ACCESS_STATE_LABELS.allowed : ACCESS_STATE_LABELS.not_allowed;
 }
 
-function statusLabel(value: unknown): string | null {
-  return isServiceStatus(value) ? SERVICE_STATUS_LABELS[value] : null;
+function statusLabel(value: unknown, source?: RegistrationSource | null): string | null {
+  return isServiceStatus(value) ? serviceStatusLabel(value, source) : null;
 }
 
 const INVITATION_KIND_TEXT: Record<string, string> = {
@@ -59,10 +59,11 @@ const INVITATION_KIND_TEXT: Record<string, string> = {
   verify_link: "本人確認のご案内",
 };
 
-function changeText(e: Pick<AuditEntry, "target" | "before" | "after">, rules: PlanRules, plan: SalonPlan): string {
+function changeText(e: Pick<AuditEntry, "target" | "before" | "after">, rules: PlanRules, plan: SalonPlan, source?: RegistrationSource | null): string {
   if (e.target === "service_status") {
-    const before = statusLabel(e.before);
-    const after = statusLabel(e.after);
+    const before = statusLabel(e.before, source);
+    // 利用中から pending への変更は、運営による停止
+    const after = e.after === "pending" && (e.before === "complimentary" || e.before === "test") ? SERVICE_STOPPED_LABEL : statusLabel(e.after, source);
     if (!after) return "利用区分の変更";
     return before ? `利用区分: ${before} → ${after}` : `利用区分を${after}に設定`;
   }
@@ -180,6 +181,6 @@ function memoText(e: Pick<AuditEntry, "actorKind" | "note">): string | null {
   return text || null;
 }
 
-export function describeAuditEntry(e: AuditEntry, ctx: { rules: PlanRules; plan: SalonPlan }): AuditView {
-  return { actor: actorText(e), change: changeText(e, ctx.rules, ctx.plan), memo: memoText(e) };
+export function describeAuditEntry(e: AuditEntry, ctx: { rules: PlanRules; plan: SalonPlan; registrationSource?: RegistrationSource | null }): AuditView {
+  return { actor: actorText(e), change: changeText(e, ctx.rules, ctx.plan, ctx.registrationSource), memo: memoText(e) };
 }

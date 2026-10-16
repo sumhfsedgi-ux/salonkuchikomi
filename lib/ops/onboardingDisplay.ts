@@ -2,7 +2,7 @@ import type { SalonPlan } from "@/lib/access/plan";
 import type { OverrideMode } from "@/lib/features/entitlements";
 import { FEATURE_REGISTRY, type FeatureKey } from "@/lib/features/registry";
 import { authEmailErrorLabel } from "@/lib/onboarding/authEmailErrors";
-import { isServiceActive, SERVICE_STATUS_LABELS, TEST_SEND_NOTICE, type RegistrationSource, type ServiceStatus } from "@/lib/onboarding/serviceStatus";
+import { isServiceActive, serviceStatusLabel, SERVICE_STOPPED_LABEL, TEST_SEND_NOTICE, type RegistrationSource, type ServiceStatus } from "@/lib/onboarding/serviceStatus";
 import { PLAN_LABELS } from "@/lib/ops/labels";
 import { previewServiceAccess, type CatalogEntry, type PlanRules } from "@/lib/ops/preview";
 
@@ -133,22 +133,25 @@ export function serviceStatusChangeNotes(params: {
   reservationActive: boolean;
   /** 利用開始待ちから利用中にするとき、このときから契約プランとして使うプラン。 */
   startPlan?: SalonPlan | null;
+  registrationSource?: RegistrationSource | null;
 }): string[] {
-  const { from, to, before, after, reservationActive, startPlan } = params;
-  const notes: string[] = [`利用区分: ${SERVICE_STATUS_LABELS[from]} → ${SERVICE_STATUS_LABELS[to]}`];
+  const { from, to, before, after, reservationActive, startPlan, registrationSource } = params;
+  // 利用中から pending への変更は、運営による停止
+  const toLabel = to === "pending" && isServiceActive(from) ? SERVICE_STOPPED_LABEL : serviceStatusLabel(to, registrationSource);
+  const notes: string[] = [`利用区分: ${serviceStatusLabel(from, registrationSource)} → ${toLabel}`];
   if (from === "pending" && isServiceActive(to) && startPlan) {
-    notes.push(`【契約プラン】${PLAN_LABELS[startPlan]}を、このときから契約プランとして使います(利用開始待ちの間は、契約ではありませんでした)。`);
+    notes.push(`【契約プラン】${PLAN_LABELS[startPlan]}を、このときから契約プランとして使います(お申し込み手続き中の間は、契約ではありませんでした)。`);
   }
-  // 利用開始待ちに戻すと機能が止まる。結果をぼかさずに書く
+  // 利用停止中にすると機能が止まる。結果をぼかさずに書く
   if (to === "pending") {
-    notes.push("【利用開始待ちにすると】この店舗では、サービスの機能が使えなくなります(お客様用ページも「現在ご利用いただけません」になります)。登録内容やデータは消えません。");
+    notes.push("【利用停止中にすると】この店舗では、サービスの機能が使えなくなります(お客様用ページも「現在ご利用いただけません」になります)。登録内容やデータは消えません。");
   }
   notes.push(after.length > 0 ? `変更のあとに使える機能: ${after.join("・")}` : "変更のあとに使える機能: ありません");
   const lost = before.filter((l) => !after.includes(l));
   if (lost.length > 0) notes.push(`【使えなくなります】${lost.join("・")}`);
   notes.push("契約プランと機能の利用許可は変わりません。権限による停止も、この操作では解除しません。");
   notes.push("予約通知は、連携と開始の設定が完了するまで送信されません(この操作で自動では開始・再開しません)。");
-  if (to === "pending" && reservationActive) notes.push("予約通知が稼働中のため、利用開始待ちにすると「権限による停止」になります。利用中に戻しても自動では再開しません。");
+  if (to === "pending" && reservationActive) notes.push("予約通知が稼働中のため、利用停止中にすると「権限による停止」になります。利用中に戻しても自動では再開しません。");
   if (to === "test") notes.push(TEST_SEND_NOTICE);
   return notes;
 }

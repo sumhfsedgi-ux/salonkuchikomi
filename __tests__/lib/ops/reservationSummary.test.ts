@@ -105,7 +105,7 @@ describe("summarizeReservation", () => {
     expect(stopped.status).toBe("stopped");
     expect(stopped.reasons[0]).toEqual({
       key: "not_entitled",
-      text: "利用区分が「利用開始待ち」のため、使えません。",
+      text: "利用区分が「手続き中・停止中」のため、使えません。",
       action: "再開する場合は、「利用区分」を変更してください(「契約プラン・使える機能」の保存では再開しません)。",
       owner: "operator",
     });
@@ -113,7 +113,7 @@ describe("summarizeReservation", () => {
     // 一度も始めていない店舗(新しい店舗)には、再開の案内を出さない
     const fresh = summarizeReservation({ ...base, entitlement: { allowed: false, reason: "service_pending" }, reservation: { ...base.reservation, state: null } });
     expect(fresh.status).toBe("not_in_use");
-    expect(fresh.reasons).toEqual([{ key: "not_entitled", text: "利用区分が「利用開始待ち」のため、使えません。", action: null, owner: null }]);
+    expect(fresh.reasons).toEqual([{ key: "not_entitled", text: "利用区分が「手続き中・停止中」のため、使えません。", action: null, owner: null }]);
   });
 
   it("稼働中でも予約メールの確認が止まっていれば「確認できません」", () => {

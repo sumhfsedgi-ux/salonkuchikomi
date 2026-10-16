@@ -10,7 +10,7 @@ import type { CatalogEntry, PlanRules } from "@/lib/ops/preview";
 import { serviceStatusChangeNotes, usableFeatureLabels } from "@/lib/ops/onboardingDisplay";
 import {
   SERVICE_STATUS_CHANGE_OPTIONS,
-  SERVICE_STATUS_LABELS,
+  serviceStatusLabel,
   serviceStatusChoices,
   type RegistrationSource,
   type ServiceStatus,
@@ -23,9 +23,9 @@ import ConfirmDialog from "@/components/ops/ConfirmDialog";
 import ServiceStatusBadge from "@/components/ops/ServiceStatusBadge";
 
 // 利用区分の変更(運営)。通常のお客様の利用開始には使わない(将来の決済の完了で自動で始まる)。運営が変えられるのは:
-//   テスト用の指定(プランが決まっている店舗だけ)/ 利用の停止(利用開始待ちに変更)/ 既存の店舗を無料提供に戻すこと。
+//   テスト用の指定(プランが決まっている店舗だけ)/ 利用の停止(利用停止中に変更)/ 既存の店舗を無料提供に戻すこと。
 // 選べる変更は serviceStatusChoices(DB の admin_update_salon_service_status と同じ規則)。
-// 選択肢は変更の結果が伝わる言葉にする(利用開始待ちに戻すと機能が止まるため、「通常登録」とは出さない)。
+// 選択肢は変更の結果が伝わる言葉にする(利用停止中にすると機能が止まるため、「通常登録」とは出さない)。
 // 区分だけを変え、契約プラン・機能の利用許可・権限による停止・予約通知の稼働状態は変えない。確認のうえ保存する。
 
 export default function ServiceStatusEditor({
@@ -105,7 +105,7 @@ export default function ServiceStatusEditor({
         <label className="flex min-h-11 items-start gap-2 text-sm text-ink">
           <input type="radio" name={`service-status-${salonId}`} className="mt-1" checked={draft === status} disabled={pending} onChange={() => setDraft(status)} />
           <span>
-            <span className="font-medium">{SERVICE_STATUS_LABELS[status]}</span>
+            <span className="font-medium">{serviceStatusLabel(status, registrationSource)}</span>
             <span className="ml-1 text-xs text-ink-muted">(現在・変更しない)</span>
           </span>
         </label>
@@ -156,7 +156,7 @@ export default function ServiceStatusEditor({
           }
         >
           <ul className="list-disc space-y-1 pl-5 text-sm text-ink">
-            {serviceStatusChangeNotes({ from: status, to: draft, before, after, reservationActive, startPlan: registrationSource === "existing" ? null : plan }).map((n) => (
+            {serviceStatusChangeNotes({ from: status, to: draft, before, after, reservationActive, startPlan: registrationSource === "existing" ? null : plan, registrationSource }).map((n) => (
               <li key={n}>{n}</li>
             ))}
           </ul>

@@ -16,7 +16,7 @@ export const ACCESS_STATE_LABELS: Record<AccessState, string> = {
   not_in_plan: "プラン対象外",
   coming_soon: "準備中",
   ended: "提供終了",
-  service_pending: "利用開始待ち",
+  service_pending: "利用できない区分",
 };
 
 type Access = { allowed: boolean; reason: EntitlementReason };
@@ -123,6 +123,6 @@ export function unsavedChangeText(params: {
       if (b === "not_in_plan") return `保存すると、${label}は対象プランになりますが、${ACCESS_STATE_LABELS[a]}のため利用できません。`;
       return `保存すると、${label}は${ACCESS_STATE_LABELS[a]}のため利用できなくなります。`;
     case "service_pending":
-      return `保存すると、${label}の利用を許可します。利用開始待ちのため、使えるようになるのは利用開始のあとです。`;
+      return `保存すると、${label}の利用を許可します。利用できない区分のため、使えるようになるのは利用開始・再開のあとです。`;
   }
 }

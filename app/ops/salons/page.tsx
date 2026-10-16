@@ -6,7 +6,7 @@ import { FEATURE_CATEGORIES, FEATURE_REGISTRY, isFeatureKey, type FeatureKey } f
 import type { SalonPlan } from "@/lib/access/plan";
 import { listDrafts } from "@/lib/ops/onboardingQueries";
 import { INVITATION_STATE_LABELS, planDisplay } from "@/lib/ops/onboardingDisplay";
-import { isServiceStatus, REGISTRATION_SOURCE_LABELS, SERVICE_STATUS_LABELS, type ServiceStatus } from "@/lib/onboarding/serviceStatus";
+import { isServiceStatus, REGISTRATION_SOURCE_LABELS, SERVICE_PENDING_FILTER_LABEL, SERVICE_STATUS_LABELS, type ServiceStatus } from "@/lib/onboarding/serviceStatus";
 import ServiceStatusBadge from "@/components/ops/ServiceStatusBadge";
 import PageHeader from "@/components/ui/PageHeader";
 import Card from "@/components/ui/Card";
@@ -135,7 +135,7 @@ export default async function OpsSalonsPage({ searchParams }: PageProps<"/ops/sa
               <option value="">すべて</option>
               {(Object.keys(SERVICE_STATUS_LABELS) as ServiceStatus[]).map((s) => (
                 <option key={s} value={s}>
-                  {SERVICE_STATUS_LABELS[s]}
+                  {s === "pending" ? SERVICE_PENDING_FILTER_LABEL : SERVICE_STATUS_LABELS[s]}
                 </option>
               ))}
             </select>
@@ -186,7 +186,7 @@ export default async function OpsSalonsPage({ searchParams }: PageProps<"/ops/sa
                 </div>
                 <div className="flex flex-col gap-2 md:items-end">
                   <div className="flex flex-wrap gap-1.5 md:justify-end">
-                    <ServiceStatusBadge status={s.serviceStatus} />
+                    <ServiceStatusBadge status={s.serviceStatus} registrationSource={s.registrationSource} />
                     <PlanBadge row={s} />
                     {s.invitationState !== "none" && (
                       <Badge variant={s.invitationState === "complete" ? "neutral" : "warning"}>{INVITATION_STATE_LABELS[s.invitationState]}</Badge>

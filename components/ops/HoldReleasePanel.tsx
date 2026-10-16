@@ -33,7 +33,7 @@ export default function HoldReleasePanel({ salonId, featureKey, featureLabel, ho
   if (!entitled && servicePending) {
     return (
       <p className="text-sm text-ink-muted">
-        利用区分が「利用開始待ち」のため、解除できません。先に「利用区分」を利用中に戻してください(「契約プラン・使える機能」の保存では再開しません)。
+        利用区分が「手続き中・停止中」のため、解除できません。先に「利用区分」を利用中に戻してください(「契約プラン・使える機能」の保存では再開しません)。
       </p>
     );
   }

@@ -89,7 +89,7 @@ export function summarizeReservation(input: {
           : state === "ended"
             ? "提供を終了しています。"
             : state === "service_pending"
-              ? "利用区分が「利用開始待ち」のため、使えません。"
+              ? "利用区分が「手続き中・停止中」のため、使えません。"
               : "利用を許可していません。";
     const action =
       state === "not_in_plan" || state === "not_allowed"

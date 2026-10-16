@@ -207,7 +207,7 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
         <PageHeader
           title={detail.name}
           description={`${plan.label} ${plan.text}・登録日 ${formatJst(detail.createdAt)}・${REGISTRATION_SOURCE_LABELS[onboarding.registrationSource]}`}
-          action={<ServiceStatusBadge status={onboarding.serviceStatus} />}
+          action={<ServiceStatusBadge status={onboarding.serviceStatus} registrationSource={onboarding.registrationSource} />}
         />
         {registeredNotice && (
           <div aria-live="polite">
@@ -241,7 +241,7 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
             <Row label="店舗名">{detail.name}</Row>
             <Row label="ログイン用メールアドレス">{detail.ownerEmail ?? "—"}</Row>
             <Row label="利用区分">
-              <ServiceStatusBadge status={onboarding.serviceStatus} />
+              <ServiceStatusBadge status={onboarding.serviceStatus} registrationSource={onboarding.registrationSource} />
             </Row>
             <Row label="登録経路">{REGISTRATION_SOURCE_LABELS[onboarding.registrationSource]}</Row>
             <Row label={plan.label}>{plan.text}</Row>
@@ -277,7 +277,7 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
       <Section
         id="service"
         title="利用区分"
-        description="店舗の今の利用の状態です。通常のお客様は、プラン選択・お支払いの手続き(準備中)が済むと利用を始めます。運営が変更できるのは、テスト用の指定と、利用の停止(利用開始待ちに変更)です。既存の店舗は、無料提供に戻すこともできます。"
+        description="店舗の今の利用の状態です。通常のお客様は、プラン選択・お支払いの手続き(準備中)が済むと利用を始めます。運営が変更できるのは、テスト用の指定と、利用の停止(利用停止中に変更)です。既存の店舗は、無料提供に戻すこともできます。"
       >
         <ServiceStatusEditor
           salonId={detail.id}
@@ -330,7 +330,7 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
         <Section
           id="entitlements"
           title="契約プラン・使える機能"
-          description="利用開始待ちのため、契約プランはまだありません。ここでは変更できません(予定の内容を表示しています)。"
+          description="お申し込み手続き中のため、契約プランはまだありません。ここでは変更できません(予定の内容を表示しています)。"
         >
           <PendingContractSummary plan={plan} features={features} />
         </Section>
@@ -441,7 +441,7 @@ export default async function OpsSalonDetailPage({ params, searchParams }: PageP
           <Card className="p-0">
             <ol className="divide-y divide-border">
               {audit.rows.map((e) => {
-                const view = describeAuditEntry(e, { rules: detail.rules, plan: detail.plan });
+                const view = describeAuditEntry(e, { rules: detail.rules, plan: detail.plan, registrationSource: onboarding.registrationSource });
                 return (
                   <li key={e.id} className="flex flex-col gap-1 px-5 py-3">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-muted">

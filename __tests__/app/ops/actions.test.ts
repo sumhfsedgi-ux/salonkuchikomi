@@ -71,7 +71,7 @@ describe("saveEntitlementsAction", () => {
     salonStatus = "pending";
     const res = await saveEntitlementsAction(input);
     expect(res).toMatchObject({ ok: false });
-    expect(res.ok ? "" : res.error).toMatch(/利用開始待ちの店舗では、契約プランと機能の利用許可は変更できません/);
+    expect(res.ok ? "" : res.error).toMatch(/お申し込み手続き中の店舗では、契約プランと機能の利用許可は変更できません/);
     expect(rpc).not.toHaveBeenCalled();
   });
 
