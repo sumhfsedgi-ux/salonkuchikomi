@@ -4,6 +4,10 @@ import { pushMessages } from "@/lib/notifications/line/LineClient";
 import { resolveLineSendPolicy } from "@/lib/notifications/line/sendPolicy";
 import { GBP_CONSENT_VERSION } from "@/lib/gbp/inbox";
 import { getGbpAutoSyncInbox } from "@/lib/gbp/runtime";
+import { createGoogleGbpAccess } from "@/lib/gbp/googleAccess";
+import { isSimulatedGoogleEnabled } from "@/lib/google/config";
+import { pushConfig } from "@/lib/gbp/pushReceiver";
+import { createHttpNotificationSettingApi, createSimulatedNotificationSettingApi } from "@/lib/gbp/notificationSetting";
 import type { RpcClient } from "@/lib/gbp/supabaseStore";
 import { isAutoSyncEnabled, isReviewAlertsEnabled, reviewAlertBaseUrl } from "@/lib/reviews/alerts/config";
 import { lineQuotaAllowsReviewAlerts } from "@/lib/reviews/alerts/lineQuota";
@@ -17,10 +21,19 @@ export function getReviewAlertStore() {
   return createRpcReviewAlertStore(getNotificationsSupabaseAdmin() as unknown as RpcClient);
 }
 
+let simulatedSettings: ReturnType<typeof createSimulatedNotificationSettingApi> | null = null;
+
 export function getReviewTickDeps(): ReviewTickDeps {
   const policy = resolveLineSendPolicy();
+  const store = getReviewAlertStore();
+  const push = pushConfig();
+  const settingsApi = isSimulatedGoogleEnabled()
+    ? (simulatedSettings ??= createSimulatedNotificationSettingApi()).api
+    : createHttpNotificationSettingApi();
   return {
-    store: getReviewAlertStore(),
+    store,
+    pushActiveAccounts: push ? () => store.pushActiveAccounts() : undefined,
+    registration: push?.topic ? { store, api: settingsApi, access: createGoogleGbpAccess(), topic: push.topic } : null,
     inbox: getGbpAutoSyncInbox(),
     flags: { autoSync: isAutoSyncEnabled(), alerts: isReviewAlertsEnabled() },
     baseUrl: reviewAlertBaseUrl(),

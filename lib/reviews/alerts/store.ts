@@ -52,6 +52,23 @@ export interface AutoSyncStore {
   /** 自動取得での refresh token の失効の記録(ok で消す)。戻り値は同じトークンの世代での連続の回数。 */
   recordAuth(googleAccountId: string, tokenGeneration: number, ok: boolean): Promise<number>;
   recordRun(startedAt: string, stats: Record<string, number | string | boolean>): Promise<void>;
+  /** 最初から読んだ同期が最後まで終わった: それより前に受けた Google の通知を済みにする(0034)。 */
+  completePush(locationId: string, runStartedAt: string): Promise<number>;
+}
+
+// ------------------------------------------------------------------
+// Google の通知(0034)
+// ------------------------------------------------------------------
+
+export type PushRecordOutcome = "recorded" | "ignored" | "duplicate_pending" | "duplicate_done";
+export type RegistrationState = "ours" | "foreign" | "none" | "error";
+
+export interface PushStore {
+  recordPush(input: { messageId: string; notificationType: string | null; locationName: string | null; publishTime: string | null }): Promise<PushRecordOutcome>;
+  purgePush(): Promise<number>;
+  registrationWork(): Promise<{ action: "register" | "unregister"; accountName: string; googleAccountId: string; salonId: string }[]>;
+  setRegistration(accountName: string, state: RegistrationState, googleAccountId: string | null): Promise<void>;
+  pushActiveAccounts(): Promise<Set<string>>;
 }
 
 // ------------------------------------------------------------------
@@ -105,11 +122,11 @@ export function parseAlertMessage(value: unknown): AlertMessageData | null {
   return { salonName, url };
 }
 
-export function createRpcReviewAlertStore(client: RpcClient): AutoSyncStore & AlertDeliveryStore {
+export function createRpcReviewAlertStore(client: RpcClient): AutoSyncStore & AlertDeliveryStore & PushStore {
   async function call(fn: string, args: Record<string, unknown>): Promise<unknown> {
     const { data, error } = await client.rpc(fn, args);
     if (error) {
-      const code = /(?:review_alert|gbp_auto):([a-z_]+)/.exec(error.message ?? "")?.[1] ?? error.code ?? null;
+      const code = /(?:review_alert|gbp_auto|gbp_push):([a-z_]+)/.exec(error.message ?? "")?.[1] ?? error.code ?? null;
       throw new ReviewAlertStoreError(fn, code);
     }
     return data;
@@ -213,6 +230,47 @@ export function createRpcReviewAlertStore(client: RpcClient): AutoSyncStore & Al
 
     async sweepEntitlement() {
       return num(await call("review_alert_sweep_entitlement", {}));
+    },
+
+    async completePush(locationId, runStartedAt) {
+      return num(await call("gbp_push_complete", { p_location_id: locationId, p_run_started_at: runStartedAt }));
+    },
+
+    async recordPush({ messageId, notificationType, locationName, publishTime }) {
+      const data = str(
+        await call("gbp_push_record", {
+          p_message_id: messageId,
+          p_notification_type: notificationType,
+          p_location_name: locationName,
+          p_publish_time: publishTime,
+        }),
+      );
+      if (data === "recorded" || data === "ignored" || data === "duplicate_pending" || data === "duplicate_done") return data;
+      throw new ReviewAlertStoreError("gbp_push_record", "unexpected_result");
+    },
+
+    async purgePush() {
+      return num(await call("gbp_push_purge", {}));
+    },
+
+    async registrationWork() {
+      return rows(await call("gbp_notification_work", {})).map((r) => ({
+        action: r.action === "unregister" ? ("unregister" as const) : ("register" as const),
+        accountName: String(r.account_name),
+        googleAccountId: String(r.google_account_id),
+        salonId: String(r.salon_id),
+      }));
+    },
+
+    async setRegistration(accountName, state, googleAccountId) {
+      await call("gbp_notification_registration_set", { p_account_name: accountName, p_state: state, p_google_account_id: googleAccountId });
+    },
+
+    async pushActiveAccounts() {
+      // 1列の関数は、クライアントによって [{ google_account_id }] か [値] で返る(どちらも受け付ける)。
+      const data = await call("gbp_push_active_accounts", {});
+      const list: unknown[] = Array.isArray(data) ? data : [];
+      return new Set(list.map((r) => (typeof r === "string" ? r : String((r as Row).google_account_id))));
     },
   };
 }

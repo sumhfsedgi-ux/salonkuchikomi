@@ -232,3 +232,76 @@ describe("自動取得", () => {
     expect(row.requested_at).toBeNull();
   });
 });
+
+describe("Google の通知(0034)", () => {
+  const record = async (messageId: string, locationName: string | null) =>
+    (await alertStore().recordPush({ messageId, notificationType: "NEW_REVIEW", locationName, publishTime: new Date().toISOString() }));
+  const message = async (messageId: string) => {
+    const [m] = await sql<{ status: string }[]>`select status from public.gbp_push_messages where message_id = ${messageId}`;
+    return m?.status ?? null;
+  };
+
+  it("受信の直後に止まっても(前倒しの処理が動かなくても)、次の定期処理が取り込み、受信を済みにする", async () => {
+    const w = await world();
+    await w.inbox.recordConsent(w.ctx);
+    await w.inbox.selectLocation(w.ctx, "locations/sim-101");
+    await sql`update public.gbp_locations set last_synced_at = now() where salon_id = ${w.salon.salonId} and status = 'active'`;
+    await sql`update public.gbp_auto_sync set next_due_at = now() + interval '1 hour' where salon_id = ${w.salon.salonId}`;
+    newReview(w, "locations/sim-101", "push-late");
+    const id = `msg-${randomUUID()}`;
+    expect(await record(id, "locations/sim-101")).toBe("recorded");
+    expect(await message(id)).toBe("received");
+    // ここで処理が止まった(after() は動かなかった)。次の定期処理:
+    expect((await auto(w.inbox)).complete).toBe(1);
+    expect(await eventsOf(w.salon.salonId)).toEqual([{ source: "pubsub" }]);
+    expect(await message(id)).toBe("done");
+    // 済んだあとの再送は記録だけ
+    expect(await record(id, "locations/sim-101")).toBe("duplicate_done");
+  });
+
+  it("済んでいない受信の再送は、取り込み待ちを立て直す。どの店舗にも当たらない通知は記録だけ", async () => {
+    const w = await world();
+    await w.inbox.recordConsent(w.ctx);
+    await w.inbox.selectLocation(w.ctx, "locations/sim-101");
+    const id = `msg-${randomUUID()}`;
+    expect(await record(id, "locations/sim-101")).toBe("recorded");
+    await sql`update public.gbp_auto_sync set requested_at = null, next_due_at = now() + interval '1 hour' where salon_id = ${w.salon.salonId}`;
+    expect(await record(id, "locations/sim-101")).toBe("duplicate_pending");
+    const [s] = await sql<{ requested: boolean; due: boolean }[]>`
+      select requested_at is not null as requested, next_due_at <= now() as due from public.gbp_auto_sync where salon_id = ${w.salon.salonId}`;
+    expect(s).toEqual({ requested: true, due: true });
+    expect(await record(`msg-${randomUUID()}`, "locations/not-linked")).toBe("ignored");
+    expect(await record(`msg-${randomUUID()}`, null)).toBe("ignored");
+  });
+
+  it("LINE 通知中の店舗の GBP アカウントだけ登録の対象。止めたら解除の対象(登録したものだけ)", async () => {
+    const w = await world();
+    await w.inbox.recordConsent(w.ctx);
+    await w.inbox.selectLocation(w.ctx, "locations/sim-101");
+    const store = alertStore();
+    const work = async () => (await store.registrationWork()).filter((x) => x.salonId === w.salon.salonId);
+    expect(await work()).toEqual([]);
+    const [lc] = await sql<{ id: string }[]>`
+      insert into public.line_connections (salon_id, destination_id, status, label, recipient_since)
+      values (${w.salon.salonId}, ${`U${randomUUID().replace(/-/g, "")}`}, 'connected', 'オーナー', now()) returning id`;
+    await sql`select public.review_alert_set_recipient(${w.salon.salonId}, ${lc.id}, true, ${w.salon.userId})`;
+    const [{ version }] = await sql<{ version: number }[]>`select coalesce((select version from public.review_alert_settings where salon_id = ${w.salon.salonId}), 0) as version`;
+    const [start] = await sql<{ r: string }[]>`select public.review_alert_start(${w.salon.salonId}, ${w.salon.userId}, ${version}, ${GBP_CONSENT_VERSION}) as r`;
+    expect(start.r).toBe("started");
+    expect(await work()).toEqual([{ action: "register", accountName: "accounts/sim-1", googleAccountId: w.accountId, salonId: w.salon.salonId }]);
+    await store.setRegistration("accounts/sim-1", "ours", w.accountId);
+    expect(await work()).toEqual([]);
+    expect((await store.pushActiveAccounts()).has(w.accountId)).toBe(true);
+    await sql`select * from public.review_alert_stop(${w.salon.salonId}, ${w.salon.userId})`;
+    expect(await work()).toEqual([{ action: "unregister", accountName: "accounts/sim-1", googleAccountId: w.accountId, salonId: w.salon.salonId }]);
+    await store.setRegistration("accounts/sim-1", "none", w.accountId);
+  });
+
+  it("7日を過ぎた受信の記録は消す", async () => {
+    const id = `msg-${randomUUID()}`;
+    await record(id, null);
+    await sql`update public.gbp_push_messages set received_at = now() - interval '8 days' where message_id = ${id}`;
+    expect(await alertStore().purgePush()).toBeGreaterThanOrEqual(1);
+    expect(await message(id)).toBeNull();
+  });
+});

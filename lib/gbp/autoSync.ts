@@ -106,6 +106,10 @@ async function syncOne(
     if (result.kind === "complete") summary.complete++;
     else summary.partial++;
     await deps.store.recordAuth(loc.googleAccountId, loc.tokenGeneration, true);
+    // 最初から読んだ同期が最後まで終わった: それより前に受けた Google の通知を済みにする。
+    if (result.kind === "complete" && loc.requested && !loc.runInProgress) {
+      await deps.store.completePush(loc.locationId, startedAt);
+    }
   } else {
     summary.skipped++;
   }

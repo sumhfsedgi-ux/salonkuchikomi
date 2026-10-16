@@ -9,11 +9,14 @@ import {
   type EvaluateSummary,
   type ReviewAlertSender,
 } from "@/lib/reviews/alerts/deliver";
-import type { AlertDeliveryStore, AutoSyncStore } from "@/lib/reviews/alerts/store";
+import { syncNotificationRegistrations, type NotificationSettingApi, type RegistrationSummary } from "@/lib/gbp/notificationSetting";
+import type { GbpAccess } from "@/lib/gbp/access";
+import type { AlertDeliveryStore, AutoSyncStore, PushStore } from "@/lib/reviews/alerts/store";
 
 // 口コミの定期処理1回分(外部のスケジューラーから5分ごと。app/api/cron/reviews/tick/route.ts)。
 //   ① 第2段階の記録の期限切れの削除(利用可否・通知の停止・連携・フラグに関係なく必ず行う)
 //   ② 利用許可(google_reviews)が無くなった店舗の LINE 通知を止める(トリガーの補い)
+//   ②' Google の通知設定の登録・解除(GBP_PUBSUB_ENABLED。LINE 通知を開始・停止した店舗の GBP アカウント)
 //   ③ 自動取得(GBP_AUTO_SYNC_ENABLED。第1段階の同期。新しい口コミはイベントになる)
 //   ④ イベントの評価と ⑤ 配信(REVIEW_ALERTS_ENABLED)
 // 段ごとに失敗を分け、ある段の失敗で次の段を止めない(①は毎回必ず試みる)。配信には時間を残しておく。
@@ -22,7 +25,7 @@ import type { AlertDeliveryStore, AutoSyncStore } from "@/lib/reviews/alerts/sto
 const DELIVERY_RESERVE_MS = 12_000;
 
 export interface ReviewTickDeps {
-  store: AutoSyncStore & AlertDeliveryStore;
+  store: AutoSyncStore & AlertDeliveryStore & Pick<PushStore, "purgePush">;
   /** 自動取得に使う第1段階の同期。Google口コミの処理を作れない(フラグが空・鍵が無い)なら null。 */
   inbox: Pick<GbpInbox, "syncForSchedule"> | null;
   flags: { autoSync: boolean; alerts: boolean };
@@ -33,12 +36,20 @@ export interface ReviewTickDeps {
   quotaAllows?: () => Promise<boolean>;
   /** Google の通知を受けているアカウント(0034)。 */
   pushActiveAccounts?: () => Promise<ReadonlySet<string>>;
+  /** Google の通知設定の登録・解除(GBP_PUBSUB_ENABLED とトピックがあるときだけ)。 */
+  registration?: {
+    store: Pick<PushStore, "registrationWork" | "setRegistration">;
+    api: NotificationSettingApi;
+    access: Pick<GbpAccess, "binding" | "accessToken">;
+    topic: string;
+  } | null;
   deadline?: Deadline;
 }
 
 export interface ReviewTickSummary {
   purged: Record<string, number> | null;
   entitlementStops: number | null;
+  registration: RegistrationSummary | null;
   autoSync: AutoSyncSummary | null;
   evaluate: EvaluateSummary | null;
   deliver: DeliverSummary | null;
@@ -51,7 +62,15 @@ export async function runReviewTick(deps: ReviewTickDeps): Promise<ReviewTickSum
 }
 
 async function tick(deps: ReviewTickDeps, deadline: Deadline): Promise<ReviewTickSummary> {
-  const summary: ReviewTickSummary = { purged: null, entitlementStops: null, autoSync: null, evaluate: null, deliver: null, errors: [] };
+  const summary: ReviewTickSummary = {
+    purged: null,
+    entitlementStops: null,
+    registration: null,
+    autoSync: null,
+    evaluate: null,
+    deliver: null,
+    errors: [],
+  };
   const startedAt = new Date().toISOString();
   const stage = async <T>(name: string, run: () => Promise<T>): Promise<T | null> => {
     try {
@@ -63,8 +82,15 @@ async function tick(deps: ReviewTickDeps, deadline: Deadline): Promise<ReviewTic
     }
   };
 
-  summary.purged = await stage("purge", () => deps.store.purge());
+  summary.purged = await stage("purge", async () => ({ ...(await deps.store.purge()), pushMessages: await deps.store.purgePush() }));
   summary.entitlementStops = await stage("entitlement", () => deps.store.sweepEntitlement());
+
+  if (deps.registration && deps.inbox) {
+    const registration = deps.registration;
+    summary.registration = await stage("registration", () =>
+      syncNotificationRegistrations({ ...registration, deadline: deadline.child(Math.max(0, deadline.remainingMs() - 2 * DELIVERY_RESERVE_MS)) }),
+    );
+  }
 
   if (deps.flags.autoSync && deps.inbox) {
     const inbox = deps.inbox;

@@ -5,6 +5,7 @@ import { createDeadline } from "@/lib/notifications/jobs/runBudget";
 function deps(overrides: Partial<ReviewTickDeps> = {}) {
   const store = {
     purge: vi.fn(async () => ({ deliveries: 1 })),
+    purgePush: vi.fn(async () => 2),
     sweepEntitlement: vi.fn(async () => 0),
     dueLocations: vi.fn(async () => []),
     beginAutoSync: vi.fn(),
@@ -42,7 +43,8 @@ describe("口コミの定期処理", () => {
     expect(store.dueLocations).not.toHaveBeenCalled();
     expect(store.pendingEvents).not.toHaveBeenCalled();
     expect(store.claim).not.toHaveBeenCalled();
-    expect(s.purged).toEqual({ deliveries: 1 });
+    expect(s.purged).toEqual({ deliveries: 1, pushMessages: 2 });
+    expect(store.purgePush).toHaveBeenCalledTimes(1);
     expect(store.recordRun).toHaveBeenCalledTimes(1);
   });
 
