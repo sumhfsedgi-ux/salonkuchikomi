@@ -6,7 +6,16 @@ import type { PipelineMetadata } from "@/lib/reviewGeneration/pipeline";
 // 回答・生成した口コミの本文は渡せない型にしている。記録に失敗しても、お客様への応答には
 // 影響させない(投げずにログへ種類だけを残す)。
 
-export type GenerationEventKind = "generated" | "regenerated" | "failed" | "shadow_verified" | "cta_clicked";
+// cta_clicked は「コピーと同時に Google を開く」旧画面の記録(過去の分と、古い画面を開いたままのお客様の分だけ)。
+// 今の画面は、コピー(review_copied)と Google の投稿画面を開く操作(google_opened)を分けて記録する(0033)。
+export type GenerationEventKind =
+  | "generated"
+  | "regenerated"
+  | "failed"
+  | "shadow_verified"
+  | "cta_clicked"
+  | "review_copied"
+  | "google_opened";
 
 export interface GenerationEvent {
   generationId: string;

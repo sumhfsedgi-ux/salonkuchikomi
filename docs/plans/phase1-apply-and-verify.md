@@ -78,6 +78,19 @@ where created_at > now() - interval '7 days' and kind in ('generated', 'regenera
 group by pipeline, flag
 order by pipeline, count(*) desc;
 
+-- お客様ページの操作(0033 から)。review_copied = 「口コミをコピーして進む」でコピーできた、
+-- google_opened = 投稿のご案内の「Googleの投稿画面を開く」。cta_clicked は旧画面(コピーと同時に Google を開いた)の分。
+-- どれも「押した」記録で、Google に投稿したかどうかは分からない(投稿の完了は記録しない)。
+select date_trunc('day', created_at) as day,
+       count(*) filter (where kind in ('generated', 'regenerated')) as generated,
+       count(*) filter (where kind = 'review_copied') as copied,
+       count(*) filter (where kind = 'google_opened') as google_opened,
+       count(*) filter (where kind = 'cta_clicked') as legacy_cta_clicked
+from public.ai_generation_events
+where feature = 'review_generation' and created_at > now() - interval '30 days'
+group by 1
+order by 1;
+
 -- v2 の同期検証の該当率と、意味検証の指摘
 select verify_mode, count(*), array_agg(distinct f) filter (where f is not null) as flags
 from public.ai_generation_events left join lateral unnest(verify_flags) as f on true

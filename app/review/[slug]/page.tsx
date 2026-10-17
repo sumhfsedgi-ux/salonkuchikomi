@@ -5,6 +5,7 @@ import { TEXT_ANSWER_MAX_LENGTH } from "@/lib/constants";
 import type { SurveyQuestion } from "@/lib/types";
 import ReviewFlow from "@/components/review/ReviewFlow";
 import ReviewUnavailable from "@/components/review/ReviewUnavailable";
+import { loadPublicShowcase } from "@/lib/reviewShowcase/repo";
 
 interface QuestionRow {
   id: string;
@@ -37,12 +38,11 @@ const getSalonAndQuestions = cache(async (slug: string) => {
   // 「現在ご利用いただけません」だけを出す(契約・運営内部の事情は出さない。アンケート等のデータは消さない)。
   if (salon.reviews_available !== true) return { unavailable: true as const };
 
-  const { data: survey } = await supabase
-    .from("surveys")
-    .select("id")
-    .eq("salon_id", salon.id)
-    .eq("is_active", true)
-    .maybeSingle();
+  // 口コミ作成中の表示(0033 の公開用のビュー)は、アンケートと並べて読む(読めなくても画面は止めない)。
+  const [{ data: survey }, showcase] = await Promise.all([
+    supabase.from("surveys").select("id").eq("salon_id", salon.id).eq("is_active", true).maybeSingle(),
+    loadPublicShowcase(supabase, salon.id as string),
+  ]);
   if (!survey) return null;
 
   const { data: questionRows } = await supabase
@@ -110,6 +110,7 @@ const getSalonAndQuestions = cache(async (slug: string) => {
       businessType: (salon.business_type as string | null) ?? null,
     },
     questions: surveyQuestions,
+    showcase,
   };
 });
 
@@ -131,5 +132,5 @@ export default async function ReviewPage({
   if (!data) notFound();
   if (data.unavailable) return <ReviewUnavailable />;
 
-  return <ReviewFlow salon={data.salon} questions={data.questions} />;
+  return <ReviewFlow salon={data.salon} questions={data.questions} showcase={data.showcase} />;
 }

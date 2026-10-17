@@ -1,17 +1,25 @@
 "use client";
 
+import type { Ref } from "react";
 import { reviewCharacterCount } from "@/lib/ai/naturalJapanese/evidence";
 
 // 回答の内容(満足度・否定的な内容の有無)によって、Google口コミへの導線を出し分けては
 // いけない(review gating の禁止。docs/plans/reviews-465-plan.md §7-1)。そのため、この
 // コンポーネントには CTA の表示を切り替える引数を持たせない(テストで保証している)。
+// copyFailed は、直前のコピーに失敗したときの手動コピーの案内を出すだけで、導線は変えない。
 interface Props {
   review: string;
   onReviewChange: (next: string) => void;
+  /** 「口コミをコピーして進む」。コピーできたら投稿のご案内へ進む(ReviewFlow)。 */
   onCopy: () => void;
   onRegenerate: () => void;
   googleReviewUrl: string;
   disabled?: boolean;
+  /** 直前のコピーに失敗した(手動でコピーする案内と、そのまま進むボタンを出す)。 */
+  copyFailed?: boolean;
+  /** 手動でコピーしたあと、投稿のご案内へ進む。 */
+  onManualContinue?: () => void;
+  textareaRef?: Ref<HTMLTextAreaElement>;
 }
 
 export default function GeneratedReview({
@@ -21,6 +29,9 @@ export default function GeneratedReview({
   onRegenerate,
   googleReviewUrl,
   disabled = false,
+  copyFailed = false,
+  onManualContinue,
+  textareaRef,
 }: Props) {
   return (
     <div
@@ -31,11 +42,12 @@ export default function GeneratedReview({
     >
       <div className="text-center">
         <h2 className="text-base font-medium leading-relaxed tracking-wide text-stone-700">
-          <span className="inline-block">アンケートの回答をもとに</span>
-          <span className="inline-block">口コミの文章案を作成しました</span>
+          <span className="block">ご協力ありがとうございます。</span>
+          <span className="inline-block">ご回答をもとに、</span>
+          <span className="inline-block">口コミ文章を作成しました。</span>
         </h2>
-        <p className="mt-2 text-[13px] leading-relaxed text-stone-500">
-          ご回答ありがとうございます。よろしければ、ぜひ口コミの投稿にご協力いただけますと幸いです。
+        <p className="mt-2 text-xs leading-relaxed text-stone-500">
+          よろしければ、口コミの投稿もご協力いただけますと幸いです。
         </p>
       </div>
 
@@ -44,6 +56,7 @@ export default function GeneratedReview({
           内容を確認して、実際の体験と違うところがあれば自由に編集してください。
         </p>
         <textarea
+          ref={textareaRef}
           aria-label="口コミの下書き"
           value={review}
           onChange={(e) => onReviewChange(e.target.value)}
@@ -56,28 +69,26 @@ export default function GeneratedReview({
         </p>
       </div>
 
-      {/*
-        A real <a target="_blank"> whose default action is never prevented,
-        not a scripted window.open(). That default action is the browser's
-        own "open this link in a new tab" behavior tied directly to the
-        trusted click event, so it isn't subject to popup-blocker heuristics
-        the way a window.open() called after an `await` would be -- this is
-        what keeps iOS Safari from silently blocking the Google tab. onCopy
-        is async and intentionally not awaited here: the copy attempt runs
-        alongside the navigation rather than gating it, so a slow or failed
-        Clipboard API call never delays or blocks getting to Google's page.
-      */}
-      <a
-        href={googleReviewUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={onCopy}
-        className="btn-primary block px-3 text-center"
-      >
-        {/* 狭い画面では「コピーして」のあとで折り返す(最後の1文字だけが次の行に回らないように)。 */}
-        <span className="inline-block">この口コミをコピーして</span>
-        <span className="inline-block">Googleレビューへ進む</span>
-      </a>
+      {copyFailed && (
+        <div role="alert" className="rounded-lg border border-greige bg-white p-3 text-sm leading-relaxed text-stone-700">
+          <p>
+            コピーできませんでした。もう一度お試しいただくか、上の文章を長押し（パソコンは選択して Ctrl+C／⌘+C）してコピーしてください。
+          </p>
+          <button
+            type="button"
+            onClick={onManualContinue}
+            disabled={disabled}
+            className="mt-3 w-full rounded-lg border border-sage bg-white py-2.5 text-sm font-medium text-sage-dark transition hover:bg-sage/10 disabled:opacity-50"
+          >
+            コピーできたので次へ進む
+          </button>
+        </div>
+      )}
+
+      {/* コピーだけを行い、Google は開かない(開くのは投稿のご案内の「Googleの投稿画面を開く」)。 */}
+      <button type="button" onClick={onCopy} disabled={disabled} className="btn-primary">
+        {copyFailed ? "もう一度コピーする" : "口コミをコピーして進む"}
+      </button>
       <p className="-mt-2 text-center text-xs text-stone-400">
         自動で投稿されることはありません
       </p>
@@ -90,7 +101,7 @@ export default function GeneratedReview({
       >
         もう一度作成する
       </button>
-      {/* 文章案を使わずに投稿したい人向け。コピーはせず、同じ Google の投稿画面を開く。 */}
+      {/* 文章案を使わずに投稿したい人向け。コピーはせず、Google の投稿画面をそのまま開く(通常のリンク)。 */}
       <a
         href={googleReviewUrl}
         target="_blank"

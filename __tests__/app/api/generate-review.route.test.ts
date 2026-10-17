@@ -306,3 +306,38 @@ describe("POST /api/generate-review: ログ", () => {
     expect(logged).not.toContain("SECRET");
   });
 });
+
+// 口コミ作成中の表示(0033)の写真・コピーは、口コミの生成の入力にしない(お客様ページも送らない)。
+// 仮に送られてきても、生成に渡すのはアンケートと照合した回答と DB の店舗情報だけ。
+describe("POST /api/generate-review: 作成中の表示の内容を生成に使わない", () => {
+  const SHOWCASE_COPY = "忙しい毎日に、自分をいたわる時間を。-SHOWCASE";
+  const BODY_WITH_SHOWCASE = {
+    ...VALID_BODY,
+    showcase: { imageUrl: "https://example.test/storage/v1/object/public/review-showcase/a.jpg", catchCopy: SHOWCASE_COPY },
+    catchCopy: SHOWCASE_COPY,
+  };
+
+  it("v1: 生成に渡す内容に、写真の URL・キャッチコピーが入らない", async () => {
+    vi.mocked(generateReviewV1).mockResolvedValue({ ok: true, review: "v1の口コミ", model: "m", latencyMs: 1, attempts: 1 });
+    expect((await POST(post(BODY_WITH_SHOWCASE))).status).toBe(200);
+    expect(generateReviewV1).toHaveBeenCalledWith({
+      answers: [{ question: "ご自由にお書きください", answer: SECRET_ANSWER }],
+      salonName: "DBのサロン名",
+      businessType: "エステ",
+      previousReview: undefined,
+    });
+    const passed = JSON.stringify(vi.mocked(generateReviewV1).mock.calls);
+    expect(passed).not.toContain("SHOWCASE");
+    expect(passed).not.toContain("review-showcase");
+  });
+
+  it("v2: パイプラインに渡す内容に、写真の URL・キャッチコピーが入らない", async () => {
+    vi.stubEnv("REVIEW_PIPELINE", "v2");
+    vi.stubEnv("REVIEW_SHADOW_VERIFY_RATE", "0");
+    vi.mocked(runReviewPipeline).mockResolvedValue({ draft: "v2の口コミ", seed: SEED, sentences: [], metadata: V2_METADATA });
+    expect((await POST(post(BODY_WITH_SHOWCASE))).status).toBe(200);
+    const [input] = vi.mocked(runReviewPipeline).mock.calls[0];
+    expect(JSON.stringify(input)).not.toContain("SHOWCASE");
+    expect(JSON.stringify(input)).not.toContain("review-showcase");
+  });
+});
