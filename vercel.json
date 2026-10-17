@@ -8,6 +8,7 @@
       "feature/reviews-inbox": false,
       "feature/privacy-reviews-inbox": false,
       "feature/review-generation-showcase": false,
+      "feature/reviews-auto-refresh": false,
       "feature/ops-register-confirm-copy": false
     }
   }

@@ -14,6 +14,7 @@ import type {
   ActionResult,
   ReplySubmitRequest,
   ReplySubmitResult,
+  RefreshResult,
   ReviewDetail,
   ReviewListQuery,
   ReviewListResult,
@@ -42,7 +43,7 @@ export async function listReviewsAction(query: ReviewListQuery, cursor: string |
   return access.inbox.listReviews(access.ctx, safeQuery, safeCursor);
 }
 
-export async function refreshReviewsAction(): Promise<ActionResult<{ lastCheckedAt: string; syncIncomplete: boolean }>> {
+export async function refreshReviewsAction(): Promise<RefreshResult> {
   const access = await resolveGoogleReviewsAccess();
   if (!access.ok) return { ok: false, error: access.error };
   return access.inbox.refresh(access.ctx);

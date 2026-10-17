@@ -13,11 +13,11 @@ import { createDatabase, dropDatabase } from "./db";
 import { createSalon, type SalonFixture } from "./fixtures";
 import { createLocalRpcClient } from "./rpcClient";
 import { createRpcGbpStore } from "@/lib/gbp/supabaseStore";
-import { createGbpInbox, type GbpInbox, type GbpInboxDeps } from "@/lib/gbp/inbox";
+import { createGbpInbox, GBP_MIN_REFRESH_INTERVAL_MS, type GbpInbox, type GbpInboxDeps } from "@/lib/gbp/inbox";
 import { createSimulatedGbp, simulatedGbpToken, type SimulatedGbp } from "@/lib/gbp/simulated";
 import { simulatedGbpUsers, SIM_OWNER_SUB } from "@/lib/gbp/dev/simulatedFixtures";
 import { GbpApiError } from "@/lib/gbp/apiClient";
-import type { GbpAccess, GbpBinding } from "@/lib/gbp/access";
+import { GbpTokenError, type GbpAccess, type GbpBinding } from "@/lib/gbp/access";
 import { DEFAULT_LIST_QUERY } from "@/lib/googleReviews/query";
 
 const DB = "salonpack_localdb_inbox";
@@ -466,5 +466,93 @@ describe("画面と DB の分類が一致する", () => {
       }
     }
     expect(checked).toBe(31);
+  });
+});
+
+describe("画面を開いたときの取り込み(［更新］と同じ処理。5分の間隔・取得中の重複・一時的な失敗)", () => {
+  const lastChecked = async (w: World) => (await items(w, "all")).summary.lastCheckedAt;
+
+  it("5分以内に何度開いても Google を呼ばず、最終更新の時刻も変えない", async () => {
+    await releaseLocations();
+    const w = await world();
+    await connected(w);
+    const before = await lastChecked(w);
+    const callsBefore = w.sim.calls.length;
+    const opened = w.make({ minRefreshIntervalMs: GBP_MIN_REFRESH_INTERVAL_MS });
+    for (let n = 0; n < 3; n++) {
+      const r = await opened.refresh(w.ctx);
+      expect(r.ok && Date.parse(r.value.lastCheckedAt)).toBe(Date.parse(before!));
+    }
+    expect(w.sim.calls.length).toBe(callsBefore);
+    expect(await lastChecked(w)).toBe(before);
+  });
+
+  it("取り込み済みの新しい口コミは、5分以内で取得を省いたあとの一覧の読み直しにも出る(Google は呼ばない)", async () => {
+    await releaseLocations();
+    const w = await world();
+    await connected(w);
+    const at = new Date().toISOString();
+    w.sim.addReview("locations/sim-101", { name: "accounts/sim-1/locations/sim-101/reviews/sim-auto", starRating: "FIVE", comment: "(架空)開いたときに取り込んだ口コミ", createTime: at, updateTime: at });
+    expect((await w.inbox.refresh(w.ctx)).ok).toBe(true); // 画面を開いたときの取り込み(一覧の入れ替えは画面が省いた)
+    const callsBefore = w.sim.calls.length;
+    const opened = w.make({ minRefreshIntervalMs: GBP_MIN_REFRESH_INTERVAL_MS });
+    expect((await opened.refresh(w.ctx)).ok).toBe(true); // 手動の［更新］・開き直し:5分以内なので取得を省く
+    expect(w.sim.calls.length).toBe(callsBefore);
+    const list = await opened.listReviews(w.ctx, { ...DEFAULT_LIST_QUERY, filter: "all" }, null);
+    expect(list.kind === "ok" && list.items.some((i) => i.comment === "(架空)開いたときに取り込んだ口コミ")).toBe(true);
+  });
+
+  it("取得中にもう一度呼ばれたら Google を呼ばずに返す(一時的な失敗)", async () => {
+    await releaseLocations();
+    const w = await world();
+    await connected(w);
+    w.sim.delayNext("reviews", 400);
+    const pending = w.inbox.refresh(w.ctx);
+    await new Promise((r) => setTimeout(r, 100));
+    const callsDuring = w.sim.calls.length;
+    expect(await w.inbox.refresh(w.ctx)).toMatchObject({ ok: false, temporary: true });
+    expect(w.sim.calls.length).toBe(callsDuring);
+    expect((await pending).ok).toBe(true);
+  });
+
+  it.each(["unavailable", "timeout", "network", "rate_limited"] as const)("%s は一時的な失敗。最終更新の時刻を変えない", async (kind) => {
+    await releaseLocations();
+    const w = await world();
+    await connected(w);
+    const before = await lastChecked(w);
+    w.sim.failNext("reviews", new GbpApiError(kind));
+    expect(await w.inbox.refresh(w.ctx)).toMatchObject({ ok: false, temporary: true });
+    expect(await lastChecked(w)).toBe(before);
+  });
+
+  it("再連携が必要(トークンを取り直せない)は、利用者の対応が要る失敗(一時的な失敗にしない)", async () => {
+    await releaseLocations();
+    const w = await world();
+    await connected(w);
+    const revoked = w.make({
+      access: {
+        ...accessFor(sql),
+        accessToken: async () => {
+          throw new GbpTokenError("invalid_grant");
+        },
+      },
+    });
+    const r = await revoked.refresh(w.ctx);
+    expect(r.ok === false && r.error).toContain("再連携");
+    expect("temporary" in r).toBe(false);
+  });
+
+  it.each([
+    ["scope_insufficient", "口コミの権限が足りません"],
+    ["permission_denied", "この店舗を管理する権限"],
+    ["failed_precondition", "オーナー確認"],
+  ] as const)("%s は利用者の対応が要る失敗(一時的な失敗にしない)", async (kind, message) => {
+    await releaseLocations();
+    const w = await world();
+    await connected(w);
+    w.sim.failNext("reviews", new GbpApiError(kind));
+    const r = await w.inbox.refresh(w.ctx);
+    expect(r.ok === false && r.error).toContain(message);
+    expect("temporary" in r).toBe(false);
   });
 });
