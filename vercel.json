@@ -7,7 +7,8 @@
       "feature/salon-onboarding": false,
       "feature/reviews-inbox": false,
       "feature/privacy-reviews-inbox": false,
-      "feature/review-generation-showcase": false
+      "feature/review-generation-showcase": false,
+      "feature/ops-register-confirm-copy": false
     }
   }
 }
