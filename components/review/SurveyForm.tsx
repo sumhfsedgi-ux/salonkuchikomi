@@ -73,6 +73,10 @@ export default function SurveyForm({
 
   return (
     <>
+      {/* 最初の質問の前の案内(警告の見た目にはしない。確認のチェックは置かない)。 */}
+      <p className="mb-3 rounded-xl bg-white/70 px-4 py-3 text-[13px] leading-relaxed text-stone-600">
+        このアンケートは、当店をご利用いただいたお客様を対象としています。実際に体験されたことや、率直なご感想をお聞かせください。
+      </p>
       <div className="flex flex-col gap-3">
         {questions.map((question, index) => (
           <QuestionCard

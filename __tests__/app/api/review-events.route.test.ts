@@ -47,7 +47,22 @@ describe("POST /api/review-events", () => {
     expect(recordGenerationEvent).not.toHaveBeenCalled();
   });
 
-  it("記録済みの生成なら cta_clicked を記録して 204", async () => {
+  it("コピー(review_copied)と Google の投稿画面を開く操作(google_opened)を、取り違えずに記録する", async () => {
+    for (const kind of ["review_copied", "google_opened"] as const) {
+      expect((await POST(post({ ...BODY, kind }))).status).toBe(204);
+      expect(recordGenerationEvent).toHaveBeenLastCalledWith({ fake: "admin" }, { ...BODY, kind });
+    }
+    expect(recordGenerationEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it("決められた種類のほか(投稿完了・旧い種類の名前など)は 400 で、記録しない", async () => {
+    for (const kind of ["posted", "cta_clicked", "generated", ""]) {
+      expect((await POST(post({ ...BODY, kind }))).status).toBe(400);
+    }
+    expect(recordGenerationEvent).not.toHaveBeenCalled();
+  });
+
+  it("kind の無い送信(旧画面を開いたままのお客様)は、従来どおり cta_clicked を記録して 204", async () => {
     const response = await POST(post(BODY));
     expect(response.status).toBe(204);
     expect(generationExists).toHaveBeenCalledWith({ fake: "admin" }, BODY.generationId, BODY.salonId);

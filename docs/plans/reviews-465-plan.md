@@ -349,7 +349,7 @@ Google連携     ──（行は不変）───────▶ 同じ行・�
 
 ### テーブル設計（主要な点）
 - **ai_generation_events**
-  - 主要カラム：generation_id, feature, kind（generated|regenerated|cta_clicked|failed|rate_limited）, prompt_version, model, latency_ms, tokens, lint_flags, verify_flags, verify_mode（none|sync|shadow）, repair_action。
+  - 主要カラム：generation_id, feature, kind（generated|regenerated|cta_clicked|failed|rate_limited。0033 で review_copied|google_opened を追加。お客様ページのコピーと、投稿のご案内から Google を開く操作を分けて記録する。cta_clicked は「コピーと同時に Google を開く」旧画面の記録として残す）, prompt_version, model, latency_ms, tokens, lint_flags, verify_flags, verify_mode（none|sync|shadow）, repair_action。
   - `unique(generation_id, kind)`。**本文と回答は保存しない**。
 - **google_business_connections**（秘密系）
   - 主要カラム：salon_id unique, google_sub, email, 暗号化した refresh token（AES-256-GCM・専用の鍵束・key_version・AAD に connection_id）, scopes, status, 失敗回数。

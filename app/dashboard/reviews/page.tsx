@@ -11,9 +11,23 @@ import QuestionEditor from "@/components/admin/QuestionEditor";
 import RestartSurveyFromTemplate from "@/components/admin/RestartSurveyFromTemplate";
 import CopyUrlButton from "@/components/admin/CopyUrlButton";
 import GoogleReviewUrlForm from "@/components/admin/GoogleReviewUrlForm";
+import ReviewShowcaseForm from "@/components/admin/ReviewShowcaseForm";
 import PageHeader from "@/components/ui/PageHeader";
 import Card from "@/components/ui/Card";
 import Alert from "@/components/ui/Alert";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { loadShowcase, showcaseSettingsFromRow, type LoadedShowcase } from "@/lib/reviewShowcase/repo";
+import { saveReviewShowcaseAction } from "@/app/dashboard/reviews/showcaseActions";
+
+// 口コミ作成中の表示(0033)は service role で読む(salon_id は requireFeaturePage で解決した店舗)。
+// service role が無い・0033 の適用前は、保存できない状態で既定値を出す。
+async function loadShowcaseForPage(salonId: string): Promise<LoadedShowcase> {
+  try {
+    return await loadShowcase(getSupabaseAdmin(), salonId);
+  } catch {
+    return { row: null, storageAvailable: false };
+  }
+}
 
 export default async function DashboardReviewsPage({ searchParams }: PageProps<"/dashboard/reviews">) {
   const supabase = await createClient();
@@ -24,10 +38,11 @@ export default async function DashboardReviewsPage({ searchParams }: PageProps<"
   const params = await searchParams;
 
   const user = await getAuthedUser(supabase);
-  const [survey, templates, inboxAllowed] = await Promise.all([
+  const [survey, templates, inboxAllowed, showcase] = await Promise.all([
     getActiveSurveyWithQuestions(supabase, salon.id),
     getTemplates(supabase),
     user ? canAccessFeature(salon, user.id, "google_reviews") : Promise.resolve(false),
+    loadShowcaseForPage(salon.id),
   ]);
   // アンケートがまだ無ければ、初期設定(アンケートの作成)へ進める。
   // 届いた口コミを使える店舗は、アンケートが無くても届いた口コミ・設定のタブを使えるので、移さずにタブの中で案内する。
@@ -64,6 +79,18 @@ export default async function DashboardReviewsPage({ searchParams }: PageProps<"
 
         <Card>
           <GoogleReviewUrlForm initialUrl={salon.googleReviewUrl} />
+        </Card>
+      </div>
+
+      <div className="flex flex-col gap-4">
+        <h2 className="text-sm font-semibold text-ink">お客様ページの表示</h2>
+        <Card>
+          <ReviewShowcaseForm
+            initialSettings={showcaseSettingsFromRow(showcase.row)}
+            storageAvailable={showcase.storageAvailable}
+            salonName={salon.name}
+            save={saveReviewShowcaseAction}
+          />
         </Card>
       </div>
 
