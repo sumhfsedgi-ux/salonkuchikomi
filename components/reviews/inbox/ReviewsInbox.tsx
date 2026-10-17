@@ -17,9 +17,10 @@ import { formatCheckedAt } from "@/lib/googleReviews/format";
 import { DEFAULT_LIST_QUERY, FILTER_LABELS, INBOX_PATH, listQueryString, parseListQuery, reviewDetailPath, withQuery } from "@/lib/googleReviews/query";
 import { ATTENTION_FILTER_NOTE, matchesFilter } from "@/lib/googleReviews/replyState";
 import { CONNECTION_CHANGED_MESSAGE } from "@/lib/googleReviews/messages";
+import { shouldReloadAfterAutoRefresh, shouldShowRefreshError } from "@/lib/googleReviews/autoRefresh";
 import type {
-  ActionResult,
   InboxSummary,
+  RefreshResult,
   ReviewFilter,
   ReviewListQuery,
   ReviewListResult,
@@ -31,13 +32,15 @@ import type {
 // 届いた口コミの一覧と詳細(計画 第2版 §2「届いた口コミの画面」)。上から
 //   ① 新着のお知らせ(1件以上のときだけ。初回の取り込みが終わるまでは出さない)
 //   ② 数字(Google の値:口コミ数・平均評価。取得できていなければ「—」。0 とは表示しない)
-//   ③ 最終更新と［更新］(新しい口コミは［更新］を押したときに取り込む。リアルタイムに見える言い方をしない)。
+//   ③ 最終更新と［更新］(新しい口コミは、画面を開いたときと［更新］を押したときに取り込む。リアルタイムに見える言い方をしない)。
 //      数字が Google の値であることと取得の時刻は、ここにまとめて1回だけ出す
 //   ④ 絞り込み(未返信(既定)／確認が必要／返信済み／すべて、評価、並び順)。PC では1行、スマホでは折り返す
 //   ⑤ 一覧(領域の幅が 848px 以上なら右に詳細)
 // 未返信の件数は出さない(Google の規定との関係が未確認のため保留。計画 第2版 §7-1)。
 // この部品は layout に置くので、詳細へ移っても一覧(読み込み済みのページ・絞り込み・選択)はそのまま残る。
 // 更新のたびに画面全体を Skeleton に戻さない。Skeleton は最初の読み込みと、絞り込みを変えたときだけ。
+// 画面を開いたとき(ほかの画面から来た・再読み込み・詳細の URL を直接開いた)に、［更新］と同じ処理を1回だけ呼ぶ。
+// 一覧と詳細の行き来・絞り込み・並び順の変更では呼ばない(この部品は作り直されない)。5分の間隔と取得中の重複はサーバーが止める。
 
 const TWO_COLUMN_MIN_PX = 848;
 const SLOW_SYNC_MS = 30_000;
@@ -82,7 +85,7 @@ interface Props {
   initialResult: ReviewListResult;
   actions: {
     list: (query: ReviewListQuery, cursor: string | null) => Promise<ReviewListResult>;
-    refresh: () => Promise<ActionResult<{ lastCheckedAt: string; syncIncomplete: boolean }>>;
+    refresh: () => Promise<RefreshResult>;
   };
   children: ReactNode;
   basePath?: string;
@@ -123,6 +126,8 @@ export default function ReviewsInbox({ initialResult, actions, children, basePat
   const rootRef = useRef<HTMLDivElement>(null);
   const [twoColumn, setTwoColumn] = useState(false);
   const requestSeq = useRef(0);
+  const moreSeq = useRef(0);
+  const autoRefreshed = useRef(false);
   const loadedKey = useRef<string | null>(isInitialQuery ? queryKey : null);
   const savedScroll = useRef<number | null>(null);
   const lastSelected = useRef<string | null>(null);
@@ -241,6 +246,7 @@ export default function ReviewsInbox({ initialResult, actions, children, basePat
       router.refresh();
       return;
     }
+    moreSeq.current++;
     setList((prev) =>
       prev.status === "ready"
         ? {
@@ -252,27 +258,47 @@ export default function ReviewsInbox({ initialResult, actions, children, basePat
     );
   }
 
-  async function refresh() {
+  function refresh() {
+    void runRefresh(false);
+  }
+
+  /** auto:画面を開いたときの自動の取り込み。一時的な失敗は出さず、表示中の一覧を入れ替えるのは何も変わっていないときだけ。 */
+  async function runRefresh(auto: boolean) {
     if (refreshing) return;
     setRefreshing(true);
-    setRefreshError(null);
-    let result: ActionResult<{ lastCheckedAt: string; syncIncomplete: boolean }>;
+    if (!auto) setRefreshError(null);
+    const startSeq = requestSeq.current;
+    const startMore = moreSeq.current;
+    let result: RefreshResult;
     try {
       result = await actions.refresh();
     } catch {
-      result = { ok: false, error: "最新の口コミを取得できませんでした。" };
+      result = { ok: false, error: "最新の口コミを取得できませんでした。", temporary: true };
     }
     if (!result.ok) {
       setRefreshing(false);
-      setRefreshError(result.error);
+      if (shouldShowRefreshError(result, auto)) setRefreshError(result.error);
+      return;
+    }
+    const listChanged = () => requestSeq.current !== startSeq || moreSeq.current !== startMore;
+    if (auto && !shouldReloadAfterAutoRefresh({ shownLastCheckedAt: summary?.lastCheckedAt ?? null, lastCheckedAt: result.value.lastCheckedAt, listChanged: listChanged() })) {
+      setRefreshing(false);
       return;
     }
     // 一覧は残したまま入れ替える(Skeleton に戻さない)。初回の取得中なら、取り込めた分を表示に切り替える。
     const seq = ++requestSeq.current;
     const next = await actions.list(query, null).catch((): ReviewListResult => ({ kind: "error", message: "" }));
     setRefreshing(false);
-    if (seq === requestSeq.current) applyResult(next, "keep_on_error");
+    if (seq === requestSeq.current && !(auto && moreSeq.current !== startMore)) applyResult(next, "keep_on_error");
   }
+
+  // 画面を開いたときに1回だけ取り込む(［更新］と同じ処理)。一覧と詳細の行き来では、この部品は作り直されない。
+  useEffect(() => {
+    if (autoRefreshed.current) return;
+    autoRefreshed.current = true;
+    void runRefresh(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 最初の表示のときに1回だけ行う
+  }, []);
 
   const updateItem = useCallback((id: string, patch: Partial<ReviewSummary>) => {
     setList((prev) =>
@@ -325,7 +351,7 @@ export default function ReviewsInbox({ initialResult, actions, children, basePat
         >
           <span>
             <span className="font-semibold">新しい口コミが{newCount}件あります</span>
-            <span className="block text-xs text-ink-muted">［更新］で見つかった口コミのうち、まだ開いていないものです。</span>
+            <span className="block text-xs text-ink-muted">画面を開いたときや［更新］で見つかった口コミのうち、まだ開いていないものです。</span>
           </span>
           <Button type="button" size="sm" onClick={() => setQuery({ filter: "new" })} className="shrink-0">
             新着を見る
@@ -363,7 +389,7 @@ export default function ReviewsInbox({ initialResult, actions, children, basePat
             {summary?.totalReviewCount != null || summary?.averageRating != null
               ? `口コミ数・平均評価はGoogle上の値です${ratingAt && ratingAt !== lastChecked ? `(${ratingAt}時点)` : ""}。`
               : ""}
-            新しい口コミは［更新］で取り込みます。
+            画面を開いたときと［更新］で取り込みます。
           </p>
         </div>
       </div>
@@ -464,7 +490,7 @@ export default function ReviewsInbox({ initialResult, actions, children, basePat
         {list.noReviewsAtAll ? (
           <EmptyState
             title="まだGoogle口コミはありません"
-            description="口コミが届いたら、［更新］で取り込むとここに表示されます。"
+            description="口コミが届くと、画面を開いたときや［更新］で取り込み、ここに表示されます。"
             actions={
               <Link href="/dashboard/reviews" className="text-sm font-medium text-sage-dark underline underline-offset-2">
                 アンケートで口コミを集める ›

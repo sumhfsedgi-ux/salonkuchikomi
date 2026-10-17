@@ -156,6 +156,12 @@ export type ReviewDetailResult =
 
 export type ActionResult<T = undefined> = { ok: true; value: T } | { ok: false; error: string };
 
+/**
+ * ［更新］(Google からの取り込み)の結果。temporary は、時間をおけば直る失敗(取得中・混雑・通信の失敗)。
+ * 画面を開いたときの自動の取り込みでは、temporary の失敗は表示しない(再連携・同意などの案内は表示する)。
+ */
+export type RefreshResult = ActionResult<{ lastCheckedAt: string; syncIncomplete: boolean }> | { ok: false; error: string; temporary: true };
+
 export interface ReplySubmitRequest {
   reviewId: string;
   /** 確認ダイアログを開いたときに画面が作る ID。同じ操作の再送は同じ ID で送る。 */
