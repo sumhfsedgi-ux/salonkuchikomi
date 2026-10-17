@@ -498,9 +498,10 @@ async function main() {
     check(
       "確認画面(通常登録): 案内予定のプランは「契約ではありません」と出し、登録しただけでは使えないことを出す。運営が利用開始するとは書かない",
       /案内予定のプラン\s*SalonPack\(契約ではありません\)/.test(confirmDialog) &&
-        confirmDialog.includes("利用を始めたときに使える機能(予定)") &&
-        confirmDialog.includes("登録しただけでは、サービスの機能は使えません") &&
-        confirmDialog.includes("利用には、担当者の招待・本人確認の手続きの完了が必要です") &&
+        confirmDialog.includes("店舗と担当者のアカウントを作成し、招待メールを送信します") &&
+        confirmDialog.includes("利用予定の機能") &&
+        confirmDialog.includes("登録だけでは、サービスの利用は始まりません") &&
+        confirmDialog.includes("担当者が招待メールからパスワードを設定したあとも、「お申し込み手続き中」のままです") &&
         !PROMISES.test(confirmDialog),
     );
     await shot(opPage, "07-ops-confirm");

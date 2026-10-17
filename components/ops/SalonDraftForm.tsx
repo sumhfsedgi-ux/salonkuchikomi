@@ -11,7 +11,7 @@ import { LIFECYCLE_LABELS, type OverrideMode } from "@/lib/features/entitlements
 import type { CatalogEntry, PlanRules } from "@/lib/ops/preview";
 import { isSwitchOn, overrideForSwitch } from "@/lib/ops/toggle";
 import { PLAN_LABELS } from "@/lib/ops/labels";
-import { INVITATION_KIND_LABELS, usableFeatureLabels } from "@/lib/ops/onboardingDisplay";
+import { usableFeatureLabels } from "@/lib/ops/onboardingDisplay";
 import { REGISTRATION_KINDS, REGISTRATION_KIND_DESCRIPTIONS, REGISTRATION_KIND_LABELS, TEST_SEND_NOTICE } from "@/lib/onboarding/serviceStatus";
 import type { SalonPlan } from "@/lib/access/plan";
 import FormField, { fieldAria, focusFirstError } from "@/components/ui/FormField";
@@ -24,7 +24,7 @@ import { cn } from "@/lib/cn";
 
 // 運営の「サロンを追加」(下書き → 内容の確認 → 登録して招待メールを送信)。
 //   - 下書きを保存: サロン名だけで保存できる。アカウント・店舗は作らず、メールも送らない
-//   - 内容を確認: 下書きを保存してから、本登録に足りない項目と、紐付け先のアカウント・送る案内を確認画面に出す
+//   - 内容を確認: 下書きを保存してから、本登録に足りない項目と、アカウント・送るメール・利用開始の条件を確認画面に出す
 //   - 登録して招待メールを送信: 確認画面からだけ行う。結果は詳細の画面の「招待と案内」に出す
 // 機能のスイッチは、すべての機能を出す。プランの対象外の機能は「プラン対象外」と出し、押せない。
 // 登録種別は「通常登録」と「テスト用」だけ(新しい店舗は無料提供にできない)。通常登録のプランは「案内予定のプラン」(任意・契約ではない)、
@@ -35,14 +35,32 @@ const CATALOG_FEATURES = FEATURE_REGISTRY.filter((d) => d.entitlement === "catal
 
 type Preview = { draftId: string; version: number; account: AccountPreview };
 
+// 確認画面の言葉は、登録したときに実際に行うこと(prepareLoginAccount と admin_invitation_begin の種類)に合わせる:
+//   new ......... アカウントを作る → 招待メール(パスワードの設定)
+//   unconfirmed . アカウントは作らない(今のパスワードを無効にする)→ 招待メール(パスワードの設定)
+//   verified .... アカウントは作らない(パスワードは変えない)→ 店舗登録のお知らせ(ログイン用のリンク)
+//   blocked ..... 登録できない(何も作らず、送らない)
+function dialogDescription(a: AccountPreview): string {
+  switch (a.kind) {
+    case "new":
+      return "店舗と担当者のアカウントを作成し、招待メールを送信します。登録後は下書きに戻せません。";
+    case "unconfirmed":
+      return "店舗を作成し、登録済みの担当者のアカウントに招待メールを送信します。登録後は下書きに戻せません。";
+    case "verified":
+      return "店舗を作成し、登録済みの担当者のアカウントに店舗登録のお知らせメールを送信します。登録後は下書きに戻せません。";
+    default:
+      return "このメールアドレスでは登録できません。店舗・アカウントは作成せず、メールも送信しません。";
+  }
+}
+
 function accountText(a: AccountPreview): string {
   switch (a.kind) {
     case "new":
-      return "新しいアカウントを作り、招待のメールを送ります。本人がメールのリンクからパスワードを設定します(運営はパスワードを作りません)。";
+      return "担当者は、招待メールのリンクからパスワードを設定します。運営側でパスワードを設定する必要はありません。";
     case "unconfirmed":
-      return "登録済みのアカウント(メールアドレスの確認がまだ)に紐付けます。今のパスワードは無効にし、本人が招待のメールのリンクから新しく設定します。";
+      return "このメールアドレスのアカウントはすでにありますが、メールアドレスの確認が済んでいません。登録すると今のパスワードは使えなくなり、担当者が招待メールのリンクから新しいパスワードを設定します。運営側でパスワードを設定する必要はありません。";
     case "verified":
-      return "登録済みのアカウント(本人確認済み)に紐付けます。パスワードは変えません。店舗が登録されたことと、ログイン先をお知らせします。";
+      return "このメールアドレスのアカウントはすでにあり、ログインできる状態です。パスワードは変わりません。担当者には、店舗が登録されたことを、ログイン用のリンクを添えたメールでお知らせします。";
     default:
       return "";
   }
@@ -55,7 +73,7 @@ function blockedText(a: Extract<AccountPreview, { kind: "blocked" }>): string {
     case "operator":
       return "このメールアドレスは運営管理のアカウントです。店舗の所有者にはできません。";
     case "unverified":
-      return "このアカウントは本人確認が済んでいません。本人がログイン画面から本人確認を済ませると登録できます(パスワードを変えずに安全を保てないため)。";
+      return "このアカウントは、メールのリンクからのパスワードの確認がまだ済んでいません。担当者がログインし、画面の「本人確認のメールを送る」から届いたメールのリンクでパスワードを入れ直す(または設定する)と、登録できるようになります。";
     default:
       return "このメールアドレスのアカウントを特定できません。";
   }
@@ -205,9 +223,12 @@ export default function SalonDraftForm({
   const overridesForPreview = Object.fromEntries(
     CATALOG_FEATURES.map((d) => [d.key, (values.featureOverrides[d.key] ?? "inherit") as OverrideMode]),
   ) as Partial<Record<FeatureKey, OverrideMode>>;
-  const usableAfter = plan && values.serviceStatus ? usableFeatureLabels(catalog, rules, plan, overridesForPreview, values.serviceStatus) : [];
+  // 確認画面の機能: 通常登録は利用を始めたときの予定、テスト用は登録後(利用中)に使える機能。どちらも利用中として数える
   const usableIfActive = plan ? usableFeatureLabels(catalog, rules, plan, overridesForPreview, "complimentary") : [];
   const isTest = values.serviceStatus === "test";
+  const blocked = preview?.account.kind === "blocked";
+  // 確認済みのアカウントには、招待ではなく店舗登録のお知らせを送る(パスワードは変えない)
+  const notifiesOnly = preview?.account.kind === "verified";
   // 通常登録のプランは「案内予定のプラン」(契約ではない)。テスト用では、登録のあとこのプランで利用を始める(契約プラン)。
   const planLabel = isTest ? "契約プラン" : "案内予定のプラン";
 
@@ -454,8 +475,8 @@ export default function SalonDraftForm({
 
       {preview && (
         <ConfirmDialog
-          title="登録の内容の確認"
-          description="この内容で本登録し、案内のメールを送ります。登録すると、アカウントと店舗が作られます(下書きには戻せません)。"
+          title="登録内容の確認"
+          description={dialogDescription(preview.account)}
           busy={pending}
           onClose={() => setPreview(null)}
           footer={
@@ -463,8 +484,8 @@ export default function SalonDraftForm({
               <Button type="button" variant="secondary" onClick={() => setPreview(null)} disabled={pending}>
                 戻る
               </Button>
-              <Button type="button" onClick={register} disabled={pending || preview.account.kind === "blocked"}>
-                {pending ? "登録しています..." : "登録して招待メールを送信"}
+              <Button type="button" onClick={register} disabled={pending || blocked}>
+                {pending ? "登録しています..." : notifiesOnly ? "登録してお知らせメールを送信" : "登録して招待メールを送信"}
               </Button>
             </>
           }
@@ -475,11 +496,11 @@ export default function SalonDraftForm({
             <ConfirmRow label="業種">{values.businessType || "—"}</ConfirmRow>
             <ConfirmRow label="連絡用メール">{values.contactEmailMode === "other" && values.contactEmail ? values.contactEmail : "ログイン用と同じ"}</ConfirmRow>
             <ConfirmRow label="電話番号">{values.contactPhone || "—"}</ConfirmRow>
-            <ConfirmRow label="招待先">{values.loginEmail}</ConfirmRow>
+            <ConfirmRow label={notifiesOnly ? "送信先メールアドレス" : "招待先メールアドレス"}>{values.loginEmail}</ConfirmRow>
             <ConfirmRow label="登録種別">{values.serviceStatus ? REGISTRATION_KIND_LABELS[values.serviceStatus] : "—"}</ConfirmRow>
             <ConfirmRow label={planLabel}>{plan ? `${PLAN_LABELS[plan]}${isTest ? "" : "(契約ではありません)"}` : "未定"}</ConfirmRow>
-            <ConfirmRow label={isTest ? "利用を許可する機能" : "利用を始めたときに使える機能(予定)"}>
-              {plan ? usableIfActive.join("・") || "なし" : "プランが未定のため、ありません"}
+            <ConfirmRow label={isTest ? "登録後に使える機能" : "利用予定の機能"}>
+              {plan ? usableIfActive.join("・") || "なし" : "プラン選択後に決まります"}
             </ConfirmRow>
           </dl>
 
@@ -496,37 +517,36 @@ export default function SalonDraftForm({
               )}
             </Alert>
           ) : (
-            <div className="flex flex-col gap-2 rounded-xl border border-border p-3 text-sm text-ink">
-              <p className="font-semibold">紐付け先のアカウント</p>
+            <div className="flex flex-col gap-1 rounded-xl border border-border p-3 text-sm text-ink">
+              <p className="font-semibold">{notifiesOnly ? "アカウントとお知らせについて" : "アカウントと招待について"}</p>
               <p>{accountText(preview.account)}</p>
-              <p>
-                送る案内: {INVITATION_KIND_LABELS[preview.account.kind === "verified" ? "salon_notice" : "invite"]}
-              </p>
             </div>
           )}
 
-          <div className={cn("rounded-xl border p-3 text-sm", values.serviceStatus === "pending" ? "border-warning/40 bg-warning-soft/40" : "border-border")}>
-            {values.serviceStatus === "pending" ? (
+          {!blocked && values.serviceStatus === "pending" && (
+            <div className="flex flex-col gap-1 rounded-xl border border-warning/40 bg-warning-soft/40 p-3 text-sm text-ink">
+              <p className="font-semibold">登録だけでは、サービスの利用は始まりません。</p>
               <p>
-                <span className="font-semibold">通常登録のため、登録のあとは「お申し込み手続き中」です。</span>
-                登録しただけでは、サービスの機能は使えません。通常のお客様の利用開始は、プラン選択・お支払いの手続き(準備中)で行います。
+                {notifiesOnly
+                  ? "担当者は今のパスワードでログインできますが、「お申し込み手続き中」のままです。"
+                  : "担当者が招待メールからパスワードを設定したあとも、「お申し込み手続き中」のままです。"}
+                利用開始には、プランの選択とお支払いが必要です。
               </p>
-            ) : (
-              <p>
-                <span className="font-semibold">登録のあとに使える機能:</span> {usableAfter.join("・") || "ありません"}
-              </p>
-            )}
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-ink-muted">
+              <p className="text-ink-muted">※プラン選択・お支払い機能は現在準備中です。</p>
+            </div>
+          )}
+          {!blocked && isTest && (
+            <ul className="list-disc space-y-1 rounded-xl border border-border p-3 pl-8 text-sm text-ink-muted">
               <li>
-                {preview.account.kind === "verified"
-                  ? "担当者は本人確認が済んでいるため、いまのパスワードでログインできます。"
-                  : "利用には、担当者の招待・本人確認の手続きの完了が必要です。"}
+                {notifiesOnly
+                  ? "テスト用のため、担当者は今のパスワードでログインして、すぐに使えます。"
+                  : "テスト用のため、担当者が招待メールからパスワードを設定すると、ログインして使えます。"}
               </li>
-              {values.serviceStatus !== "pending" && <li>予約通知は、Google・LINE の連携と開始の設定が完了するまで送信されません。</li>}
-              {values.serviceStatus === "test" && <li>{TEST_SEND_NOTICE}</li>}
+              <li>予約通知は、Google・LINE の連携と開始の設定が完了するまで送信されません。</li>
+              <li>{TEST_SEND_NOTICE}</li>
             </ul>
-          </div>
-          <p className="text-xs text-ink-muted">「送信を受け付けた」と表示されても、メールが届いた・読まれたという意味ではありません。</p>
+          )}
+          {!blocked && <p className="text-xs text-ink-muted">メールの送信受付後も、到達や開封を確認できるわけではありません。</p>}
         </ConfirmDialog>
       )}
     </div>
