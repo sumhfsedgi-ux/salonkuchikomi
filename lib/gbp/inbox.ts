@@ -35,6 +35,7 @@ import type {
   ReviewDetailResult,
   ReviewListQuery,
   ReviewListResult,
+  RefreshResult,
   StarRatingValue,
 } from "@/lib/googleReviews/types";
 import { CONNECTION_CHANGED_MESSAGE, CONNECTION_CHANGED_NOT_SENT_MESSAGE } from "@/lib/googleReviews/messages";
@@ -93,7 +94,7 @@ export interface GbpInbox {
   listReviews(ctx: SourceContext, query: ReviewListQuery, cursor: string | null): Promise<ReviewListResult>;
   getReview(ctx: SourceContext, id: string): Promise<ReviewDetailResult>;
   /** 「更新」。最短の間隔(5分)より短ければ Google に問い合わせない。途中で区切った取り込みの続きは、間隔に関係なく読む。 */
-  refresh(ctx: SourceContext): Promise<ActionResult<{ lastCheckedAt: string; syncIncomplete: boolean }>>;
+  refresh(ctx: SourceContext): Promise<RefreshResult>;
   /** 1件の口コミの最新の状態を取り直す(「反映状況を再確認」)。 */
   checkReview(ctx: SourceContext, id: string): Promise<ActionResult<ReviewDetail>>;
   setSeen(ctx: SourceContext, id: string, seen: boolean): Promise<ActionResult>;
@@ -621,13 +622,16 @@ export function createGbpInbox(deps: GbpInboxDeps): GbpInbox {
       if (!connected) return { ok: false, error: NOT_CONNECTED };
       try {
         const outcome = await syncLocation(ctx.salonId, connected.binding, connected.location, minRefreshIntervalMs);
-        if (outcome.kind === "busy") return { ok: false, error: SYNC_BUSY };
+        if (outcome.kind === "busy") return { ok: false, error: SYNC_BUSY, temporary: true };
         if (outcome.kind === "inactive") return { ok: false, error: STALE };
         const after = await store.getInboxSummary(ctx.salonId);
         const at = outcome.at ?? connected.location.lastSyncedAt;
         return at ? { ok: true, value: { lastCheckedAt: at, syncIncomplete: after?.syncInProgress ?? false } } : { ok: false, error: FETCH_FAILED };
       } catch (err) {
-        return { ok: false, error: callMessage(err, FETCH_FAILED) };
+        // 混雑・通信の失敗・想定外の失敗は一時的なもの。再連携・権限・オーナー確認などは利用者の対応が要るので temporary にしない。
+        const message = callMessage(err, FETCH_FAILED);
+        const temporary = !(err instanceof GoogleCallError) || err.kind === "rate_limited" || err.kind === "unavailable";
+        return temporary ? { ok: false, error: message, temporary: true } : { ok: false, error: message };
       }
     },
 
