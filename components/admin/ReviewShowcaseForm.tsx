@@ -302,9 +302,9 @@ function PhonePreview({
         {playing === "done" ? (
           <div className="flex flex-1 flex-col gap-3 animate-result-in">
             <p className="text-center text-sm font-medium leading-relaxed text-stone-700">
-              ご協力ありがとうございます。
-              <br />
-              ご回答をもとに、口コミ文章を作成しました。
+              <span className="block">ご協力ありがとうございます。</span>
+              <span className="inline-block">ご回答をもとに、</span>
+              <span className="inline-block">口コミ文章を作成しました。</span>
             </p>
             <div className="card space-y-2">
               <div className="h-2.5 w-full rounded-full bg-beige" />

@@ -1,4 +1,4 @@
-import { createElement } from "react";
+﻿import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import GenerationShowcase from "@/components/review/GenerationShowcase";
@@ -25,7 +25,7 @@ describe("GenerationShowcase(口コミ作成中の店舗の表示)", () => {
   it("写真の後ろに緑の背景、下半分に暗いグラデーションを敷き、コピーは2行までにする", () => {
     const html = render();
     expect(html).toContain("from-sage-dark");
-    expect(html).toContain("bg-gradient-to-t from-black/70");
+    expect(html).toContain("bg-gradient-to-t from-black/75");
     expect(html).toContain("line-clamp-2");
   });
 

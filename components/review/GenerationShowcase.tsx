@@ -8,7 +8,9 @@ import { useImageFailure } from "@/lib/useImageFailure";
 //   ・写真とコピーはまとめて出す(順番に出す演出・自動のスライド・リンク・ボタンは置かない)。
 //   ・写真の後ろに緑のグラデーションを敷く。写真の読み込み中・失敗のときも、コピーはその上で読める。
 //     写真の失敗で、作成や画面の切り替えは止めない(この部品の中で写真を外すだけ)。
-//   ・写真の下半分は黒のグラデーションで暗くして、白い文字を読みやすくする。
+//   ・写真の下半分は黒のグラデーションで暗くして、白い文字を読みやすくする(白っぽい写真でも読めることを確かめた)。
+//   ・改行は文節で行う(word-break: auto-phrase。対応していないブラウザでは通常の改行)。行の長さをそろえる
+//     text-wrap: balance は、「」のあとの助詞だけを次の行に送ることがあるので使わない。
 //   ・「作成しています」の文字は出さない(読み上げ向けの案内は ReviewFlow の role="status" が出す)。
 //   ・文字の大きさは枠の幅に合わせる(cqw)。30文字までが2行に収まる大きさで、それより長くても2行で切る。
 interface Props {
@@ -44,11 +46,11 @@ export default function GenerationShowcase({ showcase, salonName, fitViewport = 
         )}
         <div
           aria-hidden="true"
-          className="absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-black/70 via-black/35 to-transparent"
+          className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/75 via-black/40 to-transparent"
         />
         <div className="absolute inset-x-0 bottom-0 px-[6cqw] pb-[7cqw]">
           <p className="text-[11px] font-medium tracking-[0.2em] text-white/85">{salonName}</p>
-          <p className="mt-2 line-clamp-2 text-[length:min(22px,5.8cqw)] font-semibold leading-snug text-balance text-white [word-break:auto-phrase] drop-shadow-[0_1px_2px_rgb(0_0_0/0.35)]">
+          <p className="mt-2 line-clamp-2 text-[length:min(22px,5.8cqw)] font-semibold leading-snug text-white [word-break:auto-phrase] drop-shadow-[0_1px_2px_rgb(0_0_0/0.35)]">
             {showcase.catchCopy}
           </p>
         </div>
